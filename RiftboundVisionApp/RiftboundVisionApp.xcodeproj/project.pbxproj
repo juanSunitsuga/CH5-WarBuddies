@@ -18,6 +18,7 @@
 		AEAAA284B54A4B9493BD0940 /* lux.json in Resources */ = {isa = PBXBuildFile; fileRef = 27536C6BCCE545FA95F26D33 /* lux.json */; };
 		1DE850A028A146EF8CD2965A /* garen.json in Resources */ = {isa = PBXBuildFile; fileRef = 9840E86F98974947AB667FE5 /* garen.json */; };
 		17EEFEABA0B94E61BA799EE9 /* master_yi.json in Resources */ = {isa = PBXBuildFile; fileRef = 4BAA057A479749368EAEF496 /* master_yi.json */; };
+		C65BD2D963D14E48BD280043 /* best.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = DBF6C0B24D384E309B541FB3 /* best.mlpackage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 		27536C6BCCE545FA95F26D33 /* lux.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lux.json; sourceTree = "<group>"; };
 		9840E86F98974947AB667FE5 /* garen.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = garen.json; sourceTree = "<group>"; };
 		4BAA057A479749368EAEF496 /* master_yi.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = master_yi.json; sourceTree = "<group>"; };
+		DBF6C0B24D384E309B541FB3 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,6 +75,7 @@
 				3A346DD992724AC597E319E5 /* TrackedCardsPanel.swift */,
 				3331D3BCD484492BA4DC4050 /* CardDatabaseLoader.swift */,
 				91954CFFD8744AD891AB10D4 /* CardData */,
+				E30AC5E6649148CCA7C653DA /* Resources */,
 				76363767637E4BB6B3E788C4 /* Info.plist */,
 			);
 			path = RiftboundVisionApp;
@@ -87,6 +90,22 @@
 				4BAA057A479749368EAEF496 /* master_yi.json */,
 			);
 			path = CardData;
+			sourceTree = "<group>";
+		};
+		E30AC5E6649148CCA7C653DA /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				534CBAAC54BE40A0A8292534 /* CardDetectionModel */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		534CBAAC54BE40A0A8292534 /* CardDetectionModel */ = {
+			isa = PBXGroup;
+			children = (
+				DBF6C0B24D384E309B541FB3 /* best.mlpackage */,
+			);
+			path = CardDetectionModel;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -157,6 +176,7 @@
 				AEAAA284B54A4B9493BD0940 /* lux.json in Resources */,
 				1DE850A028A146EF8CD2965A /* garen.json in Resources */,
 				17EEFEABA0B94E61BA799EE9 /* master_yi.json in Resources */,
+				C65BD2D963D14E48BD280043 /* best.mlpackage in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
