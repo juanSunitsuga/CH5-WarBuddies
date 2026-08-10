@@ -299,6 +299,22 @@ final class CameraPipelineController: ObservableObject {
             }
         }
 
+        // A card that's reached Trash has left play — its cached identity
+        // shouldn't linger. `object.currentZone` is already resolved
+        // against the calibrated overlay by the tracker (zoneMapper was
+        // passed into `tracker.update` above), so this is just reading
+        // that, not a second zone lookup.
+        for object in result.objects where object.currentZone == .trash {
+            cardAssignments.removeValue(forKey: object.id)
+        }
+        // Same idea for objects the tracker has fully dropped (occlusion
+        // tolerance exceeded, or it left the calibrated area entirely) —
+        // no point holding onto a cached identity for an object that's no
+        // longer being tracked at all.
+        for id in result.disappearedIDs {
+            cardAssignments.removeValue(forKey: id)
+        }
+
         // CoreMLCardDetector reports rotation = 0 always (YOLO gives no
         // true angle — see its doc comment). Recover Exhaust/Ready (rules
         // 592–593) the way the user described: compare the *observed*

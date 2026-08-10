@@ -71,19 +71,21 @@ public struct PlaymatCalibration: Sendable, Equatable {
         )
     }
 
-    /// Every template zone, mapped through this calibration into real
+    /// Every zone in `template`, mapped through this calibration into real
     /// pixel-space `BoardZone`s — feed the result straight to `ZoneMapper`.
-    /// `battlefieldSlot` is a single value because this template models
-    /// one shared Battlefield band; a physical mat with multiple distinct
-    /// Battlefield spaces would need per-region slots, which this
-    /// single-quad calibration doesn't attempt to disambiguate.
-    public func boardZones(battlefieldSlot: Int = 0) -> [BoardZone] {
-        RiftboundPlaymatTemplate.zones.map { template in
+    /// Defaults to the single-player mat layout (`RiftboundPlaymatTemplate
+    /// .singlePlayerZones()`), which is the one currently in active use.
+    /// Each zone carries its own `battlefieldSlot` now (see
+    /// `PlaymatZoneTemplate`) rather than one slot applied to every
+    /// Battlefield zone — this mat has two independent Battlefield
+    /// regions, which a single external slot couldn't disambiguate.
+    public func boardZones(template: [PlaymatZoneTemplate] = RiftboundPlaymatTemplate.singlePlayerZones()) -> [BoardZone] {
+        template.map { zoneTemplate in
             BoardZone(
-                type: template.zone,
-                polygon: template.normalizedPolygon.map(map),
-                owner: template.owner,
-                battlefieldSlot: template.zone == .battlefield ? battlefieldSlot : nil
+                type: zoneTemplate.zone,
+                polygon: zoneTemplate.normalizedPolygon.map(map),
+                owner: zoneTemplate.owner,
+                battlefieldSlot: zoneTemplate.battlefieldSlot
             )
         }
     }

@@ -7,39 +7,80 @@ import CoreGraphics
 /// the user aligns it against the camera feed.
 public struct PlaymatZoneTemplate: Sendable {
     public let zone: Zone
-    /// `nil` for the shared Battlefield band, which isn't owned by either
-    /// seat until units are actually placed there.
+    /// `nil` for zones not owned by either seat until something is
+    /// actually placed there (a Battlefield's Control is tracked at the
+    /// `GameState` level, not by this geometry).
     public let owner: Player?
     public let normalizedPolygon: [CGPoint]
+    /// Which physical Battlefield this is, for mats with more than one
+    /// Battlefield slot (this template's single-player layout has two,
+    /// side by side) — carried per-zone rather than applied externally,
+    /// since a single mat can have several Battlefield regions that need
+    /// telling apart.
+    public let battlefieldSlot: Int?
 
-    public init(zone: Zone, owner: Player?, normalizedPolygon: [CGPoint]) {
+    public init(zone: Zone, owner: Player?, normalizedPolygon: [CGPoint], battlefieldSlot: Int? = nil) {
         self.zone = zone
         self.owner = owner
         self.normalizedPolygon = normalizedPolygon
+        self.battlefieldSlot = battlefieldSlot
     }
 }
 
-/// Normalized zone geometry for a standard 2-player Riftbound playmat:
-/// each seat gets a Rune Deck / Runes / Trash row on their outer edge and
-/// a Champion / Legend / Base / Main Deck row nearer the middle, and both
-/// seats share one Battlefield band down the center. Transcribed from the
-/// official playmat layout (mirrored top/bottom around the Battlefield).
+/// Normalized playmat zone geometry. Two layouts are provided:
 ///
-/// This is a *template* — exact proportions are approximate, not
-/// pixel-measured from a specific mat. `PlaymatCalibration` (drag-to-align
-/// 4 corners against the live camera feed) is what makes it accurate for
-/// any specific physical setup; getting the template's proportions
-/// perfect isn't the point, since it's never used un-calibrated.
+///   - `singlePlayerZones(owner:)` — a one-player accessory mat with two
+///     side-by-side Battlefield slots, a Champion/Legend/Base/Main Deck
+///     row, and a Rune Deck/Runes/Trash row (matches the reference mat
+///     photo this was transcribed from — an Epic Upgrades-style mat, not
+///     the official 2-player Riftbound mat). This is the default/active
+///     template — calibrating one player's half at a time, per the
+///     current scope.
+///   - `twoPlayerZones` — the original official-mat layout (mirrored
+///     halves sharing one Battlefield band). Kept for when 2-player
+///     calibration is worth adding back; not currently wired into the app.
+///
+/// Both are *templates* — exact proportions are approximate, not
+/// pixel-measured. `PlaymatCalibration` (drag-to-align 4 corners against
+/// the live camera feed) is what makes either one accurate for a specific
+/// physical setup; the template's proportions don't need to be perfect
+/// since it's never used un-calibrated.
 public enum RiftboundPlaymatTemplate {
-    public static let zones: [PlaymatZoneTemplate] = farRow + [battlefield] + nearRow
-
     private static func rect(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat) -> [CGPoint] {
         [CGPoint(x: x0, y: y0), CGPoint(x: x1, y: y0), CGPoint(x: x1, y: y1), CGPoint(x: x0, y: y1)]
     }
 
+    // MARK: - Single player (active default)
+
+    /// `owner` is whichever seat this specific physical mat belongs to —
+    /// defaults to `.player1` since a single camera/mat calibration is
+    /// inherently "whoever's mat this is," not necessarily the near seat.
+    public static func singlePlayerZones(owner: Player = .player1) -> [PlaymatZoneTemplate] {
+        [
+            // Battlefield row — two independent slots, side by side.
+            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(0.09, 0.10, 0.505, 0.37), battlefieldSlot: 0),
+            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(0.515, 0.10, 0.94, 0.37), battlefieldSlot: 1),
+
+            // Champion / Legend / Base / Main Deck row.
+            PlaymatZoneTemplate(zone: .champion, owner: owner, normalizedPolygon: rect(0.09, 0.40, 0.205, 0.62)),
+            PlaymatZoneTemplate(zone: .legend, owner: owner, normalizedPolygon: rect(0.215, 0.40, 0.335, 0.62)),
+            PlaymatZoneTemplate(zone: .base, owner: owner, normalizedPolygon: rect(0.345, 0.40, 0.825, 0.62)),
+            PlaymatZoneTemplate(zone: .mainDeck, owner: owner, normalizedPolygon: rect(0.835, 0.40, 0.94, 0.62)),
+
+            // Rune Deck / Runes / Trash row.
+            PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: rect(0.09, 0.635, 0.205, 0.855)),
+            PlaymatZoneTemplate(zone: .runeArea, owner: owner, normalizedPolygon: rect(0.215, 0.635, 0.825, 0.855)),
+            PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: rect(0.835, 0.635, 0.94, 0.855))
+        ]
+    }
+
+    // MARK: - Two player (not currently wired in)
+
+    public static let twoPlayerZones: [PlaymatZoneTemplate] = twoPlayerFarRow + [twoPlayerBattlefield] + twoPlayerNearRow
+
     /// Player 2's half — the far side of the mat as the camera sees it
     /// (top of frame), rows nearest the top edge first.
-    private static let farRow: [PlaymatZoneTemplate] = [
+    private static let twoPlayerFarRow: [PlaymatZoneTemplate] = [
         PlaymatZoneTemplate(zone: .trash, owner: .player2, normalizedPolygon: rect(0.00, 0.00, 0.18, 0.16)),
         PlaymatZoneTemplate(zone: .runeArea, owner: .player2, normalizedPolygon: rect(0.18, 0.00, 0.82, 0.16)),
         PlaymatZoneTemplate(zone: .runeDeck, owner: .player2, normalizedPolygon: rect(0.82, 0.00, 1.00, 0.16)),
@@ -52,15 +93,16 @@ public enum RiftboundPlaymatTemplate {
     /// Shared, not owned by either seat until a Unit is actually placed —
     /// Control (181) is tracked per-Battlefield at the `GameState` level,
     /// not by this geometry.
-    private static let battlefield = PlaymatZoneTemplate(
+    private static let twoPlayerBattlefield = PlaymatZoneTemplate(
         zone: .battlefield,
         owner: nil,
-        normalizedPolygon: rect(0.00, 0.32, 1.00, 0.68)
+        normalizedPolygon: rect(0.00, 0.32, 1.00, 0.68),
+        battlefieldSlot: 0
     )
 
     /// Player 1's half — the near side of the mat (bottom of frame),
-    /// mirrored from `farRow`.
-    private static let nearRow: [PlaymatZoneTemplate] = [
+    /// mirrored from `twoPlayerFarRow`.
+    private static let twoPlayerNearRow: [PlaymatZoneTemplate] = [
         PlaymatZoneTemplate(zone: .champion, owner: .player1, normalizedPolygon: rect(0.00, 0.68, 0.12, 0.84)),
         PlaymatZoneTemplate(zone: .legend, owner: .player1, normalizedPolygon: rect(0.12, 0.68, 0.24, 0.84)),
         PlaymatZoneTemplate(zone: .base, owner: .player1, normalizedPolygon: rect(0.24, 0.68, 0.76, 0.84)),
