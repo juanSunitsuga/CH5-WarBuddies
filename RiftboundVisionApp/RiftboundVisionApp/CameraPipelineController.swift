@@ -61,6 +61,29 @@ final class CameraPipelineController: ObservableObject {
     @Published var cardAssignments: [TrackedObjectID: CardPrinting] = [:]
     let cardDatabase = CardDatabaseLoader.loadBundled()
 
+    /// "Highlight the N Runes that need to be exhausted, don't move on
+    /// until the player's actually exhausted them" — set by
+    /// `beginPlayingCard(objectID:)`, cleared automatically once every
+    /// required Rune's *observed* rotation reads Exhausted (see
+    /// `process(_:)`), or manually via `cancelPendingPlay()`.
+    @Published var pendingPlay: PendingCardPlay?
+
+    /// Rotation only ever lands on exactly `0` or `.pi / 2` (see
+    /// `process(_:)`'s orientation-derived rotation) — this threshold just
+    /// needs to sit cleanly between the two.
+    private static let exhaustedRotationThreshold: CGFloat = .pi / 4
+
+    struct PendingCardPlay: Equatable {
+        let cardObjectID: TrackedObjectID
+        let cardName: String
+        let cost: Int
+        /// Fixed at the moment play begins — which specific physical
+        /// Runes were chosen to pay for it. Doesn't change even if new
+        /// Runes appear afterward; the player exhausts *these*, not "any
+        /// N Runes."
+        let requiredRuneIDs: [TrackedObjectID]
+    }
+
     private let camera = AVFoundationCameraCapture()
     private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
     private let tracker = ObjectTracker()
@@ -121,6 +144,57 @@ final class CameraPipelineController: ObservableObject {
 
     func assignCard(_ printing: CardPrinting, to objectID: TrackedObjectID) {
         cardAssignments[objectID] = printing
+    }
+
+    /// Starts the "pay this card's Energy cost" flow: picks `cost`
+    /// currently-Ready, identified Runes and highlights them (via
+    /// `pendingPlay`/`ExhaustPromptOverlayView`) as the ones the player
+    /// must physically exhaust. Rule 156.1: Energy has no Domain, so any
+    /// Ready Rune counts — which specific ones get chosen doesn't matter
+    /// rules-wise, only the count does.
+    func beginPlayingCard(objectID: TrackedObjectID) {
+        guard let printing = cardAssignments[objectID] else {
+            errorMessage = "This card hasn't been identified yet."
+            return
+        }
+        guard let cost = printing.attributes.energy, cost > 0 else {
+            errorMessage = "\(printing.name) has no Energy cost to pay."
+            return
+        }
+
+        let readyRunes = snapshot.objects.filter { object in
+            object.type == .rune
+                && object.id != objectID
+                && cardAssignments[object.id] != nil
+                && object.rotation < Self.exhaustedRotationThreshold
+        }
+
+        guard readyRunes.count >= cost else {
+            errorMessage = "Need \(cost) Ready Rune\(cost == 1 ? "" : "s") to play \(printing.name) — only \(readyRunes.count) identified and Ready right now."
+            return
+        }
+
+        pendingPlay = PendingCardPlay(
+            cardObjectID: objectID,
+            cardName: printing.name,
+            cost: cost,
+            requiredRuneIDs: Array(readyRunes.prefix(cost)).map(\.id)
+        )
+        errorMessage = nil
+    }
+
+    func cancelPendingPlay() {
+        pendingPlay = nil
+    }
+
+    /// `(exhaustedSoFar, total)` against the *current* frame — drives the
+    /// overlay's progress text. `nil` when there's no pending play.
+    var pendingPlayProgress: (done: Int, total: Int)? {
+        guard let pendingPlay else { return nil }
+        let done = pendingPlay.requiredRuneIDs.filter { id in
+            (snapshot.objects.first { $0.id == id }?.rotation ?? 0) >= Self.exhaustedRotationThreshold
+        }.count
+        return (done, pendingPlay.requiredRuneIDs.count)
     }
 
     /// Re-scans for available cameras. Called automatically on
@@ -343,5 +417,16 @@ final class CameraPipelineController: ObservableObject {
             latestEvent: events.last ?? snapshot.latestEvent,
             frameSize: frameSize
         )
+
+        // "Don't continue until the player's finished exhausting the
+        // highlighted Runes": check every required Rune's *this-frame*
+        // rotation. A Rune that's disappeared from tracking entirely
+        // isn't found, and `?? 0` treats that as still-Ready — a vanished
+        // Rune should never silently count as exhausted.
+        if let pendingPlay, pendingPlay.requiredRuneIDs.allSatisfy({ id in
+            (adjustedObjects.first { $0.id == id }?.rotation ?? 0) >= Self.exhaustedRotationThreshold
+        }) {
+            self.pendingPlay = nil
+        }
     }
 }

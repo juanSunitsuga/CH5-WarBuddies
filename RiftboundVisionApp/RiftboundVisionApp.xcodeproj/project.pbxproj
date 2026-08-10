@@ -20,6 +20,7 @@
 		17EEFEABA0B94E61BA799EE9 /* master_yi.json in Resources */ = {isa = PBXBuildFile; fileRef = 4BAA057A479749368EAEF496 /* master_yi.json */; };
 		C65BD2D963D14E48BD280043 /* best.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = DBF6C0B24D384E309B541FB3 /* best.mlpackage */; };
 		C427EAAA0BF04C90A9681A5E /* CardDetectionModelLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B1739578D24342BFE1DCA0 /* CardDetectionModelLoader.swift */; };
+		9601CB845C88415C82D29830 /* ExhaustPromptOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D6FC4754DAB4C52AC9D1101 /* ExhaustPromptOverlayView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +38,7 @@
 		4BAA057A479749368EAEF496 /* master_yi.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = master_yi.json; sourceTree = "<group>"; };
 		DBF6C0B24D384E309B541FB3 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
 		C3B1739578D24342BFE1DCA0 /* CardDetectionModelLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetectionModelLoader.swift; sourceTree = "<group>"; };
+		1D6FC4754DAB4C52AC9D1101 /* ExhaustPromptOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExhaustPromptOverlayView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,6 +79,7 @@
 				3A346DD992724AC597E319E5 /* TrackedCardsPanel.swift */,
 				3331D3BCD484492BA4DC4050 /* CardDatabaseLoader.swift */,
 				C3B1739578D24342BFE1DCA0 /* CardDetectionModelLoader.swift */,
+				1D6FC4754DAB4C52AC9D1101 /* ExhaustPromptOverlayView.swift */,
 				91954CFFD8744AD891AB10D4 /* CardData */,
 				E30AC5E6649148CCA7C653DA /* Resources */,
 				76363767637E4BB6B3E788C4 /* Info.plist */,
@@ -197,6 +200,7 @@
 				24A944E8E58A47F8B3974363 /* TrackedCardsPanel.swift in Sources */,
 				627F18754982492DAC803B7F /* CardDatabaseLoader.swift in Sources */,
 				C427EAAA0BF04C90A9681A5E /* CardDetectionModelLoader.swift in Sources */,
+				9601CB845C88415C82D29830 /* ExhaustPromptOverlayView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
