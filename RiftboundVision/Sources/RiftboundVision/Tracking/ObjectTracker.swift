@@ -32,6 +32,12 @@ public struct TrackerUpdateResult: Sendable {
     public let objects: [TrackedObject]
     public let appearedIDs: [TrackedObjectID]
     public let disappearedIDs: [TrackedObjectID]
+
+    public init(objects: [TrackedObject], appearedIDs: [TrackedObjectID], disappearedIDs: [TrackedObjectID]) {
+        self.objects = objects
+        self.appearedIDs = appearedIDs
+        self.disappearedIDs = disappearedIDs
+    }
 }
 
 /// Answers "which physical object is this," not "what card is this."

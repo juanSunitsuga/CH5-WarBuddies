@@ -1,4 +1,15 @@
 import Foundation
+import CoreGraphics
+
+/// The printed shape of the card — "portrait" for everything that isn't a
+/// Battlefield, "landscape" for Battlefields (confirmed against the
+/// bundled deck data: every non-Battlefield type observed is portrait).
+/// This is what makes `isExhausted(observedBoundingBox:)` possible without
+/// a true rotation-angle signal — see its doc comment.
+public enum CardOrientation: String, Sendable, Decodable, Equatable {
+    case portrait
+    case landscape
+}
 
 /// One printed version of a Riftbound card — matches the shape returned by
 /// the riftcodex.com card API (see `decode.js` in the deck-export tooling
@@ -15,6 +26,7 @@ public struct CardPrinting: Sendable, Decodable, Equatable, Identifiable {
     public let text: CardText
     public let set: CardSet
     public let media: CardMedia
+    public let orientation: CardOrientation
 
     public struct Attributes: Sendable, Decodable, Equatable {
         /// Rule 130.2: printed Energy cost.
@@ -57,8 +69,24 @@ public struct CardPrinting: Sendable, Decodable, Equatable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, attributes, classification, text, set, media
+        case id, name, attributes, classification, text, set, media, orientation
         case riftboundID = "riftbound_id"
         case collectorNumber = "collector_number"
+    }
+}
+
+extension CardPrinting {
+    /// Rule 592/593: an Exhausted card is rotated 90° from its printed
+    /// orientation. `CoreMLCardDetector` only gives axis-aligned boxes (no
+    /// true rotation angle — see its doc comment), but that's actually
+    /// enough once the card is identified: compare the *observed* box's
+    /// long axis against this card's *printed* orientation. A portrait
+    /// card observed as a wide box (or a landscape card observed as a
+    /// tall box) has been rotated 90° — Exhausted. Matching axes means
+    /// Ready.
+    public func isExhausted(observedBoundingBox box: CGRect) -> Bool {
+        let observedIsTall = box.height > box.width
+        let printedIsPortrait = orientation == .portrait
+        return observedIsTall != printedIsPortrait
     }
 }

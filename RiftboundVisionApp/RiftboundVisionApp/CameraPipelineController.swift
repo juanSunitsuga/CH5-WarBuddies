@@ -283,13 +283,15 @@ final class CameraPipelineController: ObservableObject {
             previousTimestamp: previousTimestamp
         )
         previousTimestamp = frame.timestamp
-        let events = temporalDetector.process(result, zoneMapper: zoneMapper, timestamp: frame.timestamp)
 
         // Real recognition, when `detector` is a `CoreMLCardDetector`:
         // a track carrying a `recognizedLabel` gets looked up in
         // `cardDatabase` and auto-assigned exactly once — first
         // successful recognition wins, so later frames don't flicker
         // between near-tied class guesses for the same physical card.
+        // Runs *before* the rotation pass below since Exhaust/Ready
+        // detection needs to know the card's printed orientation, which
+        // only exists once it's identified.
         for object in result.objects {
             guard let label = object.recognizedLabel, cardAssignments[object.id] == nil else { continue }
             if let printing = cardDatabase.printing(approximatelyNamed: label) {
@@ -297,11 +299,31 @@ final class CameraPipelineController: ObservableObject {
             }
         }
 
+        // CoreMLCardDetector reports rotation = 0 always (YOLO gives no
+        // true angle — see its doc comment). Recover Exhaust/Ready (rules
+        // 592–593) the way the user described: compare the *observed*
+        // bounding box's long axis against the *printed* orientation from
+        // the card database, once the object is identified. Unidentified
+        // objects keep whatever rotation the detector actually reported
+        // (0 for CoreMLCardDetector, a real angle for VisionRectangleDetector).
+        var adjustedObjects = result.objects
+        for index in adjustedObjects.indices {
+            guard let printing = cardAssignments[adjustedObjects[index].id] else { continue }
+            let isExhausted = printing.isExhausted(observedBoundingBox: adjustedObjects[index].boundingBox)
+            adjustedObjects[index].rotation = isExhausted ? .pi / 2 : 0
+        }
+        let adjustedResult = TrackerUpdateResult(
+            objects: adjustedObjects,
+            appearedIDs: result.appearedIDs,
+            disappearedIDs: result.disappearedIDs
+        )
+        let events = temporalDetector.process(adjustedResult, zoneMapper: zoneMapper, timestamp: frame.timestamp)
+
         let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
 
         backgroundImage = cgImage
         snapshot = DebugFrameSnapshot(
-            objects: result.objects,
+            objects: adjustedObjects,
             latestEvent: events.last ?? snapshot.latestEvent,
             frameSize: frameSize
         )
