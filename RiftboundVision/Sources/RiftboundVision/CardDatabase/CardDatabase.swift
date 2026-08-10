@@ -51,4 +51,21 @@ public struct CardDatabase: Sendable {
     public var allPrintings: [CardPrinting] {
         printingsByRiftboundID.values.sorted { $0.name < $1.name }
     }
+
+    /// Looks up a card by name after stripping everything but letters and
+    /// digits and lowercasing both sides — e.g. `CoreMLCardDetector`'s
+    /// YOLO label "Annie Fiery" and this database's printed name
+    /// "Annie - Fiery" both normalize to "anniefiery" and match. A
+    /// recognizer's label vocabulary is whatever its training data used
+    /// (with or without hyphens/parentheses), which won't necessarily be
+    /// byte-for-byte identical to this database's `name` field, so an
+    /// exact-string lookup would silently miss real matches.
+    public func printing(approximatelyNamed name: String) -> CardPrinting? {
+        let target = Self.normalize(name)
+        return printingsByRiftboundID.values.first { Self.normalize($0.name) == target }
+    }
+
+    private static func normalize(_ string: String) -> String {
+        String(string.lowercased().filter { $0.isLetter || $0.isNumber })
+    }
 }

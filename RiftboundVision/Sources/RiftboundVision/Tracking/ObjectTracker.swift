@@ -10,13 +10,17 @@ public struct Detection: Sendable {
     public let boundingBox: CGRect
     public let rotation: CGFloat
     public let confidence: Float
+    /// See `TrackedObject.recognizedLabel` — carried through unchanged by
+    /// the tracker onto whichever track this detection matches.
+    public let recognizedLabel: String?
 
-    public init(type: ObjectType, center: CGPoint, boundingBox: CGRect, rotation: CGFloat, confidence: Float) {
+    public init(type: ObjectType, center: CGPoint, boundingBox: CGRect, rotation: CGFloat, confidence: Float, recognizedLabel: String? = nil) {
         self.type = type
         self.center = center
         self.boundingBox = boundingBox
         self.rotation = rotation
         self.confidence = confidence
+        self.recognizedLabel = recognizedLabel
     }
 }
 
@@ -109,6 +113,12 @@ public final class ObjectTracker: @unchecked Sendable {
             track.lastSeenFrame = frameIndex
             track.previousZone = track.currentZone
             track.currentZone = zoneMapper.zone(for: detection.center)
+            // A recognizer's label is trusted the moment it's supplied;
+            // a `nil` from a non-recognizing detector should not erase a
+            // previously-recognized label for the same physical object.
+            if let recognizedLabel = detection.recognizedLabel {
+                track.recognizedLabel = recognizedLabel
+            }
             tracked[pair.trackID] = track
         }
         remainingDetections.removeAll { claimedDetectionIndices.contains($0.offset) }
@@ -129,7 +139,8 @@ public final class ObjectTracker: @unchecked Sendable {
                 velocity: .zero,
                 confidence: detection.confidence,
                 isVisible: true,
-                lastSeenFrame: frameIndex
+                lastSeenFrame: frameIndex,
+                recognizedLabel: detection.recognizedLabel
             )
             appearedIDs.append(id)
         }

@@ -62,7 +62,7 @@ final class CameraPipelineController: ObservableObject {
     let cardDatabase = CardDatabaseLoader.loadBundled()
 
     private let camera = AVFoundationCameraCapture()
-    private let detector = VisionRectangleDetector()
+    private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
     private let tracker = ObjectTracker()
     private let temporalDetector = TemporalEventDetector()
     private let ciContext = CIContext()
@@ -284,6 +284,18 @@ final class CameraPipelineController: ObservableObject {
         )
         previousTimestamp = frame.timestamp
         let events = temporalDetector.process(result, zoneMapper: zoneMapper, timestamp: frame.timestamp)
+
+        // Real recognition, when `detector` is a `CoreMLCardDetector`:
+        // a track carrying a `recognizedLabel` gets looked up in
+        // `cardDatabase` and auto-assigned exactly once — first
+        // successful recognition wins, so later frames don't flicker
+        // between near-tied class guesses for the same physical card.
+        for object in result.objects {
+            guard let label = object.recognizedLabel, cardAssignments[object.id] == nil else { continue }
+            if let printing = cardDatabase.printing(approximatelyNamed: label) {
+                cardAssignments[object.id] = printing
+            }
+        }
 
         let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
 
