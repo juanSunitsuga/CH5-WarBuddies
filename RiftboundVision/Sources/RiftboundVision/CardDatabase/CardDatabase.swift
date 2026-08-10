@@ -1,0 +1,54 @@
+import Foundation
+
+/// An in-memory index of known card printings, built from one or more
+/// exported deck files (`RiftboundDeckFile`). This is intentionally a
+/// small, static lookup table, not a live API client — the app decides
+/// what data to load it with (bundled JSON, a future full card-pool
+/// export, whatever). Card *recognition* (photo → which card) is a
+/// separate, not-yet-built concern; this only answers "what do we know
+/// about card X once something says it's card X" — see
+/// `RecognizedCard`/`ExpertSystemAdapter.identify(objectID:as:)` for the
+/// identity side of that seam.
+public struct CardDatabase: Sendable {
+    public let printingsByRiftboundID: [String: CardPrinting]
+
+    public init(deckFiles: [RiftboundDeckFile]) {
+        var index: [String: CardPrinting] = [:]
+        for file in deckFiles {
+            let allEntries = file.legend + file.runes + file.battlefields + file.mainDeck
+            for entry in allEntries {
+                for printing in entry.printings {
+                    index[printing.riftboundID] = printing
+                }
+            }
+        }
+        self.printingsByRiftboundID = index
+    }
+
+    /// Decodes and merges deck files directly from JSON `Data` — the usual
+    /// entry point for an app bundling bundled `.json` deck exports.
+    public init(jsonDeckFiles: [Data]) throws {
+        let decoder = JSONDecoder()
+        let files = try jsonDeckFiles.map { try decoder.decode(RiftboundDeckFile.self, from: $0) }
+        self.init(deckFiles: files)
+    }
+
+    public func printing(riftboundID: String) -> CardPrinting? {
+        printingsByRiftboundID[riftboundID]
+    }
+
+    /// Case-insensitive substring match on name — backs a manual "assign
+    /// this tracked object to a card" picker, standing in for real
+    /// recognition until that exists.
+    public func search(_ query: String) -> [CardPrinting] {
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
+        let lowercasedQuery = query.lowercased()
+        return printingsByRiftboundID.values
+            .filter { $0.name.lowercased().contains(lowercasedQuery) }
+            .sorted { $0.name < $1.name }
+    }
+
+    public var allPrintings: [CardPrinting] {
+        printingsByRiftboundID.values.sorted { $0.name < $1.name }
+    }
+}

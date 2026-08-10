@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Claude Code local (per-developer, not shared) settings
+**/.claude/settings.local.json
+**/CLAUDE.md
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Xcode workspace user state (keep the workspace itself, ignore per-user data)
+project.xcworkspace/xcuserdata/
+
+# CocoaPods / Carthage (unused here, but harmless to exclude if introduced later)
+Pods/
+Carthage/Build/

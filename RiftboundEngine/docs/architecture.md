@@ -1,0 +1,199 @@
+# Riftbound Expert System — Architecture Design
+
+## 0. Framing
+
+The rulebook already gives you a formal grammar to build against:
+
+- **Zones** (106–107): Base, Battlefield Zone, Facedown Zone, Legend Zone, Trash, Champion Zone, Main Deck, Rune Deck, Banishment, Hand
+- **States** (507–510): Neutral/Showdown × Open/Closed — 4 combinations that gate what actions are legal
+- **The Chain** (532–544): a stack-based resolution structure for spells/abilities
+- **Showdowns** (545–553): windows of opportunity nested inside combat or standalone
+- **Layers** (634–639): deterministic ordering for effects that alter traits/abilities/numbers
+- **Cleanup** (518–526): the state-based-action sweep that runs after every discrete event
+
+This means your expert system isn't really "validate this specific move" — it's **a state machine that mirrors these constructs exactly**, with a validator sitting on top of it. If you model Chain/Showdown/Cleanup faithfully, most "is this legal?" questions answer themselves because illegal states simply can't be constructed.
+
+## 1. Layered System Overview
+
+```
+┌─────────────────────────────────────────────┐
+│  Physical Table (OCR + Object Tracking)      │  ← your existing layer
+└───────────────────┬───────────────────────────┘
+                     │ raw observations (card X now at zone Y, exhausted/ready)
+                     ▼
+┌─────────────────────────────────────────────┐
+│  Event Ingestion / Reconciliation Layer      │  ← NEW
+│  - diffs observed board state vs expected    │
+│  - maps observation → candidate Game Action  │
+└───────────────────┬───────────────────────────┘
+                     │ candidate GameAction
+                     ▼
+┌─────────────────────────────────────────────┐
+│  Legality Validator                          │  ← NEW (core of "expert system")
+│  - checks action against current GameState   │
+│  - references rules 587–615 (Game Actions)   │
+└───────────────────┬───────────────────────────┘
+                     │ accepted GameAction
+                     ▼
+┌─────────────────────────────────────────────┐
+│  State Machine (Turn/Phase/Chain/Showdown)   │  ← NEW
+│  - owns GameState (single source of truth)   │
+│  - applies action, runs Cleanup sweep         │
+└───────────────────┬───────────────────────────┘
+                     │ triggers "ability text needs resolving"
+                     ▼
+┌─────────────────────────────────────────────┐
+│  Ability Resolution Pipeline                 │  ← plugs into your NLP layer
+│  - NLP parses card text → structured Effect  │
+│  - Effect executed against GameState          │
+└───────────────────┬───────────────────────────┘
+                     │ resulting state diff
+                     ▼
+┌─────────────────────────────────────────────┐
+│  Instruction / Feedback Layer                │  ← NEW
+│  - tells player what to physically do next    │
+│  - flags illegal moves already made physically│
+└─────────────────────────────────────────────┘
+```
+
+The key architectural decision: **GameState is the single source of truth, and the physical table is treated as an untrusted client that proposes actions.** OCR doesn't drive the state directly — it proposes deltas, the validator accepts/rejects them, and only accepted deltas mutate GameState. This is what lets you catch a player physically making an illegal move (e.g. moving a unit to an already-2-controlled battlefield) and flag it instead of silently corrupting your model.
+
+## 2. Core Data Model
+
+```swift
+// Game Objects (rule 119–123) — everything that can produce effects or be a target
+protocol GameObject: Identifiable {
+    var id: ObjectID { get }
+    var owner: PlayerID { get }
+    var controller: PlayerID { get set }   // rule 179–183, Control ≠ Ownership
+}
+
+struct Unit: GameObject {
+    var id: ObjectID
+    var owner: PlayerID
+    var controller: PlayerID
+    var cardDefinitionID: CardDefID   // links to NLP-parsed ability text
+    var location: Location            // Base or a specific Battlefield
+    var isExhausted: Bool
+    var damage: Int
+    var buff: Bool                    // rule 701–705, max 1 buff
+    var temporaryKeywords: [Keyword]  // granted this turn, cleared at Expiration Step
+}
+
+enum Location: Hashable {
+    case base(PlayerID)
+    case battlefield(BattlefieldID)
+    // NOT hand/deck/trash — those are card-level zones, not "locations" per rule 106
+}
+
+// Zones as explicit containers, not just implicit groupings
+struct PlayerZones {
+    var hand: [MainDeckCard]
+    var mainDeck: [MainDeckCard]      // ordered, secret (127.3)
+    var runeDeck: [RuneCard]          // ordered, secret
+    var trash: [Card]                 // unordered, public
+    var banishment: [Card]            // unordered, public
+    var legendZone: ChampionLegend
+    var championZone: ChampionUnit?   // empty once played to board
+    var runePool: RunePool            // ephemeral, empties at Draw Phase end + turn end
+}
+```
+
+**Important subtlety from the rules to bake in early:** `Card` (154.1, 176) is *not* the same category as `GameObject`. Runes, Legends, Battlefields are Game Objects but not "cards" per rule 052 — lots of card text says "card" and means something narrower than what's on the board. If you conflate these in your type system you'll misfire triggers like Legion (724) which counts "Main Deck cards played," not any game object entering play.
+
+## 3. State Machine
+
+Model the four states explicitly (507–510) rather than as booleans scattered around:
+
+```swift
+enum TurnState {
+    case neutralOpen
+    case neutralClosed(chain: Chain)
+    case showdownOpen(showdown: Showdown)
+    case showdownClosed(showdown: Showdown, chain: Chain)
+}
+```
+
+This single enum answers "what can be played right now" (508–510) almost for free — pattern-match on it, and each case has a known legal-action set (only Reaction in Closed states, only Action/Reaction in Showdown states, anything on your turn in Neutral Open).
+
+### The Chain (532–544)
+
+This is a literal stack:
+
+```swift
+final class Chain {
+    private(set) var items: [ChainItem] = []   // last = next to resolve
+    private(set) var activePlayer: PlayerID
+    private(set) var passedPlayers: Set<PlayerID> = []
+
+    func add(_ item: ChainItem) { items.append(item); passedPlayers.removeAll() }
+    func pass(_ player: PlayerID) -> ChainResolution { ... }  // rule 540.4
+}
+```
+
+Resolve top-down (543.1), re-derive Relevant Players and require a full pass-around before popping (539–542). This is the single most important piece to get exactly right — Reactions (725), Legion timing, and combat trigger ordering all depend on Chain semantics being correct, not approximated.
+
+### Showdowns (545–553)
+
+A Showdown is a distinct nested structure, not just "combat" — it also fires on moving into an empty contested battlefield (516.5.b). Model it as its own object holding `focusPlayer`, `relevantPlayers`, and an optional owned `Chain` for its Initial Chain (551).
+
+### Cleanup (518–526)
+
+This is your **state-based action sweep** — run it after every: Chain item resolves, Move completes, Showdown completes, Combat completes. It's not optional bookkeeping; rules like Battlefield control changes, lethal-damage kills, and Pending Combat detection all *only* happen inside Cleanup. Implement it as a single pure function `func cleanup(_ state: GameState) -> GameState` you call religiously after every mutation — this is the piece most engines get subtly wrong by inlining ad hoc versions of it in five different places.
+
+## 4. Ability Resolution Pipeline (where your NLP plugs in)
+
+Your NLP layer should output a structured `Effect`, not free text:
+
+```swift
+enum EffectInstruction {
+    case dealDamage(amount: Int, targets: TargetSpec)
+    case draw(count: Int)
+    case discard(count: Int)
+    case buff(targets: TargetSpec)
+    case moveUnit(unit: TargetSpec, destination: LocationSpec)
+    case channelRune(count: Int, exhausted: Bool)
+    // ... one case per Game Action in section 590–607 (Draw, Exhaust, Ready,
+    //     Recycle, Play, Move, Hide, Discard, Stun, Reveal, Counter, Buff,
+    //     Banish, Kill, Add, Channel, Burn Out)
+}
+```
+
+This is a strong design constraint worth committing to: **section 590–607 of the rulebook enumerates a closed set of Game Actions.** Your NLP's job is to map arbitrary card text onto *only* those primitives. If your NLP tries to output something outside that vocabulary, that's a signal the parse failed, not a new game action — the engine should reject/flag it for human review rather than execute unknown behavior.
+
+Execution then follows the exact resolution steps already defined:
+- Targeting/mistargeting rules (559.3.c) — re-validate legality at *resolution* time, not just at declaration time (a target can become illegal mid-chain)
+- Layers (634–639) for anything that alters traits/abilities/numbers, applied in Trait → Ability → Arithmetic order, with dependency-based ordering within a layer
+- Replacement effects (571–575) intercept before the effect they modify executes — implement as a filter function that runs *before* your normal effect executor, not as a special case inside it
+
+## 5. Legality Validator
+
+This is the layer that talks to OCR/tracking. Its job: given `GameState` + a proposed `GameAction`, return `.legal` or `.illegal(reason)`. Since Discretionary Actions (589.1) are the ones players choose to take physically, this is what you're validating in real time:
+
+- Standard Move (140): is destination a Base/Battlefield the unit can legally reach, is it already occupied by 2 other players' units (140.4.a.1), is the unit exhausted already
+- Playing a card (554–563): can they pay the cost (Rune Pool sufficiency), is the state Open, is it their priority window
+- Combat legality (623): no 3-player combats, Pending/in-progress battlefields are invalid destinations for outside players
+
+Because OCR gives you physical ground truth (card moved from base to battlefield X), your validator's most valuable job is actually **reverse-inference**: given an observed delta, find which legal GameAction (if any) explains it, and reject/flag deltas that don't correspond to any legal action — that's your primary anti-cheat/mistake-catching mechanism, more than pre-approving moves.
+
+## 6. Swift/macOS Implementation Notes
+
+Given your Swift 6 strict-concurrency experience from PlantPal:
+
+- **Model `GameState` as an actor.** All mutations (Chain pushes/pops, Cleanup, effect application) go through it serially — this avoids the exact class of races you dealt with in CoreBluetooth handling, and matters more here since OCR events, NLP resolution, and user-facing instructions are all separate async producers.
+- **Make `GameState` itself a `Codable` value type snapshotted inside the actor**, so you can trivially serialize state for replay/debugging/undo (useful for a physical-table app, since players will make mistakes and want to roll back).
+- **Effects and Chain items as an enum, not a class hierarchy** — matches the closed-set nature of section 590–607 and makes exhaustive `switch` your friend for correctness (compiler yells if you add a new Game Action and forget to handle it somewhere).
+- Keep the **OCR/NLP integration behind protocols** (`BoardObserving`, `CardTextParsing`) so you can swap in fixtures/mocks for testing rule logic without needing the camera pipeline running — you'll want to unit-test Chain/Showdown/Cleanup extensively against known rules examples (the rulebook is full of worked examples, e.g. 559.3.c.5, 594.5, 638 — these make excellent test cases verbatim).
+
+## 7. Suggested Build Order
+
+1. Core types (GameObject/Zones/Location) + static deck/board setup (rules 100–184)
+2. Turn phase state machine, no Chain yet — just Awaken → Beginning → Channel → Draw → Action → End (515–517)
+3. Chain + priority passing (532–544), tested against Reaction-timing examples in the rulebook
+4. Showdown + Combat steps (545–553, 620–628) — this is the most rule-dense area, budget the most test time here
+5. Cleanup as a first-class function, wired in everywhere
+6. Legality Validator for Standard Move + Play Card only
+7. Effect execution pipeline + Layers, starting with a handful of real cards manually encoded (skip NLP at first — hardcode Jinx/a few commons to validate the pipeline shape)
+8. Wire in NLP output → EffectInstruction mapping
+9. Wire in OCR/tracking → GameAction inference
+10. Feedback/instruction UI layer
