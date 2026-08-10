@@ -39,10 +39,19 @@ public struct PlaymatOverlayView: View {
                     context.stroke(path, with: .color(color(for: zoneTemplate.zone)), lineWidth: 1.5)
 
                     if showLabels, let centroid = centroid(of: points) {
-                        context.draw(
-                            Text(label(for: zoneTemplate)).font(.system(size: 10)).foregroundStyle(.white),
-                            at: centroid
-                        )
+                        // `GraphicsContext.draw` needs a plain `Text` —
+                        // `.shadow` (and most other view modifiers) widen
+                        // it to `some View`, which doesn't fit that
+                        // overload. Fake a legible outline instead by
+                        // drawing the same text in black, offset a couple
+                        // points in each direction, underneath the white
+                        // text — keeps it readable over any background
+                        // color the zone happens to be drawn in.
+                        let text = Text(label(for: zoneTemplate)).font(.system(size: 28, weight: .bold))
+                        for offset in [CGPoint(x: -1.5, y: -1.5), CGPoint(x: 1.5, y: -1.5), CGPoint(x: -1.5, y: 1.5), CGPoint(x: 1.5, y: 1.5)] {
+                            context.draw(text.foregroundStyle(.black), at: CGPoint(x: centroid.x + offset.x, y: centroid.y + offset.y))
+                        }
+                        context.draw(text.foregroundStyle(.white), at: centroid)
                     }
                 }
 
