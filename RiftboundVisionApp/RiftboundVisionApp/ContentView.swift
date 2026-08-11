@@ -12,7 +12,10 @@ struct ContentView: View {
     @StateObject private var pipeline = CameraPipelineController()
 
     var body: some View {
-        HStack(spacing: 0) {
+        VStack(spacing: 0) {
+            GameStateBar(gameState: $pipeline.gameState)
+
+            HStack(spacing: 0) {
             GeometryReader { proxy in
                 ZStack {
                     Color.black
@@ -85,6 +88,7 @@ struct ContentView: View {
             // The SpellTable-style sidebar: tracked cards, grouped by
             // which seat they're currently on, click for info.
             TrackedCardsPanel(pipeline: pipeline)
+            }
         }
         .frame(minWidth: 1160, minHeight: 675)
         .toolbar {

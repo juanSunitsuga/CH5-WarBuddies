@@ -45,6 +45,24 @@ public enum Zone: String, Sendable, Equatable, Codable, CaseIterable {
         default: return nil
         }
     }
+
+    /// A card that's reached Battlefield, Rune Area, or Rune Deck doesn't
+    /// move under normal play — a Unit stays on its Battlefield until it
+    /// leaves play entirely (kill/banish/recycle, not a same-zone shuffle),
+    /// and Runes sit in the Rune Deck or Rune Area only ever rotating in
+    /// place (Exhaust/Ready). `CameraPipelineController` uses this to
+    /// relax how hard it works re-confirming these objects are still
+    /// there — see its detection-cadence throttle and
+    /// `ObjectTracker.settledOcclusionToleranceFrames`. Hand, in-transit,
+    /// and deck/trash piles are excluded on purpose: those are exactly the
+    /// zones where a card's presence *can* change from one frame to the
+    /// next and needs to be re-detected promptly.
+    public var isPositionallyStable: Bool {
+        switch self {
+        case .battlefield, .runeArea, .runeDeck: return true
+        default: return false
+        }
+    }
 }
 
 /// One physically-calibrated region on the table — e.g. "Player 1's Hand"

@@ -68,6 +68,12 @@ final class CameraPipelineController: ObservableObject {
     /// `process(_:)`), or manually via `cancelPendingPlay()`.
     @Published var pendingPlay: PendingCardPlay?
 
+    /// Whose turn it is, what phase, and what round — set by hand (see
+    /// `GameStateBar`), never inferred from the camera. Nothing in
+    /// `process(_:)` reads or writes this; it exists purely for on-screen
+    /// display and for the user's own bookkeeping.
+    @Published var gameState = ManualGameState()
+
     /// Rotation only ever lands on exactly `0` or `.pi / 2` (see
     /// `process(_:)`'s orientation-derived rotation) — this threshold just
     /// needs to sit cleanly between the two.
@@ -86,7 +92,7 @@ final class CameraPipelineController: ObservableObject {
 
     private let camera = AVFoundationCameraCapture()
     private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
-    private let tracker = ObjectTracker()
+    private let tracker = ObjectTracker(settledOcclusionToleranceFrames: 300)
     private let temporalDetector = TemporalEventDetector()
     private let ciContext = CIContext()
 
@@ -94,6 +100,24 @@ final class CameraPipelineController: ObservableObject {
     /// cheap (it's ~15 small polygons), and guarantees it's never one
     /// frame stale relative to a corner the user just dragged.
     private var zoneMapper: ZoneMapper { ZoneMapper(zones: calibration.boardZones()) }
+
+    /// Once every currently-tracked object is sitting in a
+    /// `Zone.isPositionallyStable` zone (Battlefield/Rune Area/Rune Deck)
+    /// and there's no `pendingPlay` actively watching for a rune flip, the
+    /// board genuinely isn't changing frame to frame — running the
+    /// detector (the single most expensive step in `process(_:)`, a full
+    /// CoreML/Vision pass) on every one of those frames buys nothing. This
+    /// throttles it to once every `settledDetectionCadence` frames in that
+    /// case, and snaps back to full rate the instant anything is in a
+    /// non-stable zone (hand, in transit) or a card is actively being
+    /// played. The decision is one frame lagged (it reads the *previous*
+    /// frame's `snapshot`), which only matters for how quickly the
+    /// throttle re-engages/disengages, not for correctness — skipped
+    /// frames feed the tracker zero detections, and `ObjectTracker`
+    /// already tolerates that as occlusion (kept well under
+    /// `settledOcclusionToleranceFrames` above) rather than a disappearance.
+    private static let settledDetectionCadence = 4
+    private var framesSinceRealDetection = 0
 
     private var previousTimestamp: TimeInterval?
     private var frameIndex = 0
@@ -348,7 +372,24 @@ final class CameraPipelineController: ObservableObject {
         // "Object detection should only focus on the segmented area":
         // everything outside the calibrated mat's bounding rect is never
         // even handed to the detector, let alone tracked.
-        let detections = (try? detector.detect(in: frame.pixelBuffer, regionOfInterest: calibration.boundingRect)) ?? []
+        //
+        // Settled-mode throttle: if last frame's board was fully settled
+        // (every object on a stable zone, nothing being played) and we
+        // haven't skipped a real detection pass in a while, skip the
+        // detector entirely this frame — see `settledDetectionCadence`.
+        let everythingSettled = pendingPlay == nil
+            && !snapshot.objects.isEmpty
+            && snapshot.objects.allSatisfy { $0.currentZone.isPositionallyStable }
+        let shouldRunDetector = !everythingSettled || framesSinceRealDetection >= Self.settledDetectionCadence
+
+        let detections: [Detection]
+        if shouldRunDetector {
+            detections = (try? detector.detect(in: frame.pixelBuffer, regionOfInterest: calibration.boundingRect)) ?? []
+            framesSinceRealDetection = 0
+        } else {
+            detections = []
+            framesSinceRealDetection += 1
+        }
         let result = tracker.update(
             detections: detections,
             zoneMapper: zoneMapper,
