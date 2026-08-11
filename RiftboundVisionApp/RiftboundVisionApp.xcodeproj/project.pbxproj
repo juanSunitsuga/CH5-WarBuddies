@@ -19,6 +19,8 @@
 		C65BD2D963D14E48BD280043 /* best.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = DBF6C0B24D384E309B541FB3 /* best.mlpackage */; };
 		C427EAAA0BF04C90A9681A5E /* CardDetectionModelLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B1739578D24342BFE1DCA0 /* CardDetectionModelLoader.swift */; };
 		93F14F27D8F144288BE9E603 /* GameStateBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3055869C4ECE495FA5A42260 /* GameStateBar.swift */; };
+		76DA6F984DFB4D99A0C5E470 /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880B3B2F2F93462E90B88A3A /* CardDetailView.swift */; };
+		A85A01502EB54B35B708A490 /* DetectedCardsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,6 +37,8 @@
 		DBF6C0B24D384E309B541FB3 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
 		C3B1739578D24342BFE1DCA0 /* CardDetectionModelLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetectionModelLoader.swift; sourceTree = "<group>"; };
 		3055869C4ECE495FA5A42260 /* GameStateBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameStateBar.swift; sourceTree = "<group>"; };
+		880B3B2F2F93462E90B88A3A /* CardDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailView.swift; sourceTree = "<group>"; };
+		B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectedCardsPanel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +78,8 @@
 				3331D3BCD484492BA4DC4050 /* CardDatabaseLoader.swift */,
 				C3B1739578D24342BFE1DCA0 /* CardDetectionModelLoader.swift */,
 				3055869C4ECE495FA5A42260 /* GameStateBar.swift */,
+				880B3B2F2F93462E90B88A3A /* CardDetailView.swift */,
+				B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */,
 				91954CFFD8744AD891AB10D4 /* CardData */,
 				E30AC5E6649148CCA7C653DA /* Resources */,
 				76363767637E4BB6B3E788C4 /* Info.plist */,
@@ -193,6 +199,8 @@
 				627F18754982492DAC803B7F /* CardDatabaseLoader.swift in Sources */,
 				C427EAAA0BF04C90A9681A5E /* CardDetectionModelLoader.swift in Sources */,
 				93F14F27D8F144288BE9E603 /* GameStateBar.swift in Sources */,
+				76DA6F984DFB4D99A0C5E470 /* CardDetailView.swift in Sources */,
+				A85A01502EB54B35B708A490 /* DetectedCardsPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -15,6 +15,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
             GameStateBar(gameState: $pipeline.gameState)
 
+            HStack(spacing: 0) {
             GeometryReader { proxy in
                 ZStack {
                     Color.black
@@ -67,6 +68,9 @@ struct ContentView: View {
                         }
                     }
                 }
+            }
+
+            DetectedCardsPanel(pipeline: pipeline)
             }
         }
         .frame(minWidth: 1160, minHeight: 675)
