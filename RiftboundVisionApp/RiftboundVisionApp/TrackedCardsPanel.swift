@@ -10,7 +10,10 @@ import RiftboundVision
 struct TrackedCardsPanel: View {
     @ObservedObject var pipeline: CameraPipelineController
     @State private var assigningObjectID: TrackedObjectID?
-    @State private var detailPrinting: CardPrinting?
+    /// The specific tracked object being inspected — not just its
+    /// `CardPrinting`, since "Play This Card" needs to act on *this*
+    /// physical object, not "some card with this name."
+    @State private var detailEntry: CameraPipelineController.TrackedCardEntry?
 
     private var mine: [CameraPipelineController.TrackedCardEntry] {
         pipeline.trackedCards.filter { $0.owner == .player1 }
@@ -46,8 +49,13 @@ struct TrackedCardsPanel: View {
                 assigningObjectID = nil
             }
         }
-        .sheet(item: $detailPrinting) { printing in
-            CardDetailView(printing: printing) { detailPrinting = nil }
+        .sheet(item: $detailEntry) { entry in
+            if let printing = entry.printing {
+                CardDetailView(printing: printing, onClose: { detailEntry = nil }, onPlay: {
+                    pipeline.beginPlayingCard(objectID: entry.id)
+                    detailEntry = nil
+                })
+            }
         }
     }
 
@@ -67,8 +75,8 @@ struct TrackedCardsPanel: View {
 
     private func row(for entry: CameraPipelineController.TrackedCardEntry) -> some View {
         Button {
-            if let printing = entry.printing {
-                detailPrinting = printing
+            if entry.printing != nil {
+                detailEntry = entry
             } else {
                 assigningObjectID = entry.id
             }

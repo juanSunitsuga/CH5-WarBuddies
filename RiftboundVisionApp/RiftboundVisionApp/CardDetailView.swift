@@ -8,12 +8,23 @@ import RiftboundVision
 struct CardDetailView: View {
     let printing: CardPrinting
     let onClose: () -> Void
+    /// `nil` when there's nothing to pay (no Energy cost, e.g. a Rune or a
+    /// 0-cost card) — omits the button entirely rather than showing a
+    /// disabled one with no useful cost to display.
+    var onPlay: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(printing.name).font(.title2.bold())
                 Spacer()
+                if let onPlay, let energy = printing.attributes.energy, energy > 0 {
+                    Button {
+                        onPlay()
+                    } label: {
+                        Label("Play — Exhaust \(energy) Rune\(energy == 1 ? "" : "s")", systemImage: "bolt.fill")
+                    }
+                }
                 Button("Close", action: onClose).keyboardShortcut(.cancelAction)
             }
 

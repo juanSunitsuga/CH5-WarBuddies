@@ -51,4 +51,25 @@ struct CardDatabaseTests {
 
         #expect(database.search("").isEmpty)
     }
+
+    /// The exact mismatch `CoreMLCardDetector` hits in practice: its YOLO
+    /// class label "Annie Dark Child Starter" has no hyphen/parentheses,
+    /// but this database's printed name is "Annie - Dark Child (Starter)".
+    @Test("printing(approximatelyNamed:) matches across punctuation differences")
+    func approximateNameMatchIgnoresPunctuation() throws {
+        let data = try loadFixture()
+        let database = try CardDatabase(jsonDeckFiles: [data])
+
+        #expect(database.printing(approximatelyNamed: "Annie Dark Child Starter")?.name == "Annie - Dark Child (Starter)")
+        #expect(database.printing(approximatelyNamed: "Annie Fiery")?.name == "Annie - Fiery")
+        #expect(database.printing(approximatelyNamed: "Fury Rune")?.name == "Fury Rune")
+    }
+
+    @Test("printing(approximatelyNamed:) returns nil for an unknown name")
+    func approximateNameMatchReturnsNilWhenNotFound() throws {
+        let data = try loadFixture()
+        let database = try CardDatabase(jsonDeckFiles: [data])
+
+        #expect(database.printing(approximatelyNamed: "Definitely Not A Card") == nil)
+    }
 }

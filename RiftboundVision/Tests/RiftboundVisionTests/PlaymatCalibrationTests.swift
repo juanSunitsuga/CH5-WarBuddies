@@ -29,25 +29,43 @@ struct PlaymatCalibrationTests {
         #expect(abs(center.y - expectedY) < 0.001)
     }
 
-    @Test("boardZones() produces one BoardZone per template zone, all within the calibration's bounding rect")
+    @Test("boardZones() defaults to the single-player template, one BoardZone per zone, all within the calibration's bounding rect")
     func boardZonesStayWithinCalibratedBounds() {
         let zones = calibration.boardZones()
 
-        #expect(zones.count == RiftboundPlaymatTemplate.zones.count)
+        #expect(zones.count == RiftboundPlaymatTemplate.singlePlayerZones().count)
 
         let bounds = calibration.boundingRect
-        for zone in zones {
+        for zone in zones where zone.type != .player1Hand && zone.type != .player2Hand {
             for point in zone.polygon {
                 // Bilinear interpolation of points inside the unit square
                 // always stays inside the bounding rect of the 4 corners.
+                // Hand is excluded on purpose — it deliberately extends
+                // past y=1 (see its doc comment in
+                // `RiftboundPlaymatTemplate`), so its points fall outside
+                // this same-quad bound until the user's own calibration
+                // corners are dragged past the mat to include it.
                 #expect(bounds.insetBy(dx: -1, dy: -1).contains(point))
             }
         }
     }
 
-    @Test("Both Legend and Champion zones exist for both players")
-    func legendAndChampionZonesExistForBothPlayers() {
-        let zones = calibration.boardZones()
+    @Test("Single-player template has exactly one Legend and one Champion zone, owned by the given player")
+    func singlePlayerLegendAndChampionZonesExist() {
+        let zones = calibration.boardZones(template: RiftboundPlaymatTemplate.singlePlayerZones(owner: .player2))
+
+        let legends = zones.filter { $0.type == .legend }
+        let champions = zones.filter { $0.type == .champion }
+
+        #expect(legends.count == 1)
+        #expect(legends.first?.owner == .player2)
+        #expect(champions.count == 1)
+        #expect(champions.first?.owner == .player2)
+    }
+
+    @Test("Two-player template has Legend and Champion zones for both players")
+    func twoPlayerLegendAndChampionZonesExistForBothPlayers() {
+        let zones = calibration.boardZones(template: RiftboundPlaymatTemplate.twoPlayerZones)
 
         #expect(zones.contains { $0.type == .legend && $0.owner == .player1 })
         #expect(zones.contains { $0.type == .legend && $0.owner == .player2 })
@@ -55,23 +73,37 @@ struct PlaymatCalibrationTests {
         #expect(zones.contains { $0.type == .champion && $0.owner == .player2 })
     }
 
-    @Test("The shared Battlefield zone has no owner and carries the given battlefieldSlot")
-    func battlefieldZoneIsUnownedWithSlot() {
-        let zones = calibration.boardZones(battlefieldSlot: 3)
-        let battlefield = zones.first { $0.type == .battlefield }
+    @Test("The single-player template's two Battlefield zones are unowned and carry distinct slots")
+    func singlePlayerBattlefieldZonesAreUnownedWithDistinctSlots() {
+        let zones = calibration.boardZones()
+        let battlefields = zones.filter { $0.type == .battlefield }
 
-        #expect(battlefield?.owner == nil)
-        #expect(battlefield?.battlefieldSlot == 3)
+        #expect(battlefields.count == 2)
+        #expect(battlefields.allSatisfy { $0.owner == nil })
+        #expect(Set(battlefields.compactMap(\.battlefieldSlot)) == [0, 1])
     }
 
-    @Test("A point resolved via ZoneMapper against calibrated zones lands in the expected zone")
+    @Test("Single-player template has exactly one Hand zone, owned by and named for the given player")
+    func singlePlayerHandZoneExists() {
+        let zones = calibration.boardZones(template: RiftboundPlaymatTemplate.singlePlayerZones(owner: .player2))
+
+        let hands = zones.filter { $0.type == .player1Hand || $0.type == .player2Hand }
+        #expect(hands.count == 1)
+        #expect(hands.first?.type == .player2Hand)
+        #expect(hands.first?.owner == .player2)
+    }
+
+    @Test("A point resolved via ZoneMapper against calibrated zones lands in the expected Battlefield slot")
     func zoneMapperResolvesCalibratedZonesCorrectly() {
         let mapper = ZoneMapper(zones: calibration.boardZones())
 
-        // Template battlefield spans normalized y 0.32...0.68 — dead
-        // center of the mat should resolve as Battlefield regardless of
-        // calibration skew.
-        let center = calibration.map(CGPoint(x: 0.5, y: 0.5))
-        #expect(mapper.zone(for: center) == .battlefield)
+        // Single-player template's first Battlefield slot spans normalized
+        // x 0.06...0.335, y 0.08...0.30 — its center should resolve as
+        // Battlefield #0 regardless of calibration skew.
+        let center = calibration.map(CGPoint(x: 0.1975, y: 0.19))
+        let boardZone = mapper.boardZone(for: center)
+
+        #expect(boardZone?.type == .battlefield)
+        #expect(boardZone?.battlefieldSlot == 0)
     }
 }

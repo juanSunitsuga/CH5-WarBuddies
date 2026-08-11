@@ -41,6 +41,15 @@ public struct TrackedObject: Sendable, Equatable {
 
     public var lastSeenFrame: Int
 
+    /// The class label a recognizer attached to the detection that last
+    /// matched this track, if any (e.g. `CoreMLCardDetector`'s YOLO class
+    /// name — "Annie Fiery"). `nil` for detectors that don't do identity
+    /// (e.g. `VisionRectangleDetector`). This is a raw label, not a
+    /// resolved `CardPrinting` — matching it against a `CardDatabase` is
+    /// the caller's job, same seam `RecognizedCard`/`identify(objectID:as:)`
+    /// already describes.
+    public var recognizedLabel: String?
+
     public init(
         id: TrackedObjectID,
         type: ObjectType,
@@ -52,7 +61,8 @@ public struct TrackedObject: Sendable, Equatable {
         velocity: CGVector = .zero,
         confidence: Float,
         isVisible: Bool,
-        lastSeenFrame: Int
+        lastSeenFrame: Int,
+        recognizedLabel: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -65,5 +75,6 @@ public struct TrackedObject: Sendable, Equatable {
         self.confidence = confidence
         self.isVisible = isVisible
         self.lastSeenFrame = lastSeenFrame
+        self.recognizedLabel = recognizedLabel
     }
 }

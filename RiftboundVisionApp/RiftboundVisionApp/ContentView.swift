@@ -12,7 +12,10 @@ struct ContentView: View {
     @StateObject private var pipeline = CameraPipelineController()
 
     var body: some View {
-        HStack(spacing: 0) {
+        VStack(spacing: 0) {
+            GameStateBar(gameState: $pipeline.gameState)
+
+            HStack(spacing: 0) {
             GeometryReader { proxy in
                 ZStack {
                     Color.black
@@ -46,6 +49,28 @@ struct ContentView: View {
                         .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                         .allowsHitTesting(false)
 
+                    // "Highlight the N Runes that need to be exhausted" —
+                    // rings drawn in the same camera-space coordinates as
+                    // the other overlays, so they track the physical
+                    // Runes exactly.
+                    if let pendingPlay = pipeline.pendingPlay {
+                        ExhaustPromptOverlayView(pendingPlay: pendingPlay, objects: pipeline.snapshot.objects)
+                            .frame(width: pipeline.snapshot.frameSize.width, height: pipeline.snapshot.frameSize.height)
+                            .scaleEffect(scale)
+                            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+                            .allowsHitTesting(false)
+                    }
+
+                    if let pendingPlay = pipeline.pendingPlay, let progress = pipeline.pendingPlayProgress {
+                        VStack {
+                            ExhaustPromptBanner(cardName: pendingPlay.cardName, progress: progress) {
+                                pipeline.cancelPendingPlay()
+                            }
+                            .padding(.top, 12)
+                            Spacer()
+                        }
+                    }
+
                     if let errorMessage = pipeline.errorMessage {
                         VStack {
                             Spacer()
@@ -63,6 +88,7 @@ struct ContentView: View {
             // The SpellTable-style sidebar: tracked cards, grouped by
             // which seat they're currently on, click for info.
             TrackedCardsPanel(pipeline: pipeline)
+            }
         }
         .frame(minWidth: 1160, minHeight: 675)
         .toolbar {
