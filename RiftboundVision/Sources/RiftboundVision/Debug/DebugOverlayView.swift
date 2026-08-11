@@ -46,7 +46,7 @@ public struct DebugOverlayView: View {
     private func boundingBox(for object: TrackedObject) -> some View {
         let box = object.boundingBox
         Rectangle()
-            .strokeBorder(object.isVisible ? Color.green : Color.orange, lineWidth: 2)
+            .strokeBorder(boxColor(for: object), lineWidth: 2)
             .frame(width: box.width, height: box.height)
             .position(x: box.midX, y: box.midY)
             .overlay(alignment: .topLeading) {
@@ -59,10 +59,26 @@ public struct DebugOverlayView: View {
             }
     }
 
+    /// Occluded objects (tracked but not seen this frame — see
+    /// `ObjectTracker`'s occlusion tolerance) always read orange,
+    /// regardless of their last-known confidence, since "occluded" is a
+    /// tracking-state fact, not a detection-quality one. Visible objects
+    /// are tinted red→green by `confidence` (red at 0, green at 1) so a
+    /// shaky recognition is visually obvious without reading the label.
+    private func boxColor(for object: TrackedObject) -> Color {
+        guard object.isVisible else { return .orange }
+        let clamped = Double(min(max(object.confidence, 0), 1))
+        return Color(hue: clamped * 0.33, saturation: 0.9, brightness: 0.9)
+    }
+
     private func label(for object: TrackedObject) -> String {
         let degrees = object.rotation * 180 / .pi
+        // Full recognized class name when available (e.g. "Annie Fiery")
+        // rather than just the coarse `.card`/`.rune` type, which reads
+        // identically for every card of the same object type.
+        let identity = object.recognizedLabel ?? object.type.rawValue
         return """
-        #\(object.id) \(object.type.rawValue)
+        #\(object.id) \(identity)
         zone: \(object.currentZone.rawValue)
         rotation: \(String(format: "%.1f", degrees))°
         confidence: \(String(format: "%.2f", object.confidence))
