@@ -78,6 +78,16 @@ struct PlaymatCalibrationTests {
         #expect(Set(battlefields.compactMap(\.battlefieldSlot)) == [0, 1])
     }
 
+    @Test("Single-player template has exactly one Hand zone, owned by and named for the given player")
+    func singlePlayerHandZoneExists() {
+        let zones = calibration.boardZones(template: RiftboundPlaymatTemplate.singlePlayerZones(owner: .player2))
+
+        let hands = zones.filter { $0.type == .player1Hand || $0.type == .player2Hand }
+        #expect(hands.count == 1)
+        #expect(hands.first?.type == .player2Hand)
+        #expect(hands.first?.owner == .player2)
+    }
+
     @Test("A point resolved via ZoneMapper against calibrated zones lands in the expected Battlefield slot")
     func zoneMapperResolvesCalibratedZonesCorrectly() {
         let mapper = ZoneMapper(zones: calibration.boardZones())

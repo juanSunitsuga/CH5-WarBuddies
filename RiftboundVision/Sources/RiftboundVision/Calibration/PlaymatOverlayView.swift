@@ -85,7 +85,15 @@ public struct PlaymatOverlayView: View {
     }
 
     private func label(for template: PlaymatZoneTemplate) -> String {
-        var text = template.zone.rawValue
+        // `Zone.player1Hand`/`.player2Hand`'s raw value already spells out
+        // which seat — showing it via `rawValue` would double up with the
+        // "(P1)"/"(P2)" suffix below ("player1Hand (P1)"). Every other
+        // zone case is seat-agnostic, so only this one needs the override.
+        var text: String
+        switch template.zone {
+        case .player1Hand, .player2Hand: text = "hand"
+        default: text = template.zone.rawValue
+        }
         if let slot = template.battlefieldSlot {
             text += " #\(slot)"
         }
@@ -113,7 +121,8 @@ public struct PlaymatOverlayView: View {
         case .mainDeck: return .blue
         case .legend: return .orange
         case .champion: return .yellow
-        case .player1Hand, .player2Hand, .unknown: return .white
+        case .player1Hand, .player2Hand: return .cyan
+        case .unknown: return .white
         }
     }
 }

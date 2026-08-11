@@ -56,7 +56,12 @@ public enum RiftboundPlaymatTemplate {
     /// defaults to `.player1` since a single camera/mat calibration is
     /// inherently "whoever's mat this is," not necessarily the near seat.
     public static func singlePlayerZones(owner: Player = .player1) -> [PlaymatZoneTemplate] {
-        [
+        // Which `Zone` case names this owner's Hand — kept consistent with
+        // `owner` rather than hardcoded, since this template can be
+        // calibrated for either seat's physical mat.
+        let handZone: Zone = owner == .player1 ? .player1Hand : .player2Hand
+
+        return [
             // Battlefield row — two independent slots, side by side.
             PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(0.09, 0.10, 0.505, 0.37), battlefieldSlot: 0),
             PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(0.515, 0.10, 0.94, 0.37), battlefieldSlot: 1),
@@ -70,7 +75,17 @@ public enum RiftboundPlaymatTemplate {
             // Rune Deck / Runes / Trash row.
             PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: rect(0.09, 0.635, 0.205, 0.855)),
             PlaymatZoneTemplate(zone: .runeArea, owner: owner, normalizedPolygon: rect(0.215, 0.635, 0.825, 0.855)),
-            PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: rect(0.835, 0.635, 0.94, 0.855))
+            PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: rect(0.835, 0.635, 0.94, 0.855)),
+
+            // Hand — no printed box on the physical mat itself (a hand is
+            // normally held, not laid on the table), but this project is
+            // playing Open Hand: cards are laid face-up in front of the
+            // player instead of held concealed, which is exactly what
+            // makes camera-based tracking of hand cards feasible at all.
+            // This band sits along the mat's near edge (highest y, closest
+            // to the player, matching the row ordering above) so the user
+            // can calibrate it to wherever they actually lay their hand.
+            PlaymatZoneTemplate(zone: handZone, owner: owner, normalizedPolygon: rect(0.09, 0.865, 0.94, 0.995))
         ]
     }
 
