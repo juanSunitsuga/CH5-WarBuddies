@@ -22,19 +22,27 @@ public final class CardDatabaseService {
     private var db: OpaquePointer?
     
     public init() {
-        // Load bundled SQLite database from App Bundle
-        if let dbPath = Bundle.main.path(forResource: "RiftboundCardDatabase", ofType: "db") {
-            if sqlite3_open(dbPath, &db) == SQLITE_OK {
-                print("✅ Connected to SQLite Card Knowledge Base!")
-            }
+        // `Bundle.main` is the *host app's* bundle - for a Swift package
+        // resource, that's the wrong bundle entirely (it's never where
+        // SwiftPM copies this target's resources, whether running via
+        // `swift test`, the `RiftboundTextProcessingDemo` executable, or
+        // embedded in RiftboundVisionApp). `Bundle.module` is the one
+        // SwiftPM generates for this target specifically.
+        guard let dbPath = Bundle.module.path(forResource: "RiftboundCardDatabase", ofType: "db") else {
+            print("❌ RiftboundCardDatabase.db not found in Bundle.module")
+            return
+        }
+        if sqlite3_open(dbPath, &db) == SQLITE_OK {
+            print("✅ Connected to SQLite Card Knowledge Base!")
         }
     }
-    
+
     /// Queries pre-parsed card metadata directly in Step ② (ActionTranslating.inferAction)
     public func fetchCard(by cardID: String) -> CardMetadata? {
+        guard let db else { return nil }
         let query = "SELECT card_id, clean_name, card_type, energy_cost, extracted_tags, mechanic_categories FROM cards WHERE card_id = ? LIMIT 1;"
         var statement: OpaquePointer?
-        
+
         if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
             sqlite3_bind_text(statement, 1, (cardID as NSString).utf8String, -1, nil)
             

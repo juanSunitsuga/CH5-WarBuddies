@@ -32,12 +32,31 @@ let package = Package(
                 .product(name: "RiftboundExpertSystem", package: "RiftboundEngine")
             ],
             resources: [
-                // SPM automatically compiles .mlpackage models into binary .mlmodelc
-                .process("Resources/MiniLMEmbedder.mlpackage"),
-                .process("Resources/RiftboundCardTypeClassifier.mlpackage"),
+                // NOT .process(): SwiftPM's Core ML codegen collides when a
+                // single target processes more than one .mlpackage (their
+                // internal files - Manifest.json, model.mlmodel,
+                // weights/weight.bin - all share the same relative names,
+                // and the codegen step dedupes by that name across the
+                // whole target instead of per-package). Copying them
+                // verbatim and loading via `MLModel(contentsOf:)` at
+                // runtime (see `MiniLMEmbedderService`/
+                // `CardTypeClassifierService`) sidesteps that entirely.
+                .copy("Resources/MiniLMEmbedder.mlpackage"),
+                .copy("Resources/RiftboundCardTypeClassifier.mlpackage"),
                 // Copy SQLite database directly into module bundle
                 .copy("Resources/RiftboundCardDatabase.db")
             ],
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ]
+        ),
+        // Separate from the library target on purpose - a `.library`
+        // product can't contain an executable (a `main.swift`), which is
+        // what this file is: a standalone CLI smoke test for
+        // `ActionTranslatingEngine`, not part of the library's own API.
+        .executableTarget(
+            name: "RiftboundTextProcessingDemo",
+            dependencies: ["RiftboundTextProcessing"],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]

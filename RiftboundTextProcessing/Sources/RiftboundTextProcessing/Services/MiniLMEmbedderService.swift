@@ -10,51 +10,63 @@ import CoreML
 
 /// On-Device Sentence Transformer Service (Option A: 384-dimensional vector)
 public final class MiniLMEmbedderService {
-    
+
     public let vectorDimension: Int = 384
     private let maxSequenceLength: Int = 128
-    private let model: MiniLMEmbedder?
-    
+    private let model: MLModel?
+
     public init() {
         let config = MLModelConfiguration()
         // Hardware Acceleration: Force model onto Apple Neural Engine (ANE)
         config.computeUnits = .all
-        
+
         do {
-            self.model = try MiniLMEmbedder(configuration: config)
+            // `MiniLMEmbedder.mlpackage` is bundled via `.copy` (not
+            // `.process` - see `Package.swift`'s doc comment on why), so
+            // there's no auto-generated `MiniLMEmbedder` wrapper type;
+            // compile and load it directly instead.
+            guard let packageURL = Bundle.module.url(forResource: "MiniLMEmbedder", withExtension: "mlpackage") else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+            let compiledURL = try MLModel.compileModel(at: packageURL)
+            self.model = try MLModel(contentsOf: compiledURL, configuration: config)
             print("✅ MiniLM Core ML Embedder loaded successfully on Neural Engine!")
         } catch {
             print("❌ Failed to load MiniLMEmbedder.mlpackage: \(error)")
             self.model = nil
         }
     }
-    
+
     /// Generates a normalized 384-dimensional Float array from input OCR text string
     /// - Parameter text: Raw OCR text extracted from physical card frame
     /// - Returns: Array of 384 Float values ready for classification or vector search
     public func embed(text: String) async -> [Float]? {
         guard let model = model else { return nil }
-        
+
         // 1. Prepare numerical input_ids and attention_mask tensors [1, 64]
         let (inputIdsTensor, attentionMaskTensor) = prepareTokens(for: text)
-        
+
         do {
             // 2. Perform on-device inference
-            let prediction = try model.prediction(
-                input_ids: inputIdsTensor,
-                attention_mask: attentionMaskTensor
-            )
-            
+            let inputs = try MLDictionaryFeatureProvider(dictionary: [
+                "input_ids": inputIdsTensor,
+                "attention_mask": attentionMaskTensor
+            ])
+            let prediction = try await model.prediction(from: inputs)
+
             // 3. Extract 384-dimensional output vector
-            let embeddingMultiArray = prediction.embedding
+            guard let embeddingMultiArray = prediction.featureValue(for: "embedding")?.multiArrayValue else {
+                print("❌ MiniLM Core ML Inference Error: no 'embedding' output feature")
+                return nil
+            }
             var floatVector = [Float](repeating: 0.0, count: vectorDimension)
-            
+
             for i in 0..<vectorDimension {
                 floatVector[i] = embeddingMultiArray[i].floatValue
             }
-            
+
             return floatVector
-            
+
         } catch {
             print("❌ MiniLM Core ML Inference Error: \(error)")
             return nil

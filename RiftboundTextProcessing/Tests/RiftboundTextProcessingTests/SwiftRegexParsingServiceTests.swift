@@ -6,7 +6,7 @@
 //
 
 import Testing
-@testable import RiftboundActionTranslator
+@testable import RiftboundTextProcessing
 
 @Suite("Swift Regex Parser Tests")
 struct SwiftRegexParserTests {

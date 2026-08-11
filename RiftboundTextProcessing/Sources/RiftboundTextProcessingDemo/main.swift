@@ -1,4 +1,5 @@
 import Foundation
+import RiftboundTextProcessing
 
 struct MainApp {
     

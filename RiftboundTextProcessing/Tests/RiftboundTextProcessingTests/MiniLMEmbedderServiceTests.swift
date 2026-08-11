@@ -6,7 +6,7 @@
 //
 
 import Testing
-@testable import RiftboundActionTranslator
+@testable import RiftboundTextProcessing
 
 @Suite("MiniLM Embedder Service Tests")
 struct MiniLMEmbedderServiceTests {

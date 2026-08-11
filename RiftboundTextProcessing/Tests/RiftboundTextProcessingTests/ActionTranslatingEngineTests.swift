@@ -6,7 +6,7 @@
 //
 
 import Testing
-@testable import RiftboundActionTranslator
+@testable import RiftboundTextProcessing
 
 @Suite("Action Translating Engine Integration Tests")
 struct ActionTranslatingEngineTests {
