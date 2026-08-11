@@ -6,9 +6,9 @@
 //
 
 import Testing
-@testable import RiftboundTextProcessing
+@testable import RiftboundActionTranslator
 
-@Suite("Swift Regex Parsing Service Tests")
+@Suite("Swift Regex Parser Tests")
 struct SwiftRegexParsingServiceTests {
 
     @Test("Parse action and draw keywords from OCR text")
@@ -25,7 +25,7 @@ struct SwiftRegexParsingServiceTests {
     @Test("Parse combat assault, shield, and stat boost keywords")
     func parseCombatKeywords() {
         let ocrText = "[Assault 2], [Shield 2] (+2 Might while I'm an attacker or defender.)"
-        let result = SwiftRegexParsingService.parse(ocrText: ocrText)
+        let result = SwiftRegexParser.parse(ocrText: ocrText)
         
         #expect(result.categories.contains("TAG_ASSAULT"))
         #expect(result.categories.contains("TAG_SHIELD"))
@@ -36,7 +36,7 @@ struct SwiftRegexParsingServiceTests {
     @Test("Return empty tags when OCR text contains no rules")
     func parseEmptyMatches() {
         let ocrText = "Simple plain text with no mechanics."
-        let result = SwiftRegexParsingService.parse(ocrText: ocrText)
+        let result = SwiftRegexParser.parse(ocrText: ocrText)
         
         #expect(result.extractedTags == "[]")
         #expect(result.categories.isEmpty)

@@ -6,7 +6,7 @@
 //
 
 import Testing
-@testable import RiftboundActionTranslator
+@testable import RiftboundTextProcessing
 
 @Suite("Card Type Classifier Service Tests")
 struct CardTypeClassifierServiceTests {

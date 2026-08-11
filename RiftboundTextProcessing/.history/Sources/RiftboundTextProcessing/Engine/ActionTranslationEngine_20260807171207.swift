@@ -9,7 +9,7 @@ import Foundation
 
 // MARK: - Activity Diagram Event & Action Models
 
-public struct ObservedTableEvent: Sendable {
+public struct ObservedTableEvent {
     public let cardID: String
     public let ocrText: String
     public let sourceRegion: String
@@ -23,7 +23,7 @@ public struct ObservedTableEvent: Sendable {
     }
 }
 
-public enum CandidateGameAction: Equatable, Sendable {
+public enum CandidateGameAction {
     case playUnit(cardID: String, cardName: String, energyCost: Int, targetZone: String, mechanics: String)
     case castSpell(cardID: String, cardName: String, energyCost: Int, mechanics: String)
     case channelRune(cardID: String, cardName: String)
@@ -32,7 +32,7 @@ public enum CandidateGameAction: Equatable, Sendable {
 
 // MARK: - Step ② Engine Implementation
 
-public final class ActionTranslatingEngine: @unchecked Sendable {
+public final class ActionTranslatingEngine {
     
     private let embedderService = MiniLMEmbedderService()
     private let classifierService = CardTypeClassifierService()
@@ -53,36 +53,28 @@ public final class ActionTranslatingEngine: @unchecked Sendable {
             return .rejected(reason: "Card type classification failed.")
         }
         
-        var predictedType = classification.cardType
+        let predictedType = classification.cardType
         let confidence = classification.confidence
+        
+        print("🧠 Core ML Predicted Type: [\(predictedType)] (\(String(format: "%.1f", confidence * 100))% confidence)")
         
         // 3. Hybrid Metadata Extraction: Primary (SQLite) -> Fallback (Swift Regex)
         var cardName = "Unindexed Card"
         var energyCost = 0
         var extractedTags = "[]"
-        var categories: [String] = []
         
         if let dbCard = dbService.fetchCard(by: event.cardID) {
             // Primary Path: Fast SQLite Hit
             cardName = dbCard.cleanName
             energyCost = dbCard.energyCost
             extractedTags = dbCard.extractedTags
-            predictedType = dbCard.cardType // Trust ground-truth DB card type on DB hits
             print("💾 DB Hit: '\(cardName)' | Energy Cost: \(energyCost)")
         } else {
             // Fallback Path: Dynamic Swift Regex parsing on raw ocrText
-            let parsed = SwiftRegexParsingService.parse(ocrText: event.ocrText)
+            let parsed = SwiftRegexParser.parse(ocrText: event.ocrText)
             extractedTags = parsed.extractedTags
-            categories = parsed.categories
-            
-            // Domain Rule: [Action] and [Reaction] tags explicitly designate Spells
-            if categories.contains("TAG_ACTION") || categories.contains("TAG_REACTION") {
-                predictedType = "Spell"
-            }
-            print("⚡ DB Miss -> Dynamic Regex Parsed Tags: \(extractedTags) | Type override: [\(predictedType)]")
+            print("⚡ DB Miss -> Dynamic Swift Regex Parsed Tags: \(extractedTags)")
         }
-        
-        print("🧠 Core ML Predicted Type: [\(predictedType)] (\(String(format: "%.1f", confidence * 100))% confidence)")
         
         // 4. Early Heuristic Filter Logic (Type + Zone Validation)
         switch predictedType {

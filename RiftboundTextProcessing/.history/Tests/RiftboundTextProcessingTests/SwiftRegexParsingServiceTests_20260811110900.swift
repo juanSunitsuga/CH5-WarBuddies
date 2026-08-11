@@ -6,9 +6,9 @@
 //
 
 import Testing
-@testable import RiftboundTextProcessing
+@testable import RiftboundActionTranslator
 
-@Suite("Swift Regex Parsing Service Tests")
+@Suite("Swift Regex Parser Tests")
 struct SwiftRegexParsingServiceTests {
 
     @Test("Parse action and draw keywords from OCR text")

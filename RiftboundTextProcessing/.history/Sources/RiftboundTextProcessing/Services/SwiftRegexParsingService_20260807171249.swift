@@ -13,7 +13,7 @@ public struct ParsedOCRMechanics {
     public let categories: [String]
 }
 
-public final class SwiftRegexParsingService {
+public final class SwiftRegexParser {
     
     // Regex patterns matching TCG rules
     private static let actionPattern = "\\[Action\\]"

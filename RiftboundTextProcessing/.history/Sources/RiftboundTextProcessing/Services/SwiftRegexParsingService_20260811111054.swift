@@ -1,10 +1,3 @@
-//
-//  Regex.swift
-//  TextClassifier
-//
-//  Created by I Gusti Ngurah Bagus Ferry Mahayudha on 07/08/26.
-//
-
 import Foundation
 
 public struct ParsedOCRMechanics {

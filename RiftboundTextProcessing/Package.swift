@@ -15,14 +15,12 @@ let package = Package(
         .iOS(.v17)
     ],
     products: [
-        // Exported library used by the main app shell or sibling Vision targets
         .library(
             name: "RiftboundTextProcessing",
             targets: ["RiftboundTextProcessing"]
         )
     ],
     dependencies: [
-        // Sibling package dependency providing core rules & state models
         .package(path: "../RiftboundEngine")
     ],
     targets: [
@@ -32,10 +30,9 @@ let package = Package(
                 .product(name: "RiftboundExpertSystem", package: "RiftboundEngine")
             ],
             resources: [
-                // SPM automatically compiles .mlpackage models into binary .mlmodelc
-                .process("Resources/MiniLMEmbedder.mlpackage"),
-                .process("Resources/RiftboundCardTypeClassifier.mlpackage"),
-                // Copy SQLite database directly into module bundle
+                // USE .copy FOR .mlpackage FOLDERS TO PREVENT FILE FLATTENING COLLISIONS!
+                .copy("Resources/MiniLMEmbedder.mlpackage"),
+                .copy("Resources/RiftboundCardTypeClassifier.mlpackage"),
                 .copy("Resources/RiftboundCardDatabase.db")
             ],
             swiftSettings: [

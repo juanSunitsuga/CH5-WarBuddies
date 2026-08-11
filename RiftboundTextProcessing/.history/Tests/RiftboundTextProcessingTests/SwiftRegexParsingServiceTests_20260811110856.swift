@@ -6,9 +6,9 @@
 //
 
 import Testing
-@testable import RiftboundTextProcessing
+@testable import RiftboundActionTranslator
 
-@Suite("Swift Regex Parsing Service Tests")
+@Suite("Swift Regex Parser Tests")
 struct SwiftRegexParsingServiceTests {
 
     @Test("Parse action and draw keywords from OCR text")
@@ -36,7 +36,7 @@ struct SwiftRegexParsingServiceTests {
     @Test("Return empty tags when OCR text contains no rules")
     func parseEmptyMatches() {
         let ocrText = "Simple plain text with no mechanics."
-        let result = SwiftRegexParsingService.parse(ocrText: ocrText)
+        let result = SwiftRegexParser.parse(ocrText: ocrText)
         
         #expect(result.extractedTags == "[]")
         #expect(result.categories.isEmpty)
