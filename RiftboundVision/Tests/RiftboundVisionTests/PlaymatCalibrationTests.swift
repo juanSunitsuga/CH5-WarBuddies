@@ -36,10 +36,15 @@ struct PlaymatCalibrationTests {
         #expect(zones.count == RiftboundPlaymatTemplate.singlePlayerZones().count)
 
         let bounds = calibration.boundingRect
-        for zone in zones {
+        for zone in zones where zone.type != .player1Hand && zone.type != .player2Hand {
             for point in zone.polygon {
                 // Bilinear interpolation of points inside the unit square
                 // always stays inside the bounding rect of the 4 corners.
+                // Hand is excluded on purpose — it deliberately extends
+                // past y=1 (see its doc comment in
+                // `RiftboundPlaymatTemplate`), so its points fall outside
+                // this same-quad bound until the user's own calibration
+                // corners are dragged past the mat to include it.
                 #expect(bounds.insetBy(dx: -1, dy: -1).contains(point))
             }
         }
@@ -93,9 +98,9 @@ struct PlaymatCalibrationTests {
         let mapper = ZoneMapper(zones: calibration.boardZones())
 
         // Single-player template's first Battlefield slot spans normalized
-        // x 0.09...0.505, y 0.10...0.37 — its center should resolve as
+        // x 0.06...0.335, y 0.08...0.30 — its center should resolve as
         // Battlefield #0 regardless of calibration skew.
-        let center = calibration.map(CGPoint(x: 0.2975, y: 0.235))
+        let center = calibration.map(CGPoint(x: 0.1975, y: 0.19))
         let boardZone = mapper.boardZone(for: center)
 
         #expect(boardZone?.type == .battlefield)

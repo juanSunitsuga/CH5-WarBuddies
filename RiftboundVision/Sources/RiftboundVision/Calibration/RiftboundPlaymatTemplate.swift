@@ -29,10 +29,12 @@ public struct PlaymatZoneTemplate: Sendable {
 
 /// Normalized playmat zone geometry. Two layouts are provided:
 ///
-///   - `singlePlayerZones(owner:)` — a one-player accessory mat with two
-///     side-by-side Battlefield slots, a Champion/Legend/Base/Main Deck
-///     row, and a Rune Deck/Runes/Trash row (matches the reference mat
-///     photo this was transcribed from — an Epic Upgrades-style mat, not
+///   - `singlePlayerZones(owner:)` — a one-player accessory mat: three
+///     stacked full-width bands (Battlefield, Base, Runes) with a right-
+///     hand column of accessory boxes (Legend+Champion beside Battlefield,
+///     Main Deck beside Base, Trash beside Runes) and Rune Deck inline at
+///     the left of the Runes band — matches the reference mat photo this
+///     was transcribed from (a numbered-score-track accessory mat, not
 ///     the official 2-player Riftbound mat). This is the default/active
 ///     template — calibrating one player's half at a time, per the
 ///     current scope.
@@ -61,31 +63,53 @@ public enum RiftboundPlaymatTemplate {
         // calibrated for either seat's physical mat.
         let handZone: Zone = owner == .player1 ? .player1Hand : .player2Hand
 
+        // Shared column bounds — the printed mat is 3 full-width bands
+        // (Battlefield/Base/Runes) on the left with one consistent
+        // right-hand accessory column (Legend+Champion, then Main Deck,
+        // then Trash, top to bottom); Rune Deck is the one box that
+        // breaks the pattern, sitting inline at the *left* of the Runes
+        // band instead of in that right column.
+        let mainX0: CGFloat = 0.06
+        let mainX1: CGFloat = 0.62
+        let accessoryX0: CGFloat = 0.66
+        let accessoryX1: CGFloat = 0.90
+
         return [
-            // Battlefield row — two independent slots, side by side.
-            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(0.09, 0.10, 0.505, 0.37), battlefieldSlot: 0),
-            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(0.515, 0.10, 0.94, 0.37), battlefieldSlot: 1),
+            // Battlefield band — two independent slots side by side (the
+            // print shows one undivided band; the internal split is this
+            // app's own bookkeeping for multiple Battlefields in play,
+            // rule 111).
+            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(mainX0, 0.08, 0.335, 0.30), battlefieldSlot: 0),
+            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(0.345, 0.08, mainX1, 0.30), battlefieldSlot: 1),
+            PlaymatZoneTemplate(zone: .legend, owner: owner, normalizedPolygon: rect(accessoryX0, 0.08, 0.775, 0.30)),
+            PlaymatZoneTemplate(zone: .champion, owner: owner, normalizedPolygon: rect(0.785, 0.08, accessoryX1, 0.30)),
 
-            // Champion / Legend / Base / Main Deck row.
-            PlaymatZoneTemplate(zone: .champion, owner: owner, normalizedPolygon: rect(0.09, 0.40, 0.205, 0.62)),
-            PlaymatZoneTemplate(zone: .legend, owner: owner, normalizedPolygon: rect(0.215, 0.40, 0.335, 0.62)),
-            PlaymatZoneTemplate(zone: .base, owner: owner, normalizedPolygon: rect(0.345, 0.40, 0.825, 0.62)),
-            PlaymatZoneTemplate(zone: .mainDeck, owner: owner, normalizedPolygon: rect(0.835, 0.40, 0.94, 0.62)),
+            // Base band.
+            PlaymatZoneTemplate(zone: .base, owner: owner, normalizedPolygon: rect(mainX0, 0.36, mainX1, 0.58)),
+            PlaymatZoneTemplate(zone: .mainDeck, owner: owner, normalizedPolygon: rect(accessoryX0, 0.36, accessoryX1, 0.58)),
 
-            // Rune Deck / Runes / Trash row.
-            PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: rect(0.09, 0.635, 0.205, 0.855)),
-            PlaymatZoneTemplate(zone: .runeArea, owner: owner, normalizedPolygon: rect(0.215, 0.635, 0.825, 0.855)),
-            PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: rect(0.835, 0.635, 0.94, 0.855)),
+            // Runes band — Rune Deck inline at the left instead of in the
+            // accessory column.
+            PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: rect(mainX0, 0.64, 0.175, 0.86)),
+            PlaymatZoneTemplate(zone: .runeArea, owner: owner, normalizedPolygon: rect(0.185, 0.64, mainX1, 0.86)),
+            PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: rect(accessoryX0, 0.64, accessoryX1, 0.86)),
 
             // Hand — no printed box on the physical mat itself (a hand is
             // normally held, not laid on the table), but this project is
             // playing Open Hand: cards are laid face-up in front of the
             // player instead of held concealed, which is exactly what
             // makes camera-based tracking of hand cards feasible at all.
-            // This band sits along the mat's near edge (highest y, closest
-            // to the player, matching the row ordering above) so the user
-            // can calibrate it to wherever they actually lay their hand.
-            PlaymatZoneTemplate(zone: handZone, owner: owner, normalizedPolygon: rect(0.09, 0.865, 0.94, 0.995))
+            // Deliberately extends past the template's own bottom edge
+            // (y > 1) rather than being squeezed into the last sliver of
+            // the printed mat — a hand of physical cards needs real room,
+            // and `PlaymatCalibration.map`'s bilinear interpolation
+            // extrapolates cleanly past y=1. In practice this means
+            // dragging the calibration quad's *bottom* corners down past
+            // the mat's actual printed edge, out onto the bare table in
+            // front of the player, so this zone (and the detector's ROI,
+            // which is this same quad's bounding rect) actually covers
+            // where the hand is laid out.
+            PlaymatZoneTemplate(zone: handZone, owner: owner, normalizedPolygon: rect(mainX0, 0.92, accessoryX1, 1.34))
         ]
     }
 
