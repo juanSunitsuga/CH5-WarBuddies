@@ -14,65 +14,56 @@ public struct ParsedOCRMechanics {
 }
 
 public final class SwiftRegexParser {
-    
-    // Regex patterns matching TCG rules
-    private static let actionPattern = "\\[Action\\]"
-    private static let reactionPattern = "\\[Reaction\\]"
-    private static let assaultPattern = "\\[Assault(\\s+\\d+)?\\]"
-    private static let shieldPattern = "\\[Shield(\\s+\\d+)?\\]"
-    private static let tankPattern = "\\[Tank\\]"
-    private static let drawPattern = "(?i)draw\\s+\\d+"
-    private static let statBoostPattern = "\\+\\d+\\s*(Might|\\[S\\]|:rb_might:)"
-    
-    /// Parses raw OCR text dynamically on the fly when SQLite database lookup misses
+
+    /// The comprehensive categorized regex pattern dictionary — permission/
+    /// timing keywords, then passive combat keywords, then mechanical
+    /// commands/stat modifiers, in that display order. `(?i)` is added
+    /// where the printed text can plausibly start a sentence ("Deal 6...",
+    /// "Ready another unit...") and so appear capitalized; the bracketed
+    /// `[Keyword]` tags and `+N Might`-style patterns always print in a
+    /// fixed casing on the card itself, so they're left case-sensitive.
+    private static let patterns: [(tag: String, pattern: String)] = [
+        // Permissions & Timing Keywords
+        ("TAG_ACTION", #"\[Action\]"#),
+        ("TAG_REACTION", #"\[Reaction\]"#),
+
+        // Passive Combat Keywords
+        ("TAG_ASSAULT", #"\[Assault(?:\s+\d+)?\]"#),
+        ("TAG_SHIELD", #"\[Shield(?:\s+\d+)?\]"#),
+        ("TAG_TANK", #"\[Tank\]"#),
+        ("TAG_GANKING", #"\[Ganking\]"#),
+        ("TAG_ACCELERATE", #"\[Accelerate\]"#),
+        ("TAG_DEFLECT", #"\[Deflect(?:\s+\d+)?\]"#),
+
+        // Mechanical Commands & Stat Modifiers
+        ("CMD_STAT_BOOST", #"\+\d+\s*(?::rb_might:|\[S\]|Might)"#),
+        ("CMD_DRAW", #"(?i)draw\s+\d+"#),
+        ("CMD_DAMAGE", #"(?i)deal\s+\d+(?:\s+damage)?"#),
+        ("CMD_READY", #"(?i)ready\s+(?:another\s+)?unit"#),
+        ("CMD_SPAWN_TOKEN", #"(?i)play\s+(?:a|four)?\s*\d*\s*.*token"#),
+        ("CMD_CONQUER", #"(?i)when\s+you\s+conquer"#)
+    ]
+
+    /// Parses raw OCR text dynamically on the fly when SQLite database
+    /// lookup misses. Walks `patterns` in order, so `extractedTags`/
+    /// `categories` always come out in the same category order regardless
+    /// of where a match falls in the source text.
     public static func parse(ocrText: String) -> ParsedOCRMechanics {
         var tags: [String] = []
         var categories: [String] = []
-        
-        // 1. Check Permissions & Keywords
-        if matches(pattern: actionPattern, in: ocrText) {
-            tags.append("<TAG_ACTION>[Action]</TAG_ACTION>")
-            categories.append("TAG_ACTION")
+
+        for (tag, pattern) in patterns {
+            guard let match = firstMatch(pattern: pattern, in: ocrText) else { continue }
+            tags.append("<\(tag)>\(match)</\(tag)>")
+            categories.append(tag)
         }
-        if matches(pattern: reactionPattern, in: ocrText) {
-            tags.append("<TAG_REACTION>[Reaction]</TAG_REACTION>")
-            categories.append("TAG_REACTION")
-        }
-        if let match = firstMatch(pattern: assaultPattern, in: ocrText) {
-            tags.append("<TAG_ASSAULT>\(match)</TAG_ASSAULT>")
-            categories.append("TAG_ASSAULT")
-        }
-        if let match = firstMatch(pattern: shieldPattern, in: ocrText) {
-            tags.append("<TAG_SHIELD>\(match)</TAG_SHIELD>")
-            categories.append("TAG_SHIELD")
-        }
-        if matches(pattern: tankPattern, in: ocrText) {
-            tags.append("<TAG_TANK>[Tank]</TAG_TANK>")
-            categories.append("TAG_TANK")
-        }
-        
-        // 2. Check Commands & Stat Buffs
-        if let match = firstMatch(pattern: drawPattern, in: ocrText) {
-            tags.append("<CMD_DRAW>\(match)</CMD_DRAW>")
-            categories.append("CMD_DRAW")
-        }
-        if let match = firstMatch(pattern: statBoostPattern, in: ocrText) {
-            tags.append("<CMD_STAT_BOOST>\(match)</CMD_STAT_BOOST>")
-            categories.append("CMD_STAT_BOOST")
-        }
-        
+
         let tagsString = "[" + tags.joined(separator: ", ") + "]"
         return ParsedOCRMechanics(energyCost: 0, extractedTags: tagsString, categories: categories)
     }
-    
-    private static func matches(pattern: String, in text: String) -> Bool {
-        return text.range(of: pattern, options: .regularExpression) != nil
-    }
-    
+
     private static func firstMatch(pattern: String, in text: String) -> String? {
-        if let range = text.range(of: pattern, options: .regularExpression) {
-            return String(text[range])
-        }
-        return nil
+        guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
+        return String(text[range])
     }
 }
