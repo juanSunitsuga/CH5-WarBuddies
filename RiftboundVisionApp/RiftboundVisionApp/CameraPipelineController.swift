@@ -37,7 +37,7 @@ final class CameraPipelineController: ObservableObject {
     /// Starts centered on whatever the first frame's size turns out to be
     /// (see `process(_:)`) and is otherwise only ever changed by the user
     /// dragging `PlaymatOverlayView`'s corner handles.
-    @Published var calibration = PlaymatCalibration.centered(in: CGSize(width: 1280, height: 720))
+    @Published var calibration = CameraPipelineController.defaultCalibration(for: CGSize(width: 1280, height: 720))
     /// Shows the draggable corner handles. Detection keeps running while
     /// calibrating — dragging updates `zoneMapper` live, so the overlay
     /// snapping into place over the physical mat is itself the feedback
@@ -122,6 +122,21 @@ final class CameraPipelineController: ObservableObject {
     private var previousTimestamp: TimeInterval?
     private var frameIndex = 0
     private var hasSizedCalibrationToFrame = false
+
+    /// The starting calibration quad, sized so the *whole* active
+    /// template — including Hand, which extrapolates past the quad's own
+    /// bottom edge (see `RiftboundPlaymatTemplate.singlePlayerZones()`) —
+    /// lands on screen before the user has dragged a single corner.
+    /// Without this, Hand's mapped position falls below the visible frame
+    /// by default, since `PlaymatCalibration.centered(in:)` alone only
+    /// guarantees `y = 0...1` (the mat itself) stays in view.
+    private static func defaultCalibration(for frameSize: CGSize) -> PlaymatCalibration {
+        let contentHeight = RiftboundPlaymatTemplate.singlePlayerZones()
+            .flatMap(\.normalizedPolygon)
+            .map(\.y)
+            .max() ?? 1.0
+        return .centered(in: frameSize, contentHeight: contentHeight)
+    }
     private var runLoop: Task<Void, Never>?
     private var statusLoop: Task<Void, Never>?
 
@@ -365,7 +380,7 @@ final class CameraPipelineController: ObservableObject {
         let frameSize = CGSize(width: ciImage.extent.width, height: ciImage.extent.height)
 
         if !hasSizedCalibrationToFrame {
-            calibration = .centered(in: frameSize)
+            calibration = Self.defaultCalibration(for: frameSize)
             hasSizedCalibrationToFrame = true
         }
 

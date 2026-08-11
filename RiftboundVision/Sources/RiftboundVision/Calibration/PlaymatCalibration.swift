@@ -22,15 +22,31 @@ public struct PlaymatCalibration: Sendable, Equatable {
     }
 
     /// A reasonable starting quad before the user has dragged anything —
-    /// centered, inset from the frame edges by `inset` (fraction of the
-    /// smaller dimension).
-    public static func centered(in imageSize: CGSize, inset: CGFloat = 0.1) -> PlaymatCalibration {
-        let margin = min(imageSize.width, imageSize.height) * inset
+    /// horizontally centered, inset from the frame edges by `inset`
+    /// (fraction of frame width).
+    ///
+    /// `contentHeight` is how many normalized template units tall the
+    /// content actually is — pass the active template's max zone `y`
+    /// (`RiftboundPlaymatTemplate.singlePlayerZones()`'s Hand zone
+    /// currently extrapolates to `y ≈ 1.34`, past the quad's own `y = 1`
+    /// bottom edge; see its doc comment). Defaulting this to `1.0` would
+    /// place the quad's bottom edge near the frame's bottom margin same
+    /// as before, but then Hand's extrapolated portion falls below the
+    /// visible frame entirely before the user has dragged anything. Instead
+    /// this shrinks the quad (and pushes it toward the top of the frame)
+    /// so the *whole* `0...contentHeight` range fits on screen by default.
+    public static func centered(in imageSize: CGSize, inset: CGFloat = 0.1, contentHeight: CGFloat = 1.0) -> PlaymatCalibration {
+        let marginX = imageSize.width * inset
+        let marginY = imageSize.height * inset
+        let availableHeight = max(imageSize.height - 2 * marginY, 1)
+        let quadHeight = availableHeight / contentHeight
+        let quadBottomY = marginY + quadHeight
+
         return PlaymatCalibration(
-            topLeft: CGPoint(x: margin, y: margin),
-            topRight: CGPoint(x: imageSize.width - margin, y: margin),
-            bottomRight: CGPoint(x: imageSize.width - margin, y: imageSize.height - margin),
-            bottomLeft: CGPoint(x: margin, y: imageSize.height - margin)
+            topLeft: CGPoint(x: marginX, y: marginY),
+            topRight: CGPoint(x: imageSize.width - marginX, y: marginY),
+            bottomRight: CGPoint(x: imageSize.width - marginX, y: quadBottomY),
+            bottomLeft: CGPoint(x: marginX, y: quadBottomY)
         )
     }
 
