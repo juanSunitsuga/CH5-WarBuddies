@@ -64,18 +64,29 @@ public enum RiftboundPlaymatTemplate {
         let handZone: Zone = owner == .player1 ? .player1Hand : .player2Hand
 
         // Transcribed directly off the RiftChamps layout mockup (pixel
-        // positions read off the design, not a guess) — replaces the
-        // earlier approximation, which wrongly gave Battlefield and Base
-        // the same width. They're not the same: Battlefield's row has
-        // *two* accessory boxes (Legend + Champion) beside it, so it's
-        // narrower; Base's row has only *one* (Main Deck), so Base
-        // extends further right, up to where Legend's right edge sits.
+        // positions read off the design, not a guess). Battlefield and
+        // Rune Area are the *same width* — Rune Area only looks narrower
+        // at a glance because Rune Deck sits to its left eating into that
+        // row, while Battlefield has nothing to its left but the margin;
+        // once you offset for that, both bands are identical width. Base
+        // is the longest of the three full-width bands (only one accessory
+        // box — Main Deck — beside it, vs. two beside Battlefield), and
+        // Hand is the longest rectangle on the whole mat (spans past the
+        // accessory column too).
         let leftMargin: CGFloat = 0.055
         // Shared right edge for every full-width band (Battlefield, Base,
         // Rune Area) — matches Legend's right edge in the mockup exactly.
         let bandX1: CGFloat = 0.79
         let accessoryX0: CGFloat = 0.80
         let accessoryX1: CGFloat = 0.97
+        let runeDeckX1: CGFloat = 0.225
+        let runeAreaX0: CGFloat = 0.235
+        // Battlefield and Rune Area share this width exactly — Rune Area's
+        // is derived from its own anchors (`bandX1 - runeAreaX0`) since
+        // Rune Deck's width is the fixed, load-bearing constant; Battlefield
+        // then matches it rather than the other way around.
+        let fullBandWidth: CGFloat = bandX1 - runeAreaX0
+        let battlefieldX1: CGFloat = leftMargin + fullBandWidth
 
         let row1Y0: CGFloat = 0.065, row1Y1: CGFloat = 0.345
         let row2Y0: CGFloat = 0.37, row2Y1: CGFloat = 0.65
@@ -85,19 +96,19 @@ public enum RiftboundPlaymatTemplate {
             // Row 1: Battlefield — a single zone (no more internal slot
             // split; this mat only calibrates one physical Battlefield
             // card) + Legend + Champion.
-            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(leftMargin, row1Y0, 0.615, row1Y1), battlefieldSlot: 0),
-            PlaymatZoneTemplate(zone: .legend, owner: owner, normalizedPolygon: rect(0.625, row1Y0, bandX1, row1Y1)),
+            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(leftMargin, row1Y0, battlefieldX1, row1Y1), battlefieldSlot: 0),
+            PlaymatZoneTemplate(zone: .legend, owner: owner, normalizedPolygon: rect(battlefieldX1 + 0.01, row1Y0, bandX1, row1Y1)),
             PlaymatZoneTemplate(zone: .champion, owner: owner, normalizedPolygon: rect(accessoryX0, row1Y0, accessoryX1, row1Y1)),
 
-            // Row 2: Base (wider than Battlefield — only one accessory box
-            // beside it) + Main Deck.
+            // Row 2: Base (the longest full-width band — only one
+            // accessory box beside it) + Main Deck.
             PlaymatZoneTemplate(zone: .base, owner: owner, normalizedPolygon: rect(leftMargin, row2Y0, bandX1, row2Y1)),
             PlaymatZoneTemplate(zone: .mainDeck, owner: owner, normalizedPolygon: rect(accessoryX0, row2Y0, accessoryX1, row2Y1)),
 
             // Row 3: Rune Deck (inline at the left, not in the accessory
-            // column) + Rune Area + Trash.
-            PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: rect(leftMargin, row3Y0, 0.225, row3Y1)),
-            PlaymatZoneTemplate(zone: .runeArea, owner: owner, normalizedPolygon: rect(0.235, row3Y0, bandX1, row3Y1)),
+            // column) + Rune Area (same width as Battlefield) + Trash.
+            PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: rect(leftMargin, row3Y0, runeDeckX1, row3Y1)),
+            PlaymatZoneTemplate(zone: .runeArea, owner: owner, normalizedPolygon: rect(runeAreaX0, row3Y0, bandX1, row3Y1)),
             PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: rect(accessoryX0, row3Y0, accessoryX1, row3Y1)),
 
             // Hand — spans the same outer left/right bounds as everything
