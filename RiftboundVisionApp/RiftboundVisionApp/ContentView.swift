@@ -10,6 +10,7 @@ import RiftboundVision
 /// architecture: no per-object tracking, no persistent identity).
 struct ContentView: View {
     @StateObject private var pipeline = CameraPipelineController()
+    @State private var isShowingPipelineSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -100,14 +101,20 @@ struct ContentView: View {
                 .toggleStyle(.button)
             }
             ToolbarItem {
-                // Debug kill switch — stops detection (and everything
-                // downstream of it) while the camera feed keeps playing,
-                // for isolating "is the raw feed fine" from "is detection/
-                // the tracking pipeline the problem" while testing.
-                Toggle(isOn: $pipeline.isPipelineCut) {
-                    Label("Cut Pipeline", systemImage: "bolt.slash")
+                // Debug settings overlay — per-stage toggles instead of one
+                // flat kill switch. Disabling an earlier stage cascades:
+                // everything downstream of it turns off too (enforced by
+                // `CameraPipelineController.setStage`/`isStageActive`), so
+                // there's no way to leave the pipeline in an inconsistent
+                // "stage 3 on, stage 2 off" state from this UI.
+                Button {
+                    isShowingPipelineSettings = true
+                } label: {
+                    Label("Pipeline Settings", systemImage: "gearshape")
                 }
-                .toggleStyle(.button)
+                .popover(isPresented: $isShowingPipelineSettings) {
+                    pipelineSettingsPopover
+                }
             }
             ToolbarItem {
                 // Diagnostic for "Continuity Camera works elsewhere but
@@ -153,6 +160,41 @@ struct ContentView: View {
         .padding(.vertical, 6)
         .background(.black.opacity(0.4), in: Capsule())
         .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
+    }
+
+    /// Per-stage toggles, one row per `PipelineStage`. A stage that isn't
+    /// wired into the live loop yet (`.nlpTranslation`/`.expertSystem` —
+    /// real, tested components elsewhere, just not driven by this app's
+    /// camera loop) is shown disabled with a note, rather than hidden —
+    /// so the settings surface reflects the pipeline's actual 4 stages
+    /// even before all of them are wired.
+    private var pipelineSettingsPopover: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Pipeline Stages").font(.headline)
+            Text("Turning off a stage automatically turns off everything after it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(PipelineStage.allCases) { stage in
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(isOn: Binding(
+                        get: { pipeline.isStageActive(stage) },
+                        set: { pipeline.setStage(stage, enabled: $0) }
+                    )) {
+                        Text(stage.title)
+                    }
+                    .disabled(!stage.isWired)
+
+                    if !stage.isWired {
+                        Text("Not yet wired into the live pipeline.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding()
+        .frame(width: 280)
     }
 
     private var debugReportSheet: some View {

@@ -3,6 +3,43 @@ import CoreImage
 import RiftboundVision
 import RiftboundExpertSystem
 
+/// One stage of the CV → Expert System pipeline, in dependency order —
+/// matches the 4-stage pipeline documented in the root README. Each
+/// stage needs the one before it enabled to produce anything worth
+/// consuming, which is what the settings overlay's cascade behavior
+/// enforces: turning a stage off also turns off everything after it.
+enum PipelineStage: Int, CaseIterable, Identifiable {
+    case detection = 1
+    case objectTracking = 2
+    case nlpTranslation = 3
+    case expertSystem = 4
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .detection: return "① YOLO Detection"
+        case .objectTracking: return "② Object Tracking + Zones"
+        case .nlpTranslation: return "③ NLP Translation"
+        case .expertSystem: return "④ Expert System"
+        }
+    }
+
+    /// Whether this stage is actually implemented in the app's live
+    /// per-frame loop right now. ③/④ exist as real, tested components
+    /// elsewhere (`RiftboundTextProcessing.ExpertSystemTranslatorAdapter`,
+    /// `RiftboundExpertSystem.GameEngine`) but nothing in
+    /// `CameraPipelineController` drives them yet — shown here rather
+    /// than hidden, so the settings panel reflects the whole intended
+    /// pipeline shape, just visibly inert until that wiring exists.
+    var isWired: Bool {
+        switch self {
+        case .detection, .objectTracking: return true
+        case .nlpTranslation, .expertSystem: return false
+        }
+    }
+}
+
 /// Drives camera → detector and publishes what the live overlay needs to
 /// render. This is deliberately app-shell code (lives here, not in the
 /// `RiftboundVision` library) — it exists to make the detection pipeline's
@@ -89,14 +126,12 @@ final class CameraPipelineController: ObservableObject {
     /// would read from.
     @Published private(set) var observedEvents: [RiftboundExpertSystem.ObservedTableEvent] = []
 
-    /// Debug toggle — severs detection from every downstream consumer
-    /// (both `expertSystemAdapter.ingest(...)` and, further upstream, the
-    /// detector call itself) so the camera feed keeps running while
-    /// nothing processes it. For isolating "is the raw camera feed fine"
-    /// from "is something in the detection/tracking pipeline the
-    /// problem" while testing — flip this on and confirm the picture
-    /// alone still looks right before assuming detection is at fault.
-    @Published var isPipelineCut = false
+    /// Which `PipelineStage`s the user has asked to run, via the settings
+    /// overlay. Independent of `PipelineStage.isWired` — a stage can be
+    /// "requested" here and still do nothing if it isn't wired into
+    /// `process(_:)` yet (see `isStageActive(_:)`, which is what actually
+    /// gates behavior and accounts for both).
+    @Published var enabledStages: Set<PipelineStage> = [.detection, .objectTracking]
 
     let cardDatabase = CardDatabaseLoader.loadBundled()
 
@@ -218,6 +253,31 @@ final class CameraPipelineController: ObservableObject {
         let report = AVFoundationCameraCapture.debugDeviceReport()
         print(report)
         debugReport = report
+    }
+
+    /// Whether `stage` is actually active right now — requested (in
+    /// `enabledStages`), actually wired into the live loop, *and* every
+    /// stage before it is active too. This is what `process(_:)` and the
+    /// settings overlay should read, not `enabledStages` directly.
+    func isStageActive(_ stage: PipelineStage) -> Bool {
+        guard stage.isWired, enabledStages.contains(stage) else { return false }
+        return PipelineStage.allCases
+            .filter { $0.rawValue < stage.rawValue }
+            .allSatisfy { isStageActive($0) }
+    }
+
+    /// Turns `stage` on/off. Turning a stage off also turns off every
+    /// stage after it — each depends on the output of the one before, so
+    /// "cut stage 2" means stage 3/4 cut down automatically too, rather
+    /// than silently running on stale/impossible input.
+    func setStage(_ stage: PipelineStage, enabled: Bool) {
+        if enabled {
+            enabledStages.insert(stage)
+        } else {
+            for laterOrEqual in PipelineStage.allCases where laterOrEqual.rawValue >= stage.rawValue {
+                enabledStages.remove(laterOrEqual)
+            }
+        }
     }
 
     func selectCamera(id: String?) {
@@ -357,11 +417,11 @@ final class CameraPipelineController: ObservableObject {
         backgroundImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
         frameSize = size
 
-        // Debug kill switch — see `isPipelineCut`'s doc comment. Bails out
-        // after the camera picture above is already updated, so the video
-        // itself keeps playing; only detection and everything it feeds
-        // stops.
-        guard !isPipelineCut else {
+        // Debug kill switch — see `enabledStages`'/`isStageActive`'s doc
+        // comments. Bails out after the camera picture above is already
+        // updated, so the video itself keeps playing; only detection and
+        // everything it feeds stops.
+        guard isStageActive(.detection) else {
             detections = []
             return
         }
@@ -382,8 +442,10 @@ final class CameraPipelineController: ObservableObject {
         detections = (try? detector.detect(in: frame.pixelBuffer)) ?? []
 
         // Second consumer of the same detections, same poll cadence — see
-        // `expertSystemAdapter`'s doc comment.
-        if let expertSystemAdapter {
+        // `expertSystemAdapter`'s doc comment. Gated on stage 2 so turning
+        // Object Tracking off in the pipeline settings actually stops it,
+        // not just stage 1.
+        if isStageActive(.objectTracking), let expertSystemAdapter {
             expertSystemFrameIndex += 1
             expertSystemAdapter.ingest(detections: detections, frameIndex: expertSystemFrameIndex, timestamp: frame.timestamp)
         }
