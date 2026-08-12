@@ -63,7 +63,7 @@ public struct LiveDetectionOverlayView: View {
         let name = recognizedName ?? detection.recognizedLabel ?? detection.type.rawValue
         let percent = Int((detection.confidence * 100).rounded())
         return Text("\(name) • \(percent)%")
-            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .font(.system(size: 32, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
             .lineLimit(1)
             .padding(.horizontal, 8)

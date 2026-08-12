@@ -42,6 +42,16 @@ public struct VisionEvent: Sendable, Equatable {
 
     public let timestamp: TimeInterval
     public let confidence: Float
+    /// Carried straight through from `TrackedObject.recognizedLabel` (the
+    /// detector's class label, e.g. "Garen - Rugged") when the object that
+    /// produced this event has one. Without this, `ExpertSystemAdapter`
+    /// had no way to learn *which* `TrackedObjectID` a caller should
+    /// `identify(objectID:as:)` — its tracker is private, so nothing
+    /// outside the adapter can ever discover the ID to call it with. This
+    /// field is what lets the adapter derive `CardIdentification`
+    /// automatically instead of depending on an external call that, in
+    /// practice, nothing could ever make correctly.
+    public let recognizedLabel: String?
 
     public init(
         type: VisionEventType,
@@ -56,7 +66,8 @@ public struct VisionEvent: Sendable, Equatable {
         previousRotation: CGFloat?,
         currentRotation: CGFloat?,
         timestamp: TimeInterval,
-        confidence: Float
+        confidence: Float,
+        recognizedLabel: String? = nil
     ) {
         self.type = type
         self.objectID = objectID
@@ -71,5 +82,6 @@ public struct VisionEvent: Sendable, Equatable {
         self.currentRotation = currentRotation
         self.timestamp = timestamp
         self.confidence = confidence
+        self.recognizedLabel = recognizedLabel
     }
 }

@@ -126,13 +126,23 @@ struct ContentView: View {
     }
 
     private var detectionCountBadge: some View {
-        Text(pipeline.detections.isEmpty ? "No cards detected" : "\(pipeline.detections.count) card\(pipeline.detections.count == 1 ? "" : "s") detected")
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .foregroundStyle(.white.opacity(0.9))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .background(.black.opacity(0.4), in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
+        HStack(spacing: 8) {
+            Text(pipeline.detections.isEmpty ? "No cards detected" : "\(pipeline.detections.count) card\(pipeline.detections.count == 1 ? "" : "s") detected")
+            // Visible proof the reconnected Object Tracking + Area of
+            // Region pipeline (expertSystemAdapter) is actually producing
+            // events, not just structurally wired — see
+            // CameraPipelineController.observedEvents' doc comment.
+            if !pipeline.observedEvents.isEmpty {
+                Text("· \(pipeline.observedEvents.count) table event\(pipeline.observedEvents.count == 1 ? "" : "s")")
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+        }
+        .font(.system(size: 12, weight: .semibold, design: .rounded))
+        .foregroundStyle(.white.opacity(0.9))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(.black.opacity(0.4), in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
     }
 
     private var debugReportSheet: some View {

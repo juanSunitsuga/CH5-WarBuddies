@@ -21,6 +21,7 @@
 		93F14F27D8F144288BE9E603 /* GameStateBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3055869C4ECE495FA5A42260 /* GameStateBar.swift */; };
 		76DA6F984DFB4D99A0C5E470 /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880B3B2F2F93462E90B88A3A /* CardDetailView.swift */; };
 		A85A01502EB54B35B708A490 /* DetectedCardsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */; };
+		E16FF14ECC8F4448823BFD1F /* RiftboundExpertSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 1A78B4275C9F40C0A74AFCE8 /* RiftboundExpertSystem */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +48,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				28BBE6A41DF542389F12D127 /* RiftboundVision in Frameworks */,
+				E16FF14ECC8F4448823BFD1F /* RiftboundExpertSystem in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -132,6 +134,7 @@
 			name = RiftboundVisionApp;
 			packageProductDependencies = (
 				BAF983D8D87248D98042BA4D /* RiftboundVision */,
+				1A78B4275C9F40C0A74AFCE8 /* RiftboundExpertSystem */,
 			);
 			productName = RiftboundVisionApp;
 			productReference = FF5C8EB31C364F5AAD701BF1 /* RiftboundVisionApp.app */;
@@ -163,6 +166,7 @@
 			mainGroup = 18AB5BDAA1ED4654B855CAA4;
 			packageReferences = (
 				EE3AAEDB0AA54C708EABCD87 /* XCLocalSwiftPackageReference "../RiftboundVision" */,
+				6311E7571EEB4993B3A46B78 /* XCLocalSwiftPackageReference "../RiftboundEngine" */,
 			);
 			productRefGroup = 82F90C7A49424A50982483D6 /* Products */;
 			projectDirPath = "";
@@ -403,12 +407,20 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "../RiftboundVision";
 		};
+		6311E7571EEB4993B3A46B78 /* XCLocalSwiftPackageReference "../RiftboundEngine" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../RiftboundEngine";
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		BAF983D8D87248D98042BA4D /* RiftboundVision */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = RiftboundVision;
+		};
+		1A78B4275C9F40C0A74AFCE8 /* RiftboundExpertSystem */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RiftboundExpertSystem;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

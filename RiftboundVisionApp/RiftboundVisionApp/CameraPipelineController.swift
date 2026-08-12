@@ -1,15 +1,12 @@
 import SwiftUI
 import CoreImage
 import RiftboundVision
+import RiftboundExpertSystem
 
 /// Drives camera → detector and publishes what the live overlay needs to
 /// render. This is deliberately app-shell code (lives here, not in the
 /// `RiftboundVision` library) — it exists to make the detection pipeline's
-/// current state visible on screen, not to be reused by the Expert System
-/// integration path, which goes through `ExpertSystemAdapter` instead
-/// (already covered by the package's test suite; `ObjectTracker`/
-/// `ZoneMapper`/`TemporalEventDetector` still live there, untouched, for
-/// whenever persistent per-object tracking is worth adding back here).
+/// current state visible on screen.
 ///
 /// Detection architecture matches `feature/riftbound-scanner-prototype`'s
 /// `DetectionCoordinator` on purpose: poll the latest frame on a fixed
@@ -20,11 +17,25 @@ import RiftboundVision
 /// tracking state that could itself go stale or wrong. Card recognition
 /// is a fresh `cardDatabase` lookup per detection too, not cached.
 ///
+/// A *second*, independent consumer reads the same polled detections for
+/// game-state purposes: `expertSystemAdapter` runs its own internal
+/// `ObjectTracker`/`ZoneMapper`/`TemporalEventDetector` (see
+/// `ExpertSystemAdapter`) to turn them into `ObservedTableEvent`s. This is
+/// deliberately not the same code path as the live overlay above — the
+/// overlay wants "what's visible right now," the Expert System wants
+/// "what changed, debounced and identity-stable." Reverting the overlay
+/// back to tracked mode to get that would have undone the whole point of
+/// the stateless redesign; running two consumers off the same detections
+/// keeps both needs met without forcing one architecture to serve both.
+///
 /// The playmat overlay (`calibration`) starts centered on the first frame
 /// and does nothing useful until the user drags its corners onto their
-/// actual physical mat (see `isCalibrating`) — it's a purely visual
-/// reference layer now, not fed into detection (detection scans the full
-/// frame, matching the prototype) or into zone/ownership resolution.
+/// actual physical mat (see `isCalibrating`). It's purely visual for the
+/// live-detection overlay above (which scans the full frame, matching the
+/// prototype), but it IS what `expertSystemAdapter`'s `ZoneMapper` is
+/// built from — dragging the corners into place is what makes Hand/Base/
+/// Battlefield resolve to real zones for game-state ingestion instead of
+/// `.unknown`.
 @MainActor
 final class CameraPipelineController: ObservableObject {
     @Published var backgroundImage: CGImage?
@@ -67,7 +78,29 @@ final class CameraPipelineController: ObservableObject {
     /// display and for the user's own bookkeeping.
     @Published var gameState = ManualGameState()
 
+    /// Every `ObservedTableEvent` the reconnected tracking pipeline
+    /// (`expertSystemAdapter`) has produced this session, most recent
+    /// last, capped so a long session doesn't grow this unboundedly.
+    /// Nothing consumes these into a real `GameState`/`GameEngine` yet —
+    /// that needs actual game setup (a decklist, player identification),
+    /// which this app has no UI for. This is the observable proof the
+    /// reconnected Object Tracking + Area of Region pipeline is really
+    /// producing real events, and the seam a future GameEngine wiring
+    /// would read from.
+    @Published private(set) var observedEvents: [RiftboundExpertSystem.ObservedTableEvent] = []
+
     let cardDatabase = CardDatabaseLoader.loadBundled()
+
+    /// Minted once per app session — there's no player-identification UI,
+    /// so there's no real per-match `PlayerID` to use yet. `.player1`
+    /// (the calibrated mat's owner, "You" throughout this app) maps to
+    /// `localPlayerID`; `.player2` is a placeholder opponent seat.
+    let localPlayerID = PlayerID()
+    let opponentPlayerID = PlayerID()
+    /// One per `RiftboundPlaymatTemplate.singlePlayerZones()` Battlefield
+    /// slot (0 and 1) — same "minted once per session" caveat as the
+    /// player IDs above.
+    let battlefieldSlotIDs: [Int: BattlefieldID] = [0: BattlefieldID(), 1: BattlefieldID()]
 
     private let camera = AVFoundationCameraCapture()
     private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
@@ -84,6 +117,24 @@ final class CameraPipelineController: ObservableObject {
     private var hasSizedCalibrationToFrame = false
     private var runLoop: Task<Void, Never>?
     private var statusLoop: Task<Void, Never>?
+
+    /// The reconnected Object Tracking + Area of Region consumer (see
+    /// this type's doc comment) — built fresh in `start()`, from
+    /// `calibration` as it stands at that moment.
+    ///
+    /// KNOWN LIMITATION: its `ZoneMapper` is a one-time snapshot, not
+    /// live — re-dragging the calibration corners after `start()` keeps
+    /// updating the visual overlay (which reads `calibration` directly
+    /// every redraw) but won't retroactively fix zone resolution here.
+    /// Flagging rather than hiding: fixing this properly means either
+    /// rebuilding the adapter on every calibration change (losing its
+    /// tracking history each time) or teaching `ExpertSystemAdapter` to
+    /// accept a live zone source instead of a fixed one — a real design
+    /// question, not a quick patch, so left for whoever picks this up
+    /// once recalibrating mid-session is actually a problem in practice.
+    private var expertSystemAdapter: ExpertSystemAdapter?
+    private var expertSystemFrameIndex = 0
+    private var expertSystemEventLoop: Task<Void, Never>?
 
     /// The starting calibration quad, sized so the *whole* active
     /// template — including Hand, which extrapolates past the quad's own
@@ -185,6 +236,23 @@ final class CameraPipelineController: ObservableObject {
         isRunning = true
         errorMessage = nil
 
+        // Reconnect Object Tracking + Area of Region as a second consumer
+        // of the same detections `process(_:)` feeds the live overlay —
+        // see `expertSystemAdapter`'s doc comment for the snapshot-zone
+        // caveat.
+        let adapter = ExpertSystemAdapter(
+            zoneMapper: ZoneMapper(zones: calibration.boardZones()),
+            playerCalibration: [.player1: localPlayerID, .player2: opponentPlayerID],
+            battlefieldCalibration: battlefieldSlotIDs
+        )
+        expertSystemAdapter = adapter
+        expertSystemFrameIndex = 0
+        expertSystemEventLoop = Task {
+            for await event in adapter.events() {
+                await self.recordObservedEvent(event)
+            }
+        }
+
         runLoop = Task {
             for await frame in camera.frames() {
                 await self.process(frame)
@@ -199,10 +267,23 @@ final class CameraPipelineController: ObservableObject {
         isRunning = false
         detections = []
         lastDetectionTimestamp = nil
+
+        expertSystemAdapter?.finish()
+        expertSystemEventLoop?.cancel()
+        expertSystemEventLoop = nil
+        expertSystemAdapter = nil
+        expertSystemFrameIndex = 0
     }
 
     deinit {
         statusLoop?.cancel()
+    }
+
+    private func recordObservedEvent(_ event: RiftboundExpertSystem.ObservedTableEvent) {
+        observedEvents.append(event)
+        if observedEvents.count > 50 {
+            observedEvents.removeFirst(observedEvents.count - 50)
+        }
     }
 
     /// Reacts to `CameraStatusEvent`s from the capture layer — most
@@ -280,5 +361,12 @@ final class CameraPipelineController: ObservableObject {
         // card-shape (aspect ratio) gate are what keep this from
         // re-introducing "every square object gets identified."
         detections = (try? detector.detect(in: frame.pixelBuffer)) ?? []
+
+        // Second consumer of the same detections, same poll cadence — see
+        // `expertSystemAdapter`'s doc comment.
+        if let expertSystemAdapter {
+            expertSystemFrameIndex += 1
+            expertSystemAdapter.ingest(detections: detections, frameIndex: expertSystemFrameIndex, timestamp: frame.timestamp)
+        }
     }
 }
