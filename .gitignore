@@ -5,8 +5,9 @@
 **/.claude/settings.local.json
 **/CLAUDE.md
 
-# Antigravity
+# Antigravity and misc
 .history/
+**.zip
 
 # Swift Package Manager
 .build/
