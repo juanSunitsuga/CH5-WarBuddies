@@ -28,6 +28,19 @@ import CoreGraphics
 public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
     private let visionModel: VNCoreMLModel
     public var minimumConfidence: VNConfidence
+    /// `max(width, height) / min(width, height)` of an accepted detection
+    /// — every Riftbound card (including Rune cards; they're the same
+    /// physical card stock) ships at roughly 2.5"×3.5", a ~1.4 long/short
+    /// ratio, regardless of which way it's rotated. A near-square box
+    /// (ratio ≈ 1) is a real object the model mistook for one of its 38
+    /// known classes, not an actual card, however high its confidence —
+    /// this is what "every square object gets identified" was: the model
+    /// alone has no shape prior, only `minimumConfidence` was gating it,
+    /// and a small-class-count model can be confidently wrong. Matches
+    /// `VisionRectangleDetector.cardAspectRatioRange`'s convention, widened
+    /// a bit since YOLO's axis-aligned boxes are less tightly fit than
+    /// Vision's oriented rectangle detector.
+    public var cardAspectRatioRange: ClosedRange<CGFloat>
 
     /// - Parameters:
     ///   - model: a loaded `MLModel` — the caller owns loading it from
@@ -38,10 +51,16 @@ public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
     ///     resource name) means it isn't tied to one specific bundle.
     ///   - minimumConfidence: per-detection confidence floor, applied on
     ///     top of whatever threshold is already baked into the model's
-    ///     NMS (0.25 for the bundled model — see its metadata).
-    public init(model: MLModel, minimumConfidence: VNConfidence = 0.4) throws {
+    ///     own NMS (0.25 for the bundled model — see its metadata, a lot
+    ///     looser than this). Defaulted well above that: a wrongly-boxed
+    ///     background object clearing 0.25 is common with only 38 trained
+    ///     classes; requiring 0.75 cuts most of that out before the shape
+    ///     check below even runs.
+    ///   - cardAspectRatioRange: see this property's own doc comment.
+    public init(model: MLModel, minimumConfidence: VNConfidence = 0.75, cardAspectRatioRange: ClosedRange<CGFloat> = 1.2...1.8) throws {
         self.visionModel = try VNCoreMLModel(for: model)
         self.minimumConfidence = minimumConfidence
+        self.cardAspectRatioRange = cardAspectRatioRange
     }
 
     public func detect(in pixelBuffer: CVPixelBuffer, regionOfInterest: CGRect? = nil) throws -> [Detection] {
@@ -78,6 +97,11 @@ public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
                 width: box.width * width,
                 height: box.height * height
             )
+
+            // Reject anything that isn't card-shaped regardless of
+            // confidence — see `cardAspectRatioRange`'s doc comment.
+            let aspectRatio = max(rect.width, rect.height) / max(min(rect.width, rect.height), 1)
+            guard cardAspectRatioRange.contains(aspectRatio) else { return nil }
 
             // The bundled model's class names are literally "<X> Rune"
             // for the 4 basic-Rune classes (see its embedded metadata);

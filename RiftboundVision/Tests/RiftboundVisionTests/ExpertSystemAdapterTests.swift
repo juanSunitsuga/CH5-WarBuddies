@@ -96,4 +96,47 @@ struct ExpertSystemAdapterTests {
         #expect(received.isEmpty)
         #expect(adapter.unrepresentableZoneEvents.contains { $0.previousZone == .mainDeck && $0.currentZone == .player1Hand })
     }
+
+    /// `identify(objectID:as:)` requires knowing a `TrackedObjectID` in
+    /// advance, but `tracker`/`temporalDetector` are private to this
+    /// adapter — nothing outside it can ever discover the right ID to call
+    /// that with. `Detection.recognizedLabel` (from a real recognizer like
+    /// `CoreMLCardDetector`) is what actually makes automatic
+    /// identification possible, carried through `TrackedObject` →
+    /// `VisionEvent.recognizedLabel` → here.
+    @Test("A detection with a recognizedLabel is auto-identified without calling identify(objectID:as:)")
+    func recognizedLabelAutoIdentifiesWithoutManualCall() async {
+        let playerA = PlayerID()
+        let battlefieldID = BattlefieldID()
+        let zoneMapper = ZoneMapper(zones: [
+            BoardZone(type: .player1Hand, polygon: square(0, 0), owner: .player1),
+            BoardZone(type: .battlefield, polygon: square(200, 200), battlefieldSlot: 0)
+        ])
+        let adapter = ExpertSystemAdapter(
+            zoneMapper: zoneMapper,
+            playerCalibration: [.player1: playerA],
+            battlefieldCalibration: [0: battlefieldID],
+            tracker: ObjectTracker(matchDistanceThreshold: 2000)
+        )
+
+        let stream = adapter.events()
+
+        func card(at point: CGPoint, label: String) -> Detection {
+            Detection(type: .card, center: point, boundingBox: CGRect(x: point.x - 10, y: point.y - 15, width: 20, height: 30), rotation: 0, confidence: 0.95, recognizedLabel: label)
+        }
+
+        adapter.ingest(detections: [card(at: CGPoint(x: 25, y: 25), label: "Garen - Rugged")], frameIndex: 0, timestamp: 0)
+        adapter.ingest(detections: [card(at: CGPoint(x: 25, y: 25), label: "Garen - Rugged")], frameIndex: 1, timestamp: 1.0 / 30)
+        adapter.ingest(detections: [card(at: CGPoint(x: 1000, y: 1000), label: "Garen - Rugged")], frameIndex: 2, timestamp: 2.0 / 30)
+        adapter.ingest(detections: [card(at: CGPoint(x: 1000, y: 1000), label: "Garen - Rugged")], frameIndex: 3, timestamp: 3.0 / 30)
+        adapter.ingest(detections: [card(at: CGPoint(x: 225, y: 225), label: "Garen - Rugged")], frameIndex: 4, timestamp: 4.0 / 30)
+        adapter.ingest(detections: [card(at: CGPoint(x: 225, y: 225), label: "Garen - Rugged")], frameIndex: 5, timestamp: 5.0 / 30)
+        adapter.finish()
+
+        var received: [ObservedTableEvent] = []
+        for await event in stream { received.append(event) }
+
+        let moved = received.first { if case .cardMoved = $0.kind { return true }; return false }
+        #expect(moved?.card?.cardDefinitionID == CardDefID(rawValue: "Garen - Rugged"))
+    }
 }

@@ -116,7 +116,17 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
 
     private func observedTableEvent(for event: VisionEvent) -> ObservedTableEvent? {
         func card(at region: TableRegion) -> CardIdentification? {
-            cardIdentity[event.objectID].map {
+            // `identify(objectID:as:)` (a manual/external override) wins
+            // when present; otherwise fall back to whatever the detector
+            // itself recognized this frame. The fallback matters more in
+            // practice: `tracker`/`temporalDetector` are private to this
+            // adapter, so nothing outside it can ever discover the right
+            // `TrackedObjectID` to call `identify` with — `identify` only
+            // helps a caller that has some *other* source of identity
+            // (e.g. manual assignment) keyed by an ID it learned some
+            // other way.
+            let definitionID = cardIdentity[event.objectID] ?? event.recognizedLabel.map(CardDefID.init(rawValue:))
+            return definitionID.map {
                 CardIdentification(cardDefinitionID: $0, physicalRegion: region, confidence: Double(event.confidence))
             }
         }

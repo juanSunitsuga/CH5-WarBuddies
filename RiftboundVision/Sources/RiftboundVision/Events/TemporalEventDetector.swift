@@ -31,6 +31,11 @@ public final class TemporalEventDetector: @unchecked Sendable {
         /// re-derived from the current zone each time — a card sitting on
         /// a shared Battlefield still belongs to whoever played it.
         var owner: Player?
+        /// The most recent non-nil `TrackedObject.recognizedLabel` seen for
+        /// this object — carried forward the same way `owner` is, so an
+        /// `.objectDisappeared` event (which has no live `TrackedObject` to
+        /// read from) still reports who it was, if it was ever identified.
+        var recognizedLabel: String?
     }
 
     private var history: [TrackedObjectID: ObjectHistory] = [:]
@@ -90,13 +95,17 @@ public final class TemporalEventDetector: @unchecked Sendable {
                     candidateRotationBucket: rawRotationBucket,
                     candidateRotationStreak: 1,
                     hasReportedAppearance: false,
-                    owner: currentBoardZone?.owner ?? object.currentZone.impliedOwner
+                    owner: currentBoardZone?.owner ?? object.currentZone.impliedOwner,
+                    recognizedLabel: object.recognizedLabel
                 )
                 continue
             }
 
             if let resolvedOwner = currentBoardZone?.owner ?? object.currentZone.impliedOwner {
                 record.owner = resolvedOwner
+            }
+            if let recognizedLabel = object.recognizedLabel {
+                record.recognizedLabel = recognizedLabel
             }
 
             // --- Zone confirmation ---
@@ -122,7 +131,8 @@ public final class TemporalEventDetector: @unchecked Sendable {
                     previousRotation: nil,
                     currentRotation: nil,
                     timestamp: timestamp,
-                    confidence: object.confidence
+                    confidence: object.confidence,
+                    recognizedLabel: record.recognizedLabel
                 ))
                 record.confirmedZone = record.candidateZone
             }
@@ -151,7 +161,8 @@ public final class TemporalEventDetector: @unchecked Sendable {
                     previousRotation: previousRadians,
                     currentRotation: currentRadians,
                     timestamp: timestamp,
-                    confidence: object.confidence
+                    confidence: object.confidence,
+                    recognizedLabel: record.recognizedLabel
                 ))
                 record.confirmedRotationBucket = record.candidateRotationBucket
             }
@@ -177,13 +188,15 @@ public final class TemporalEventDetector: @unchecked Sendable {
                 previousRotation: nil,
                 currentRotation: object.rotation,
                 timestamp: timestamp,
-                confidence: object.confidence
+                confidence: object.confidence,
+                recognizedLabel: record.recognizedLabel
             ))
         }
 
         for id in result.disappearedIDs {
             let lastKnownZone = history[id]?.confirmedZone
             let lastKnownOwner = history[id]?.owner
+            let lastKnownRecognizedLabel = history[id]?.recognizedLabel
             history.removeValue(forKey: id)
             events.append(VisionEvent(
                 type: .objectDisappeared,
@@ -197,7 +210,8 @@ public final class TemporalEventDetector: @unchecked Sendable {
                 previousRotation: nil,
                 currentRotation: nil,
                 timestamp: timestamp,
-                confidence: 0
+                confidence: 0,
+                recognizedLabel: lastKnownRecognizedLabel
             ))
         }
 
