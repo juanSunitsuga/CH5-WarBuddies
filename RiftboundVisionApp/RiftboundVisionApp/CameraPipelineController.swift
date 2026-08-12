@@ -44,18 +44,6 @@ final class CameraPipelineController: ObservableObject {
     @Published var errorMessage: String?
     @Published var isRunning = false
 
-    /// Software zoom — macOS has no hardware zoom API for
-    /// `AVCaptureDevice` at all (`videoZoomFactor` is `API_UNAVAILABLE
-    /// (macos)`; see `AVFoundationCameraCapture`'s doc comment), so this
-    /// is a center crop of each captured frame instead, applied in
-    /// `process(_:)` before both display and detection. 0.5x can't
-    /// actually show more than the sensor's native field of view — no
-    /// wide-angle lens switch happens in software — so it clamps to the
-    /// same as 1x; it's still offered because a 0.5/1/2 control is the
-    /// familiar shape, not because it does anything different from 1x.
-    @Published var zoomFactor: CGFloat = 1.0
-    static let zoomLevels: [CGFloat] = [0.5, 1.0, 2.0]
-
     /// Every camera currently visible to AVFoundation, refreshed on demand
     /// (see `refreshAvailableCameras()`) — a nearby iPhone only appears
     /// here once Continuity Camera has it ready, so this can change
@@ -100,6 +88,15 @@ final class CameraPipelineController: ObservableObject {
     /// producing real events, and the seam a future GameEngine wiring
     /// would read from.
     @Published private(set) var observedEvents: [RiftboundExpertSystem.ObservedTableEvent] = []
+
+    /// Debug toggle — severs detection from every downstream consumer
+    /// (both `expertSystemAdapter.ingest(...)` and, further upstream, the
+    /// detector call itself) so the camera feed keeps running while
+    /// nothing processes it. For isolating "is the raw camera feed fine"
+    /// from "is something in the detection/tracking pipeline the
+    /// problem" while testing — flip this on and confirm the picture
+    /// alone still looks right before assuming detection is at fault.
+    @Published var isPipelineCut = false
 
     let cardDatabase = CardDatabaseLoader.loadBundled()
 
@@ -221,18 +218,6 @@ final class CameraPipelineController: ObservableObject {
         let report = AVFoundationCameraCapture.debugDeviceReport()
         print(report)
         debugReport = report
-    }
-
-    func setZoom(_ factor: CGFloat) {
-        guard factor != zoomFactor else { return }
-        zoomFactor = factor
-        // Zooming changes the size of the frame everything downstream
-        // works in (see `process(_:)`) — any existing `calibration` was
-        // measured against the old size and no longer lines up. Reset so
-        // the next frame re-centers it correctly for the new size,
-        // rather than leaving zone boxes silently misaligned until the
-        // user notices and has to re-drag them anyway.
-        hasSizedCalibrationToFrame = false
     }
 
     func selectCamera(id: String?) {
@@ -358,19 +343,8 @@ final class CameraPipelineController: ObservableObject {
     }
 
     private func process(_ frame: CapturedFrame) async {
-        let fullImage = CIImage(cvPixelBuffer: frame.pixelBuffer)
-        let fullSize = CGSize(width: fullImage.extent.width, height: fullImage.extent.height)
-
-        // Software zoom (see `zoomFactor`'s doc comment) — a center crop
-        // of the full sensor frame in its own pixel space. `cropRect`'s
-        // origin is that full-frame space; everything below that works
-        // in "the zoomed frame's own space" (display, calibration,
-        // detection results) has to shift by `-cropRect.origin` to land
-        // at local (0,0), same way `CGImage` extraction always does.
-        let cropRect = Self.zoomCropRect(for: fullSize, zoomFactor: zoomFactor)
-        let isZoomed = cropRect.size != fullSize
-        let zoomedImage = isZoomed ? fullImage.cropped(to: cropRect) : fullImage
-        let size = cropRect.size
+        let ciImage = CIImage(cvPixelBuffer: frame.pixelBuffer)
+        let size = CGSize(width: ciImage.extent.width, height: ciImage.extent.height)
 
         if !hasSizedCalibrationToFrame {
             calibration = Self.defaultCalibration(for: size)
@@ -380,8 +354,17 @@ final class CameraPipelineController: ObservableObject {
         // Video stays smooth at full camera framerate regardless of the
         // detection poll below — only the (expensive) detector call is
         // throttled.
-        backgroundImage = ciContext.createCGImage(zoomedImage, from: zoomedImage.extent)
+        backgroundImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
         frameSize = size
+
+        // Debug kill switch — see `isPipelineCut`'s doc comment. Bails out
+        // after the camera picture above is already updated, so the video
+        // itself keeps playing; only detection and everything it feeds
+        // stops.
+        guard !isPipelineCut else {
+            detections = []
+            return
+        }
 
         // Poll cadence, not per-frame — see `detectionPollInterval`'s doc
         // comment. `frame.timestamp` is the sample buffer's presentation
@@ -391,17 +374,12 @@ final class CameraPipelineController: ObservableObject {
         }
         lastDetectionTimestamp = frame.timestamp
 
-        // `frame.pixelBuffer` is always the *full*, uncropped sensor
-        // buffer — zoom is never re-encoded into a new buffer, just
-        // constrained to via `regionOfInterest` here (nil at 1x, which
-        // matches the prototype's full-frame scan exactly).
-        // `CoreMLCardDetector`'s own confidence floor and card-shape
-        // (aspect ratio) gate are what keep this from re-introducing
-        // "every square object gets identified."
-        let rawDetections = (try? detector.detect(in: frame.pixelBuffer, regionOfInterest: isZoomed ? cropRect : nil)) ?? []
-        // Detector output is in full-frame pixel space; shift into the
-        // zoomed frame's local space to match `frameSize`/`backgroundImage`.
-        detections = isZoomed ? rawDetections.map { shifted($0, by: cropRect.origin) } : rawDetections
+        // Full-frame scan, no `regionOfInterest` — matches the
+        // prototype's detector, which has no calibrated-area restriction
+        // either. `CoreMLCardDetector`'s own confidence floor and
+        // card-shape (aspect ratio) gate are what keep this from
+        // re-introducing "every square object gets identified."
+        detections = (try? detector.detect(in: frame.pixelBuffer)) ?? []
 
         // Second consumer of the same detections, same poll cadence — see
         // `expertSystemAdapter`'s doc comment.
@@ -409,32 +387,5 @@ final class CameraPipelineController: ObservableObject {
             expertSystemFrameIndex += 1
             expertSystemAdapter.ingest(detections: detections, frameIndex: expertSystemFrameIndex, timestamp: frame.timestamp)
         }
-    }
-
-    /// The center-crop rect (in the full frame's own pixel space) for a
-    /// given zoom factor. `zoomFactor <= 1` (including the 0.5x request
-    /// that can't actually be honored — see `zoomFactor`'s doc comment)
-    /// returns the untouched full frame.
-    private static func zoomCropRect(for fullSize: CGSize, zoomFactor: CGFloat) -> CGRect {
-        guard zoomFactor > 1 else { return CGRect(origin: .zero, size: fullSize) }
-        let croppedWidth = fullSize.width / zoomFactor
-        let croppedHeight = fullSize.height / zoomFactor
-        return CGRect(
-            x: (fullSize.width - croppedWidth) / 2,
-            y: (fullSize.height - croppedHeight) / 2,
-            width: croppedWidth,
-            height: croppedHeight
-        )
-    }
-
-    private func shifted(_ detection: Detection, by origin: CGPoint) -> Detection {
-        Detection(
-            type: detection.type,
-            center: CGPoint(x: detection.center.x - origin.x, y: detection.center.y - origin.y),
-            boundingBox: detection.boundingBox.offsetBy(dx: -origin.x, dy: -origin.y),
-            rotation: detection.rotation,
-            confidence: detection.confidence,
-            recognizedLabel: detection.recognizedLabel
-        )
     }
 }

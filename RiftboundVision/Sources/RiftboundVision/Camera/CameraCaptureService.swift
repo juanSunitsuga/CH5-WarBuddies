@@ -99,14 +99,11 @@ extension CameraCapturing {
 /// callback thread could race a `switchCamera` call arriving from the
 /// UI/MainActor at the same moment.
 ///
-/// No hardware zoom control here on purpose, not by oversight:
-/// `AVCaptureDevice.videoZoomFactor` (and `min`/`maxAvailableVideoZoomFactor`)
-/// are explicitly `API_UNAVAILABLE(macos)` in the SDK headers — Apple only
-/// exposes device-level zoom to iOS/Mac Catalyst/tvOS, never to a plain
-/// macOS app, Continuity Camera input included. This layer does lock
-/// focus, though (`disableAutoFocus`, which *is* available on macOS) —
-/// zoom for this app is a software crop applied in
-/// `CameraPipelineController` instead, over the frames this layer hands it.
+/// No zoom control here — `AVCaptureDevice.videoZoomFactor` (and `min`/
+/// `maxAvailableVideoZoomFactor`) are explicitly `API_UNAVAILABLE(macos)`
+/// in the SDK headers, so there's no hardware zoom API to expose on this
+/// platform even for Continuity Camera input. This layer does lock
+/// focus, though (`disableAutoFocus`, which *is* available on macOS).
 public final class AVFoundationCameraCapture: NSObject, CameraCapturing, @unchecked Sendable {
     private let session = AVCaptureSession()
     private var currentInput: AVCaptureDeviceInput?
@@ -298,9 +295,8 @@ public final class AVFoundationCameraCapture: NSObject, CameraCapturing, @unchec
     }
 
     /// Disables continuous auto-focus so the camera stops hunting/
-    /// refocusing on its own while scanning a static table, leaving zoom
-    /// and focus under this app's own control (`setZoom(_:)`) instead of
-    /// the device's automatic behavior. Tries `.locked` first (freeze at
+    /// refocusing on its own while scanning a static table. Tries
+    /// `.locked` first (freeze at
     /// whatever's already in focus) and falls back to a one-shot
     /// `.autoFocus` if the device doesn't support locking — not every
     /// camera does (some virtual/Continuity devices only expose
