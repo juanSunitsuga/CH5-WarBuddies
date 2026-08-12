@@ -73,6 +73,8 @@ struct ContentView: View {
 
             DetectedCardsPanel(pipeline: pipeline)
             }
+
+            TurnControlBar(gameState: $pipeline.gameState, isAutoDetecting: $pipeline.isAutoDetectingPhase)
         }
         .frame(minWidth: 1160, minHeight: 675)
         .toolbar {

@@ -115,6 +115,15 @@ final class CameraPipelineController: ObservableObject {
     /// display and for the user's own bookkeeping.
     @Published var gameState = ManualGameState()
 
+    /// UI-only flag for the "Auto-detect" toggle in the turn control bar —
+    /// no vision-driven phase detection is actually wired up yet (nothing
+    /// in `process(_:)` reads or writes `gameState` from the camera feed,
+    /// same limitation `gameState`'s own doc comment describes). While
+    /// this is on, the app is asserting phase advancement should come from
+    /// detection rather than the Next/End Turn buttons, so those buttons
+    /// disable — but there's no real detector behind it yet.
+    @Published var isAutoDetectingPhase = false
+
     /// Every `ObservedTableEvent` the reconnected tracking pipeline
     /// (`expertSystemAdapter`) has produced this session, most recent
     /// last, capped so a long session doesn't grow this unboundedly.
