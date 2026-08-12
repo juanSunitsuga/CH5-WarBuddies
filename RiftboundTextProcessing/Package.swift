@@ -30,9 +30,6 @@ let package = Package(
                 .product(name: "RiftboundExpertSystem", package: "RiftboundEngine")
             ],
             resources: [
-                // USE .copy FOR .mlpackage FOLDERS TO PREVENT FILE FLATTENING COLLISIONS!
-                .copy("Resources/MiniLMEmbedder.mlpackage"),
-                .copy("Resources/RiftboundCardTypeClassifier.mlpackage"),
                 .copy("Resources/RiftboundCardDatabase.db")
             ],
             swiftSettings: [

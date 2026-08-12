@@ -53,6 +53,39 @@ public final class CardDatabaseService: @unchecked Sendable {
         sqlite3_finalize(statement)
         return nil
     }
+
+    /// Reads every indexed card. Used to seed the SwiftData store on first
+    /// launch so the primary SwiftData lookup can resolve ground-truth cards.
+    public func fetchAllCards() -> [CardMetadata] {
+        guard let db = db else { return [] }
+
+        let query = "SELECT card_id, clean_name, card_type, energy_cost, extracted_tags, mechanic_categories FROM cards;"
+        var statement: OpaquePointer?
+        var results: [CardMetadata] = []
+
+        if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
+            while sqlite3_step(statement) == SQLITE_ROW {
+                results.append(
+                    CardMetadata(
+                        cardID: Self.text(statement, 0),
+                        cleanName: Self.text(statement, 1),
+                        cardType: Self.text(statement, 2),
+                        energyCost: Int(sqlite3_column_int(statement, 3)),
+                        extractedTags: Self.text(statement, 4),
+                        mechanicCategories: Self.text(statement, 5)
+                    )
+                )
+            }
+        }
+        sqlite3_finalize(statement)
+        return results
+    }
+
+    /// Safely reads a text column, tolerating NULL values.
+    private static func text(_ statement: OpaquePointer?, _ index: Int32) -> String {
+        guard let cString = sqlite3_column_text(statement, index) else { return "" }
+        return String(cString: cString)
+    }
 }
 
 public struct CardMetadata {

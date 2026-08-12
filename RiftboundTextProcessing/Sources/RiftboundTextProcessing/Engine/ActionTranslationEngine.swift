@@ -6,15 +6,19 @@
 //
 
 import Foundation
+import SwiftData
 
 // MARK: - Activity Diagram Event & Action Models
 
+/// Flat, text-processing DTO describing a physical board move as seen by the
+/// vision layer. Distinct from `RiftboundExpertSystem.ObservedTableEvent`:
+/// this one carries the raw OCR payload the tagging/regex fallback needs.
 public struct ObservedTableEvent: Sendable {
     public let cardID: String
     public let ocrText: String
     public let sourceRegion: String
     public let destinationRegion: String
-    
+
     public init(cardID: String, ocrText: String, sourceRegion: String, destinationRegion: String) {
         self.cardID = cardID
         self.ocrText = ocrText
@@ -23,6 +27,8 @@ public struct ObservedTableEvent: Sendable {
     }
 }
 
+/// Candidate action inferred from an `ObservedTableEvent`, before legality
+/// validation by the expert system.
 public enum CandidateGameAction: Equatable, Sendable {
     case playUnit(cardID: String, cardName: String, energyCost: Int, targetZone: String, mechanics: String)
     case castSpell(cardID: String, cardName: String, energyCost: Int, mechanics: String)
@@ -30,63 +36,72 @@ public enum CandidateGameAction: Equatable, Sendable {
     case rejected(reason: String)
 }
 
-// MARK: - Step ② Engine Implementation
-
 public final class ActionTranslatingEngine: @unchecked Sendable {
     
-    private let embedderService = MiniLMEmbedderService()
-    private let classifierService = CardTypeClassifierService()
-    private let dbService = CardDatabaseService()
-    
+    // Created lazily on the main actor: `SwiftDataCardService` is
+    // `@MainActor`-isolated, so it can't be initialized from this class's
+    // nonisolated `init()`. Optional `var` defaults to nil without needing
+    // main-actor context; `dataService()` builds it once on first use.
+    @MainActor private var swiftDataService: SwiftDataCardService?
+
     public init() {}
-    
-    /// Step ②: Translates an ObservedTableEvent into a candidate GameAction
+
+    @MainActor
+    private func dataService() -> SwiftDataCardService {
+        if let existing = swiftDataService { return existing }
+        let service = SwiftDataCardService()
+        service.seedFromBundledDatabase()
+        swiftDataService = service
+        return service
+    }
+
     public func inferAction(event: ObservedTableEvent) async -> CandidateGameAction {
-        
-        // 1. Core ML Dense Embedding (384-d)
-        guard let vector = await embedderService.embed(text: event.ocrText) else {
-            return .rejected(reason: "Failed to generate embedding vector from OCR text.")
-        }
-        
-        // 2. Core ML Card Type Classification
-        guard let classification = classifierService.classify(embedding: vector) else {
-            return .rejected(reason: "Card type classification failed.")
-        }
-        
-        var predictedType = classification.cardType
-        let confidence = classification.confidence
-        
-        // 3. Hybrid Metadata Extraction: Primary (SQLite) -> Fallback (Swift Regex)
+
         var cardName = "Unindexed Card"
+        var cardType = "Unknown"
         var energyCost = 0
         var extractedTags = "[]"
-        var categories: [String] = []
-        
-        if let dbCard = dbService.fetchCard(by: event.cardID) {
-            // Primary Path: Fast SQLite Hit
+
+        let swiftDataService = await dataService()
+
+        // 1. PRIMARY PATH: SwiftData Lookup (<0.05ms)
+        if let dbCard = await swiftDataService.fetchCard(by: event.cardID) {
             cardName = dbCard.cleanName
+            cardType = dbCard.cardType
             energyCost = dbCard.energyCost
-            extractedTags = dbCard.extractedTags
-            predictedType = dbCard.cardType // Trust ground-truth DB card type on DB hits
-            print("💾 DB Hit: '\(cardName)' | Energy Cost: \(energyCost)")
-        } else {
-            // Fallback Path: Dynamic Swift Regex parsing on raw ocrText
-            let parsed = SwiftRegexParsingService.parse(ocrText: event.ocrText)
-            extractedTags = parsed.extractedTags
-            categories = parsed.categories
+            extractedTags = "[\(dbCard.extractedTags.joined(separator: ", "))]"
+            print("💾 SwiftData Hit: '\(cardName)' (\(cardType))")
             
-            // Domain Rule: [Action] and [Reaction] tags explicitly designate Spells
-            if categories.contains("TAG_ACTION") || categories.contains("TAG_REACTION") {
-                predictedType = "Spell"
+        } else if !event.ocrText.isEmpty {
+            // 2. FALLBACK PATH: Check runtime availability for Foundation Models
+            if #available(iOS 26.0, macOS 26.0, *) {
+                print("🤖 Running On-Device Foundation Model Tagging...")
+                let foundationService = FoundationModelTaggingService()
+                
+                do {
+                    let taggedCard = try await foundationService.tagCardText(event.ocrText)
+                    cardType = taggedCard.cardType
+                    energyCost = taggedCard.energyCost
+                    extractedTags = "[\(taggedCard.extractedTags.joined(separator: ", "))]"
+                    
+                    // Cache tagged result into SwiftData for future instant lookups
+                    await swiftDataService.saveCard(taggedCard)
+                    print("✨ Tagged & Saved via Foundation Model: Type [\(cardType)], Cost [\(energyCost)]")
+                } catch {
+                    print("⚠️ Foundation Model Error: \(error). Falling back to Regex...")
+                    let parsed = SwiftRegexParsingService.parse(ocrText: event.ocrText)
+                    extractedTags = parsed.extractedTags
+                }
+            } else {
+                // Older OS / Unsupported Fallback: Fast Swift Regex Parser
+                print("⚡ Older OS detected -> Falling back to Swift Regex Parser...")
+                let parsed = SwiftRegexParsingService.parse(ocrText: event.ocrText)
+                extractedTags = parsed.extractedTags
             }
-            print("⚡ DB Miss -> Dynamic Regex Parsed Tags: \(extractedTags) | Type override: [\(predictedType)]")
         }
         
-        print("🧠 Core ML Predicted Type: [\(predictedType)] (\(String(format: "%.1f", confidence * 100))% confidence)")
-        
-        // 4. Early Heuristic Filter Logic (Type + Zone Validation)
-        switch predictedType {
-            
+        // 3. Early Heuristic Filter Logic
+        switch cardType {
         case "Unit":
             if event.sourceRegion == "Hand" && (event.destinationRegion == "Base" || event.destinationRegion == "Battlefield") {
                 return .playUnit(
@@ -102,7 +117,7 @@ public final class ActionTranslatingEngine: @unchecked Sendable {
             
         case "Spell":
             if event.destinationRegion == "Battlefield" || event.destinationRegion == "Base" {
-                return .rejected(reason: "Spells cannot be placed onto board zones as permanent objects.")
+                return .rejected(reason: "Spells cannot be placed onto board zones.")
             }
             return .castSpell(
                 cardID: event.cardID,
@@ -119,7 +134,7 @@ public final class ActionTranslatingEngine: @unchecked Sendable {
             }
             
         default:
-            return .rejected(reason: "Unhandled card type: \(predictedType)")
+            return .rejected(reason: "Unhandled card type: \(cardType)")
         }
     }
 }

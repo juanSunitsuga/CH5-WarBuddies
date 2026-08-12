@@ -7,13 +7,22 @@
 
 import Foundation
 
-public struct ParsedOCRMechanics {
+public struct ParsedOCRMechanics: Sendable {
     public let energyCost: Int
     public let extractedTags: String
     public let categories: [String]
+    
+    public init(energyCost: Int, extractedTags: String, categories: [String]) {
+        self.energyCost = energyCost
+        self.extractedTags = extractedTags
+        self.categories = categories
+    }
 }
 
-public final class SwiftRegexParsingService {
+public final class SwiftRegexParsingService: Sendable {
+    
+    // 💡 EXPLICIT PUBLIC INITIALIZER FIX:
+    public init() {}
     
     // Regex patterns matching TCG rules
     private static let actionPattern = "\\[Action\\]"
@@ -24,7 +33,7 @@ public final class SwiftRegexParsingService {
     private static let drawPattern = "(?i)draw\\s+\\d+"
     private static let statBoostPattern = "\\+\\d+\\s*(Might|\\[S\\]|:rb_might:)"
     
-    /// Parses raw OCR text dynamically on the fly when SQLite database lookup misses
+    /// Static helper method
     public static func parse(ocrText: String) -> ParsedOCRMechanics {
         var tags: [String] = []
         var categories: [String] = []
@@ -63,6 +72,11 @@ public final class SwiftRegexParsingService {
         
         let tagsString = "[" + tags.joined(separator: ", ") + "]"
         return ParsedOCRMechanics(energyCost: 0, extractedTags: tagsString, categories: categories)
+    }
+    
+    /// Instance method variant (so `regexService.parse(...)` works smoothly)
+    public func parse(ocrText: String) -> ParsedOCRMechanics {
+        return Self.parse(ocrText: ocrText)
     }
     
     private static func matches(pattern: String, in text: String) -> Bool {
