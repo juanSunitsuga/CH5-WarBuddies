@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Draws the Riftbound playmat's zone outlines over the camera feed — the
 /// "overlay is a Riftbound playmat" piece. In `isEditable` mode, 4 corner
@@ -28,15 +29,50 @@ public struct PlaymatOverlayView: View {
         self.template = template
     }
 
+    /// The "RiftChamps" mockup's hand-drawn gold border frames — not
+    /// shape-locked art, just three sketchy-line textures stretched to
+    /// whatever box they're drawn into. Which one goes where is a fixed
+    /// per-zone assignment from the mockup, not a rule of thumb: Rectangle
+    /// 2 for Battlefield, Rectangle 3 for Base, Rectangle 1 for every
+    /// other zone (Legend, Champion, Main Deck, Rune Deck, Rune Area,
+    /// Trash, Hand).
+    private static let battlefieldFrame = loadFrame("Rectangle 2")
+    private static let baseFrame = loadFrame("Rectangle 3")
+    private static let defaultFrame = loadFrame("Rectangle 1")
+
+    private static func loadFrame(_ name: String) -> Image {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "png"),
+              let nsImage = NSImage(contentsOf: url) else {
+            // Shouldn't happen — these are bundled resources, not
+            // user-supplied data — but a missing/renamed asset shouldn't
+            // crash the calibration overlay; fall back to a visible
+            // placeholder instead.
+            return Image(systemName: "questionmark.square.dashed")
+        }
+        return Image(nsImage: nsImage)
+    }
+
+    private func frame(for zone: Zone) -> Image {
+        switch zone {
+        case .battlefield: return Self.battlefieldFrame
+        case .base: return Self.baseFrame
+        default: return Self.defaultFrame
+        }
+    }
+
     public var body: some View {
         ZStack {
             Canvas { context, _ in
                 for zoneTemplate in template {
                     let points = zoneTemplate.normalizedPolygon.map(calibration.map)
-                    var path = Path()
-                    path.addLines(points)
-                    path.closeSubpath()
-                    context.stroke(path, with: .color(color(for: zoneTemplate.zone)), lineWidth: 1.5)
+                    // The border art is an axis-aligned rectangle texture;
+                    // `boundingRect` is the same simplification the
+                    // detector's own region-of-interest already makes
+                    // elsewhere in this layer — a calibrated quad that's
+                    // reasonably close to a real rectangle (which dragging
+                    // 4 corners onto a physical mat's corners naturally
+                    // produces) doesn't need a true quad-warp for this.
+                    context.draw(frame(for: zoneTemplate.zone), in: boundingRect(of: points))
 
                     if showLabels, let centroid = centroid(of: points) {
                         // `GraphicsContext.draw` needs a plain `Text` —
@@ -111,18 +147,12 @@ public struct PlaymatOverlayView: View {
         return CGPoint(x: x, y: y)
     }
 
-    private func color(for zone: Zone) -> Color {
-        switch zone {
-        case .battlefield: return .red
-        case .base: return .green
-        case .runeArea: return .purple
-        case .runeDeck: return .purple.opacity(0.6)
-        case .trash: return .gray
-        case .mainDeck: return .blue
-        case .legend: return .orange
-        case .champion: return .yellow
-        case .player1Hand, .player2Hand: return .cyan
-        case .unknown: return .white
-        }
+    private func boundingRect(of points: [CGPoint]) -> CGRect {
+        guard !points.isEmpty else { return .zero }
+        let xs = points.map(\.x)
+        let ys = points.map(\.y)
+        let minX = xs.min() ?? 0
+        let minY = ys.min() ?? 0
+        return CGRect(x: minX, y: minY, width: (xs.max() ?? 0) - minX, height: (ys.max() ?? 0) - minY)
     }
 }
