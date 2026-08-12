@@ -41,6 +41,25 @@ public struct TrackedObject: Sendable, Equatable {
 
     public var lastSeenFrame: Int
 
+    /// Stacking order when this object overlaps others: higher sits on top.
+    /// A Unit with an Equipment/Rune tucked beneath it gets the higher
+    /// `zIndex`; the piece underneath keeps a lower one. Populated by
+    /// `UnderlayResolver`, not the tracker — the tracker only knows
+    /// geometry, and z-order depends on card *roles* it can't see.
+    public var zIndex: Int
+    /// IDs of objects physically underlaid beneath this one (an Equipment
+    /// or Rune under a Unit). Also populated by `UnderlayResolver`. Empty
+    /// for a lone card. See `underlaidCardIDs`'s role in surviving
+    /// occlusion: an underlaid piece keeps its identity here even once the
+    /// top card hides its bounding box from the detector.
+    public var underlaidCardIDs: [TrackedObjectID]
+
+    /// Ready (upright) vs Exhausted (tapped), inferred purely from the
+    /// current bounding box — see `CGRect.cardOrientation`. Cheap and
+    /// robust across the bbox re-initialization that happens when a card
+    /// rotates, unlike `rotation`.
+    public var orientation: CardOrientation { boundingBox.cardOrientation }
+
     public init(
         id: TrackedObjectID,
         type: ObjectType,
@@ -52,7 +71,9 @@ public struct TrackedObject: Sendable, Equatable {
         velocity: CGVector = .zero,
         confidence: Float,
         isVisible: Bool,
-        lastSeenFrame: Int
+        lastSeenFrame: Int,
+        zIndex: Int = 0,
+        underlaidCardIDs: [TrackedObjectID] = []
     ) {
         self.id = id
         self.type = type
@@ -65,5 +86,7 @@ public struct TrackedObject: Sendable, Equatable {
         self.confidence = confidence
         self.isVisible = isVisible
         self.lastSeenFrame = lastSeenFrame
+        self.zIndex = zIndex
+        self.underlaidCardIDs = underlaidCardIDs
     }
 }

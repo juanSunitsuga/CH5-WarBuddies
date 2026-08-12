@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import CoreImage
 import RiftboundVision
 
@@ -61,11 +62,32 @@ final class CameraPipelineController: ObservableObject {
     @Published var cardAssignments: [TrackedObjectID: CardPrinting] = [:]
     let cardDatabase = CardDatabaseLoader.loadBundled()
 
+    /// Overlaps the rules forbid (currently Unit-on-Unit), recomputed each
+    /// frame by `UnderlayResolver` — surfaced so the UI can warn the player
+    /// instead of silently mis-modeling an illegal stack.
+    @Published var illegalOverlaps: [IllegalOverlap] = []
+
     private let camera = AVFoundationCameraCapture()
     private let detector = VisionRectangleDetector()
     private let tracker = ObjectTracker()
     private let temporalDetector = TemporalEventDetector()
+    private let underlayResolver = UnderlayResolver()
     private let ciContext = CIContext()
+
+    /// Durable board store, injected from the app's `ModelContainer`. `nil`
+    /// in previews / the no-arg path, where persistence simply no-ops.
+    private let modelContext: ModelContext?
+    /// In-memory mirror of persisted rows, keyed by tracking id, so the
+    /// per-frame sync doesn't fetch from disk 60×/second — we insert once
+    /// and mutate in place, saving only when a field actually changed.
+    private var persistedCards: [TrackedObjectID: PersistentTrackedCard] = [:]
+    /// How many consecutive frames each card has sat in the Trash zone.
+    /// A card only gets deleted after `trashConfirmationFrames`, so a card
+    /// merely dragged *across* the trash area on its way elsewhere isn't
+    /// destroyed. Cleared the moment a card leaves the trash zone.
+    private var trashFrameCounts: [TrackedObjectID: Int] = [:]
+    /// ~0.5s at 60fps — matches the design brief's deletion buffer.
+    private let trashConfirmationFrames = 30
 
     /// Rebuilt from `calibration` on every access rather than cached —
     /// cheap (it's ~15 small polygons), and guarantees it's never one
@@ -78,7 +100,8 @@ final class CameraPipelineController: ObservableObject {
     private var runLoop: Task<Void, Never>?
     private var statusLoop: Task<Void, Never>?
 
-    init() {
+    init(modelContext: ModelContext? = nil) {
+        self.modelContext = modelContext
         // Listening starts immediately, not just while capturing — device
         // list changes (an iPhone's Continuity Camera reappearing) should
         // refresh the picker even before the user ever presses Start.
@@ -285,13 +308,139 @@ final class CameraPipelineController: ObservableObject {
         previousTimestamp = frame.timestamp
         let events = temporalDetector.process(result, zoneMapper: zoneMapper, timestamp: frame.timestamp)
 
+        // Resolve stacking (Equipment/Rune under Unit, reject Unit-on-Unit)
+        // off the tracked objects' geometry + our card assignments. The
+        // tracker only knows geometry; card *roles* live here.
+        let resolution = underlayResolver.resolve(result.objects) { [weak self] id in
+            self?.role(for: id) ?? .unknown
+        }
+        illegalOverlaps = resolution.illegalOverlaps
+
+        // Drop disappeared tracks from our per-object bookkeeping so counts
+        // and cached rows don't leak (the DB row is left as last-known
+        // state; only trash-zone entry deletes it).
+        for id in result.disappearedIDs {
+            trashFrameCounts[id] = nil
+            persistedCards[id] = nil
+        }
+
+        syncPersistence(resolution.objects)
+
         let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
 
         backgroundImage = cgImage
         snapshot = DebugFrameSnapshot(
-            objects: result.objects,
+            objects: resolution.objects,
             latestEvent: events.last ?? snapshot.latestEvent,
             frameSize: frameSize
         )
+    }
+
+    /// Maps a tracked object to the coarse stacking role `UnderlayResolver`
+    /// needs, from whatever card it's been assigned. Unknown until assigned
+    /// (recognition doesn't exist yet), which the resolver treats as
+    /// "never link, never flag."
+    private func role(for id: TrackedObjectID) -> CardRole {
+        guard let printing = cardAssignments[id] else { return .unknown }
+        switch printing.classification.type {
+        case "Unit": return .unit
+        case "Gear", "Rune": return .attachment
+        default: return .other
+        }
+    }
+
+    /// Mirrors this frame's card objects into SwiftData, and deletes a card
+    /// once it's held steady in the Trash zone for `trashConfirmationFrames`
+    /// — the "dead unit → remove from board" path. Deletes only the
+    /// on-board `PersistentTrackedCard` instance, never a card *definition*.
+    private func syncPersistence(_ objects: [TrackedObject]) {
+        guard let modelContext else { return }
+
+        for object in objects where object.type == .card {
+            let zone = zoneMapper.zone(for: object.center)
+
+            if zone == .trash {
+                let count = (trashFrameCounts[object.id] ?? 0) + 1
+                trashFrameCounts[object.id] = count
+                if count >= trashConfirmationFrames {
+                    deletePersisted(trackingID: object.id, context: modelContext)
+                    cardAssignments[object.id] = nil
+                    trashFrameCounts[object.id] = nil
+                    continue
+                }
+            } else {
+                trashFrameCounts[object.id] = nil
+            }
+
+            upsert(object, zone: zone, context: modelContext)
+        }
+    }
+
+    /// Insert-or-update the row for one object, saving only when a field
+    /// actually changed (cards sitting still shouldn't churn the disk every
+    /// frame). Uses the in-memory cache first, falling back to a fetch for
+    /// rows persisted in a previous session.
+    private func upsert(_ object: TrackedObject, zone: Zone, context: ModelContext) {
+        let printing = cardAssignments[object.id]
+        let zoneRaw = zone.rawValue
+        let orientationRaw = object.orientation.rawValue
+        let underlaid = object.underlaidCardIDs
+
+        let card: PersistentTrackedCard
+        if let cached = persistedCards[object.id] {
+            card = cached
+        } else if let fetched = fetchPersisted(trackingID: object.id, context: context) {
+            card = fetched
+            persistedCards[object.id] = fetched
+        } else {
+            let inserted = PersistentTrackedCard(
+                trackingID: object.id,
+                cardID: printing?.riftboundID,
+                displayName: printing?.name,
+                zoneRaw: zoneRaw,
+                orientationRaw: orientationRaw,
+                zIndex: object.zIndex,
+                underlaidTrackingIDs: underlaid,
+                lastSeenFrame: object.lastSeenFrame
+            )
+            context.insert(inserted)
+            persistedCards[object.id] = inserted
+            try? context.save()
+            return
+        }
+
+        // Dirty-check: skip the save entirely if nothing meaningful moved.
+        let changed = card.cardID != printing?.riftboundID
+            || card.displayName != printing?.name
+            || card.zoneRaw != zoneRaw
+            || card.orientationRaw != orientationRaw
+            || card.zIndex != object.zIndex
+            || card.underlaidTrackingIDs != underlaid
+        card.lastSeenFrame = object.lastSeenFrame
+        guard changed else { return }
+
+        card.cardID = printing?.riftboundID
+        card.displayName = printing?.name
+        card.zoneRaw = zoneRaw
+        card.orientationRaw = orientationRaw
+        card.zIndex = object.zIndex
+        card.underlaidTrackingIDs = underlaid
+        card.updatedAt = .now
+        try? context.save()
+    }
+
+    private func fetchPersisted(trackingID: TrackedObjectID, context: ModelContext) -> PersistentTrackedCard? {
+        let descriptor = FetchDescriptor<PersistentTrackedCard>(
+            predicate: #Predicate { $0.trackingID == trackingID }
+        )
+        return try? context.fetch(descriptor).first
+    }
+
+    private func deletePersisted(trackingID: TrackedObjectID, context: ModelContext) {
+        if let card = persistedCards[trackingID] ?? fetchPersisted(trackingID: trackingID, context: context) {
+            context.delete(card)
+            try? context.save()
+        }
+        persistedCards[trackingID] = nil
     }
 }

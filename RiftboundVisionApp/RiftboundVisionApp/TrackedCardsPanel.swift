@@ -80,10 +80,18 @@ struct TrackedCardsPanel: View {
                         .font(.callout)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    if entry.printing == nil {
-                        Text("Tap to assign")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.5))
+                    HStack(spacing: 6) {
+                        if entry.printing == nil {
+                            Text("Tap to assign")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.5))
+                        }
+                        if entry.object.orientation == .exhausted {
+                            badge("Exhausted", color: .orange)
+                        }
+                        if !entry.object.underlaidCardIDs.isEmpty {
+                            badge("+\(entry.object.underlaidCardIDs.count) under", color: .blue)
+                        }
                     }
                 }
                 Spacer()
@@ -93,6 +101,16 @@ struct TrackedCardsPanel: View {
             .cornerRadius(6)
         }
         .buttonStyle(.plain)
+    }
+
+    private func badge(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.caption2.bold())
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(color.opacity(0.25))
+            .foregroundStyle(color)
+            .clipShape(Capsule())
     }
 
     @ViewBuilder

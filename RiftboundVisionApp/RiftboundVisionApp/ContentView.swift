@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import AppKit
 import RiftboundVision
 
@@ -9,7 +10,14 @@ import RiftboundVision
 /// `.unknown` and no `.objectMoved` event ever confirms — that's the
 /// visible gap, not a placeholder screen.
 struct ContentView: View {
-    @StateObject private var pipeline = CameraPipelineController()
+    @StateObject private var pipeline: CameraPipelineController
+
+    /// `modelContext` is optional so SwiftUI previews (and the no-arg
+    /// `ContentView()` used in `#Preview`) still work without a container —
+    /// persistence just no-ops when it's absent.
+    init(modelContext: ModelContext? = nil) {
+        _pipeline = StateObject(wrappedValue: CameraPipelineController(modelContext: modelContext))
+    }
 
     var body: some View {
         HStack(spacing: 0) {
