@@ -5,6 +5,9 @@
 **/.claude/settings.local.json
 **/CLAUDE.md
 
+# Antigravity
+.history/
+
 # Swift Package Manager
 .build/
 .swiftpm/
