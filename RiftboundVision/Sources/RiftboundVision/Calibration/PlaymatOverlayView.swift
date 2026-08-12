@@ -7,6 +7,14 @@ import AppKit
 /// physical mat; that's the entire calibration UI, matching the
 /// "calibrated once, not detected by ML" approach used throughout this
 /// layer.
+/// The bundle holding this package's own resources. `Bundle.module` is
+/// only synthesized inside the target that declares the resources, so a
+/// test target can't reach the border-art PNGs without this — see
+/// `PlaymatArtworkFitTests`, which measures them.
+enum RiftboundVisionResources {
+    static let bundle = Bundle.module
+}
+
 public struct PlaymatOverlayView: View {
     @Binding private var calibration: PlaymatCalibration
     private let isEditable: Bool
@@ -50,7 +58,16 @@ public struct PlaymatOverlayView: View {
     private static let handFrame = loadFrame("Rectangle 4")
     private static let defaultFrame = loadFrame("Rectangle 1")
 
+    /// Prefers the host app's asset catalog (`Assets.xcassets`), falling
+    /// back to this package's own bundled copy. `NSImage(named:)` searches
+    /// the *main* bundle, so in `RiftboundVisionApp` this picks up the
+    /// catalog entry; in tests and previews — where there is no app
+    /// catalog — it falls through to `Bundle.module`, which is why the
+    /// package keeps its copies rather than deleting them.
     private static func loadFrame(_ name: String) -> Image {
+        if let catalogImage = NSImage(named: name) {
+            return Image(nsImage: catalogImage)
+        }
         guard let url = Bundle.module.url(forResource: name, withExtension: "png"),
               let nsImage = NSImage(contentsOf: url) else {
             // Shouldn't happen — these are bundled resources, not

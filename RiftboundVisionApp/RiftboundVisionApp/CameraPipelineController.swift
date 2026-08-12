@@ -121,6 +121,15 @@ final class CameraPipelineController: ObservableObject {
     /// disable — but there's no real detector behind it yet.
     @Published var isAutoDetectingPhase = false
 
+    /// Rule 190/191: points toward the 8 needed to win. Set by hand for
+    /// the same reason `gameState` is — scoring happens on a physical dial
+    /// or by agreement, and no card movement the camera can see reliably
+    /// implies it. (Cleanup *can* score a contested Battlefield in the
+    /// engine, but this app's `GameState` has no opponent seat to score
+    /// against, so the two aren't connected yet.)
+    @Published var playerScore = 0
+    @Published var opponentScore = 0
+
     /// Every `ObservedTableEvent` the reconnected tracking pipeline
     /// (`expertSystemAdapter`) has produced this session, most recent
     /// last, capped so a long session doesn't grow this unboundedly.

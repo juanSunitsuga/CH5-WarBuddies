@@ -119,7 +119,7 @@ struct ContentView: View {
                     Label("Pipeline Settings", systemImage: "gearshape")
                 }
                 .popover(isPresented: $isShowingPipelineSettings) {
-                    pipelineSettingsPopover
+                    PipelineSettingsView(pipeline: pipeline)
                 }
             }
             ToolbarItem {
@@ -166,41 +166,6 @@ struct ContentView: View {
         .padding(.vertical, 6)
         .background(.black.opacity(0.4), in: Capsule())
         .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
-    }
-
-    /// Per-stage toggles, one row per `PipelineStage`. A stage that isn't
-    /// wired into the live loop yet (`.nlpTranslation`/`.expertSystem` —
-    /// real, tested components elsewhere, just not driven by this app's
-    /// camera loop) is shown disabled with a note, rather than hidden —
-    /// so the settings surface reflects the pipeline's actual 4 stages
-    /// even before all of them are wired.
-    private var pipelineSettingsPopover: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Pipeline Stages").font(.headline)
-            Text("Turning off a stage automatically turns off everything after it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ForEach(PipelineStage.allCases) { stage in
-                VStack(alignment: .leading, spacing: 2) {
-                    Toggle(isOn: Binding(
-                        get: { pipeline.isStageActive(stage) },
-                        set: { pipeline.setStage(stage, enabled: $0) }
-                    )) {
-                        Text(stage.title)
-                    }
-                    .disabled(!stage.isWired)
-
-                    if !stage.isWired {
-                        Text("Not yet wired into the live pipeline.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .padding()
-        .frame(width: 280)
     }
 
     private var debugReportSheet: some View {
