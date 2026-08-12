@@ -1,7 +1,7 @@
 import SwiftUI
 import RiftboundVision
 
-/// "Info" panel for a tracked card — printed stats and rules text pulled
+/// "Info" panel for a detected card — printed stats and rules text pulled
 /// straight from `CardPrinting` (real card data, per the brief: no
 /// invented "best use case" commentary, just what's actually printed on
 /// the card).

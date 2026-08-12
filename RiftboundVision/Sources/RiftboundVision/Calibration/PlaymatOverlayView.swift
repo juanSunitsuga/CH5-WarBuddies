@@ -10,28 +10,48 @@ public struct PlaymatOverlayView: View {
     @Binding private var calibration: PlaymatCalibration
     private let isEditable: Bool
     private let showLabels: Bool
+    /// Which zone layout to draw — defaults to the single-player mat
+    /// (`RiftboundPlaymatTemplate.singlePlayerZones()`), the one
+    /// currently in active use. Pass `.twoPlayerZones` to go back to the
+    /// shared-mat layout.
+    private let template: [PlaymatZoneTemplate]
 
-    public init(calibration: Binding<PlaymatCalibration>, isEditable: Bool, showLabels: Bool = true) {
+    public init(
+        calibration: Binding<PlaymatCalibration>,
+        isEditable: Bool,
+        showLabels: Bool = true,
+        template: [PlaymatZoneTemplate] = RiftboundPlaymatTemplate.singlePlayerZones()
+    ) {
         self._calibration = calibration
         self.isEditable = isEditable
         self.showLabels = showLabels
+        self.template = template
     }
 
     public var body: some View {
         ZStack {
             Canvas { context, _ in
-                for template in RiftboundPlaymatTemplate.zones {
-                    let points = template.normalizedPolygon.map(calibration.map)
+                for zoneTemplate in template {
+                    let points = zoneTemplate.normalizedPolygon.map(calibration.map)
                     var path = Path()
                     path.addLines(points)
                     path.closeSubpath()
-                    context.stroke(path, with: .color(color(for: template.zone)), lineWidth: 1.5)
+                    context.stroke(path, with: .color(color(for: zoneTemplate.zone)), lineWidth: 1.5)
 
                     if showLabels, let centroid = centroid(of: points) {
-                        context.draw(
-                            Text(label(for: template)).font(.system(size: 10)).foregroundStyle(.white),
-                            at: centroid
-                        )
+                        // `GraphicsContext.draw` needs a plain `Text` —
+                        // `.shadow` (and most other view modifiers) widen
+                        // it to `some View`, which doesn't fit that
+                        // overload. Fake a legible outline instead by
+                        // drawing the same text in black, offset a couple
+                        // points in each direction, underneath the white
+                        // text — keeps it readable over any background
+                        // color the zone happens to be drawn in.
+                        let text = Text(label(for: zoneTemplate)).font(.system(size: 28, weight: .bold))
+                        for offset in [CGPoint(x: -1.5, y: -1.5), CGPoint(x: 1.5, y: -1.5), CGPoint(x: -1.5, y: 1.5), CGPoint(x: 1.5, y: 1.5)] {
+                            context.draw(text.foregroundStyle(.black), at: CGPoint(x: centroid.x + offset.x, y: centroid.y + offset.y))
+                        }
+                        context.draw(text.foregroundStyle(.white), at: centroid)
                     }
                 }
 
@@ -65,10 +85,22 @@ public struct PlaymatOverlayView: View {
     }
 
     private func label(for template: PlaymatZoneTemplate) -> String {
+        // `Zone.player1Hand`/`.player2Hand`'s raw value already spells out
+        // which seat — showing it via `rawValue` would double up with the
+        // "(P1)"/"(P2)" suffix below ("player1Hand (P1)"). Every other
+        // zone case is seat-agnostic, so only this one needs the override.
+        var text: String
+        switch template.zone {
+        case .player1Hand, .player2Hand: text = "hand"
+        default: text = template.zone.rawValue
+        }
+        if let slot = template.battlefieldSlot {
+            text += " #\(slot)"
+        }
         switch template.owner {
-        case .player1: return "\(template.zone.rawValue) (P1)"
-        case .player2: return "\(template.zone.rawValue) (P2)"
-        case nil: return template.zone.rawValue
+        case .player1: return "\(text) (P1)"
+        case .player2: return "\(text) (P2)"
+        case nil: return text
         }
     }
 
@@ -89,7 +121,8 @@ public struct PlaymatOverlayView: View {
         case .mainDeck: return .blue
         case .legend: return .orange
         case .champion: return .yellow
-        case .player1Hand, .player2Hand, .unknown: return .white
+        case .player1Hand, .player2Hand: return .cyan
+        case .unknown: return .white
         }
     }
 }

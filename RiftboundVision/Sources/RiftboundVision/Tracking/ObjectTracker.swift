@@ -10,13 +10,17 @@ public struct Detection: Sendable {
     public let boundingBox: CGRect
     public let rotation: CGFloat
     public let confidence: Float
+    /// See `TrackedObject.recognizedLabel` — carried through unchanged by
+    /// the tracker onto whichever track this detection matches.
+    public let recognizedLabel: String?
 
-    public init(type: ObjectType, center: CGPoint, boundingBox: CGRect, rotation: CGFloat, confidence: Float) {
+    public init(type: ObjectType, center: CGPoint, boundingBox: CGRect, rotation: CGFloat, confidence: Float, recognizedLabel: String? = nil) {
         self.type = type
         self.center = center
         self.boundingBox = boundingBox
         self.rotation = rotation
         self.confidence = confidence
+        self.recognizedLabel = recognizedLabel
     }
 }
 
@@ -28,6 +32,12 @@ public struct TrackerUpdateResult: Sendable {
     public let objects: [TrackedObject]
     public let appearedIDs: [TrackedObjectID]
     public let disappearedIDs: [TrackedObjectID]
+
+    public init(objects: [TrackedObject], appearedIDs: [TrackedObjectID], disappearedIDs: [TrackedObjectID]) {
+        self.objects = objects
+        self.appearedIDs = appearedIDs
+        self.disappearedIDs = disappearedIDs
+    }
 }
 
 /// Answers "which physical object is this," not "what card is this."
@@ -54,13 +64,25 @@ public final class ObjectTracker: @unchecked Sendable {
     /// dropped and reported as disappeared, rather than treated as
     /// occluded.
     public let occlusionToleranceFrames: Int
+    /// Same idea, but for objects whose current zone is
+    /// `Zone.isPositionallyStable` (Battlefield/Rune Area/Rune Deck) — a
+    /// much longer grace period, since a card there genuinely doesn't move
+    /// and a run of missed detections (e.g. the pipeline's settled-mode
+    /// throttle skipping frames entirely, or a hand briefly resting over
+    /// it) shouldn't read as "left play." Still finite, not infinite — a
+    /// card that's actually been physically removed must eventually be
+    /// reported disappeared so its cached identity gets evicted (see
+    /// `CameraPipelineController.process(_:)`'s Trash handling) rather
+    /// than haunting `tracked` forever.
+    public let settledOcclusionToleranceFrames: Int
     /// Maximum center-to-center distance (same units as `Detection.center`)
     /// for a detection to be considered "the same object" as an existing
     /// track. Tune against your calibrated table's pixel/point scale.
     public let matchDistanceThreshold: CGFloat
 
-    public init(occlusionToleranceFrames: Int = 15, matchDistanceThreshold: CGFloat = 60) {
+    public init(occlusionToleranceFrames: Int = 15, settledOcclusionToleranceFrames: Int = 300, matchDistanceThreshold: CGFloat = 60) {
         self.occlusionToleranceFrames = occlusionToleranceFrames
+        self.settledOcclusionToleranceFrames = settledOcclusionToleranceFrames
         self.matchDistanceThreshold = matchDistanceThreshold
     }
 
@@ -109,6 +131,12 @@ public final class ObjectTracker: @unchecked Sendable {
             track.lastSeenFrame = frameIndex
             track.previousZone = track.currentZone
             track.currentZone = zoneMapper.zone(for: detection.center)
+            // A recognizer's label is trusted the moment it's supplied;
+            // a `nil` from a non-recognizing detector should not erase a
+            // previously-recognized label for the same physical object.
+            if let recognizedLabel = detection.recognizedLabel {
+                track.recognizedLabel = recognizedLabel
+            }
             tracked[pair.trackID] = track
         }
         remainingDetections.removeAll { claimedDetectionIndices.contains($0.offset) }
@@ -129,7 +157,8 @@ public final class ObjectTracker: @unchecked Sendable {
                 velocity: .zero,
                 confidence: detection.confidence,
                 isVisible: true,
-                lastSeenFrame: frameIndex
+                lastSeenFrame: frameIndex,
+                recognizedLabel: detection.recognizedLabel
             )
             appearedIDs.append(id)
         }
@@ -137,7 +166,8 @@ public final class ObjectTracker: @unchecked Sendable {
         // Unmatched existing tracks: still-occluded, or finally dropped.
         var disappearedIDs: [TrackedObjectID] = []
         for (id, track) in tracked where !matchedTrackIDs.contains(id) {
-            if frameIndex - track.lastSeenFrame > occlusionToleranceFrames {
+            let tolerance = track.currentZone.isPositionallyStable ? settledOcclusionToleranceFrames : occlusionToleranceFrames
+            if frameIndex - track.lastSeenFrame > tolerance {
                 disappearedIDs.append(id)
                 tracked.removeValue(forKey: id)
             } else {

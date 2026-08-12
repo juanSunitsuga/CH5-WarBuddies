@@ -5,10 +5,10 @@ import RiftboundVision
 
 /// The actual wiring is `CameraPipelineController` — this view just binds
 /// to it. Everything here is "live": press Start and you'll see the real
-/// camera feed with real detections drawn over it. With `ZoneMapper`
-/// uncalibrated (see the controller), every object's zone reads
-/// `.unknown` and no `.objectMoved` event ever confirms — that's the
-/// visible gap, not a placeholder screen.
+/// camera feed with every current detection boxed and labeled, on a
+/// fixed poll cadence rather than every frame (see the controller's doc
+/// comment — this matches `feature/riftbound-scanner-prototype`'s
+/// architecture: no per-object tracking, no persistent identity).
 struct ContentView: View {
     @StateObject private var pipeline: CameraPipelineController
 
@@ -20,7 +20,10 @@ struct ContentView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        VStack(spacing: 0) {
+            GameStateBar(gameState: $pipeline.gameState)
+
+            HStack(spacing: 0) {
             GeometryReader { proxy in
                 ZStack {
                     Color.black
@@ -35,24 +38,31 @@ struct ContentView: View {
                     }
 
                     // Both overlays draw in the raw pixel coordinates of
-                    // `pipeline.snapshot`/`pipeline.calibration` (the camera
-                    // frame's native size), but the image above is displayed
-                    // aspect-fit inside whatever the window's current size
-                    // is — without this correction, boxes and zone outlines
-                    // drift away from what they're labeling as soon as the
-                    // window isn't exactly the camera's native resolution.
-                    let scale = fitScale(container: proxy.size, content: pipeline.snapshot.frameSize)
+                    // `pipeline.frameSize`/`pipeline.calibration` (the
+                    // camera frame's native size), but the image above is
+                    // displayed aspect-fit inside whatever the window's
+                    // current size is — without this correction, boxes
+                    // and the zone reference layer drift away from what
+                    // they're labeling as soon as the window isn't
+                    // exactly the camera's native resolution.
+                    let scale = fitScale(container: proxy.size, content: pipeline.frameSize)
 
                     PlaymatOverlayView(calibration: $pipeline.calibration, isEditable: pipeline.isCalibrating)
-                        .frame(width: pipeline.snapshot.frameSize.width, height: pipeline.snapshot.frameSize.height)
+                        .frame(width: pipeline.frameSize.width, height: pipeline.frameSize.height)
                         .scaleEffect(scale)
                         .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
 
-                    DebugOverlayView(snapshot: pipeline.snapshot)
-                        .frame(width: pipeline.snapshot.frameSize.width, height: pipeline.snapshot.frameSize.height)
+                    LiveDetectionOverlayView(detections: pipeline.detections, cardDatabase: pipeline.cardDatabase)
+                        .frame(width: pipeline.frameSize.width, height: pipeline.frameSize.height)
                         .scaleEffect(scale)
                         .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                         .allowsHitTesting(false)
+
+                    VStack {
+                        detectionCountBadge
+                        Spacer()
+                    }
+                    .padding(.top, 12)
 
                     if let errorMessage = pipeline.errorMessage {
                         VStack {
@@ -68,9 +78,8 @@ struct ContentView: View {
                 }
             }
 
-            // The SpellTable-style sidebar: tracked cards, grouped by
-            // which seat they're currently on, click for info.
-            TrackedCardsPanel(pipeline: pipeline)
+            DetectedCardsPanel(pipeline: pipeline)
+            }
         }
         .frame(minWidth: 1160, minHeight: 675)
         .toolbar {
@@ -91,10 +100,8 @@ struct ContentView: View {
             }
             ToolbarItem {
                 // Drag the 4 yellow corner handles onto the physical
-                // mat's actual corners as seen by the camera. This is the
-                // entire calibration step — once the outline snaps onto
-                // the real mat, `zoneMapper` resolves real zones instead
-                // of `.unknown` for everything.
+                // mat's actual corners as seen by the camera — a visual
+                // reference layer only now, not consulted by detection.
                 Toggle(isOn: $pipeline.isCalibrating) {
                     Label("Calibrate Playmat", systemImage: "square.dashed")
                 }
@@ -124,6 +131,26 @@ struct ContentView: View {
         )) {
             debugReportSheet
         }
+    }
+
+    private var detectionCountBadge: some View {
+        HStack(spacing: 8) {
+            Text(pipeline.detections.isEmpty ? "No cards detected" : "\(pipeline.detections.count) card\(pipeline.detections.count == 1 ? "" : "s") detected")
+            // Visible proof the reconnected Object Tracking + Area of
+            // Region pipeline (expertSystemAdapter) is actually producing
+            // events, not just structurally wired — see
+            // CameraPipelineController.observedEvents' doc comment.
+            if !pipeline.observedEvents.isEmpty {
+                Text("· \(pipeline.observedEvents.count) table event\(pipeline.observedEvents.count == 1 ? "" : "s")")
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+        }
+        .font(.system(size: 12, weight: .semibold, design: .rounded))
+        .foregroundStyle(.white.opacity(0.9))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(.black.opacity(0.4), in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 1))
     }
 
     private var debugReportSheet: some View {

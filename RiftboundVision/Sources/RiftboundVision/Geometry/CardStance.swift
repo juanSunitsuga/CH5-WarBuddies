@@ -8,8 +8,8 @@ import CoreGraphics
 /// the rectangle detector re-initializes a card's bounding box relative to
 /// the screen frame whenever the card rotates, so raw `rotation` can be
 /// unreliable across a tap, whereas "is the box taller than it is wide"
-/// survives that re-initialization. See `CGRect.cardOrientation`.
-public enum CardOrientation: String, Sendable, Equatable, Codable {
+/// survives that re-initialization. See `CGRect.cardStance`.
+public enum CardStance: String, Sendable, Equatable, Codable {
     /// Vertical — the card is upright and available to act.
     case ready
     /// Horizontal (tapped) — the card has been rotated 90°.
@@ -17,13 +17,13 @@ public enum CardOrientation: String, Sendable, Equatable, Codable {
 }
 
 public extension CGRect {
-    /// Orientation heuristic from the box's own proportions: a standard TCG
+    /// Stance heuristic from the box's own proportions: a standard TCG
     /// card is taller than it is wide when Ready, and wider than tall once
     /// tapped. A near-square box (`|Δ| < squareTolerance` of the larger
     /// side) is ambiguous and reported as `.ready` — the conservative
     /// default, since a mid-rotation frame shouldn't read as Exhausted;
     /// `TemporalEventDetector`-style confirmation smooths the transition.
-    func cardOrientation(squareTolerance: CGFloat = 0.05) -> CardOrientation {
+    func cardStance(squareTolerance: CGFloat = 0.05) -> CardStance {
         let longSide = Swift.max(width, height)
         guard longSide > 0 else { return .ready }
         // Within the deadzone around square, don't commit to Exhausted.
@@ -32,7 +32,7 @@ public extension CGRect {
     }
 
     /// Convenience with the default tolerance, usable as a property.
-    var cardOrientation: CardOrientation { cardOrientation() }
+    var cardStance: CardStance { cardStance() }
 
     /// Intersection-over-Union with another rect: shared area divided by
     /// combined area, in `[0, 1]`. `0` when they don't overlap (or either

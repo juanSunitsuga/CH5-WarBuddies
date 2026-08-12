@@ -55,10 +55,22 @@ public struct TrackedObject: Sendable, Equatable {
     public var underlaidCardIDs: [TrackedObjectID]
 
     /// Ready (upright) vs Exhausted (tapped), inferred purely from the
-    /// current bounding box — see `CGRect.cardOrientation`. Cheap and
-    /// robust across the bbox re-initialization that happens when a card
-    /// rotates, unlike `rotation`.
-    public var orientation: CardOrientation { boundingBox.cardOrientation }
+    /// current bounding box — see `CGRect.cardStance`. Cheap and robust
+    /// across the bbox re-initialization that happens when a card rotates,
+    /// unlike `rotation`. This is the identity-free fallback: once a card
+    /// *is* recognized, `CardPrinting.isExhausted(observedBoundingBox:)` is
+    /// the better answer, since it knows whether the card is printed
+    /// portrait or landscape.
+    public var stance: CardStance { boundingBox.cardStance }
+
+    /// The class label a recognizer attached to the detection that last
+    /// matched this track, if any (e.g. `CoreMLCardDetector`'s YOLO class
+    /// name — "Annie Fiery"). `nil` for detectors that don't do identity
+    /// (e.g. `VisionRectangleDetector`). This is a raw label, not a
+    /// resolved `CardPrinting` — matching it against a `CardDatabase` is
+    /// the caller's job, same seam `RecognizedCard`/`identify(objectID:as:)`
+    /// already describes.
+    public var recognizedLabel: String?
 
     public init(
         id: TrackedObjectID,
@@ -73,7 +85,8 @@ public struct TrackedObject: Sendable, Equatable {
         isVisible: Bool,
         lastSeenFrame: Int,
         zIndex: Int = 0,
-        underlaidCardIDs: [TrackedObjectID] = []
+        underlaidCardIDs: [TrackedObjectID] = [],
+        recognizedLabel: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -88,5 +101,6 @@ public struct TrackedObject: Sendable, Equatable {
         self.lastSeenFrame = lastSeenFrame
         self.zIndex = zIndex
         self.underlaidCardIDs = underlaidCardIDs
+        self.recognizedLabel = recognizedLabel
     }
 }

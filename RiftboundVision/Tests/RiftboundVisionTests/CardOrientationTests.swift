@@ -2,59 +2,56 @@ import Testing
 import CoreGraphics
 @testable import RiftboundVision
 
+/// `CoreMLCardDetector` gives axis-aligned boxes only, no true rotation
+/// angle. `CardPrinting.isExhausted(observedBoundingBox:)` is what
+/// recovers Exhaust/Ready (rules 592–593) from that: compare the box's
+/// long axis against the card's own printed orientation.
 struct CardOrientationTests {
 
-    @Test("A taller-than-wide box reads as Ready (upright)")
-    func tallBoxIsReady() {
-        let box = CGRect(x: 0, y: 0, width: 20, height: 30)
-        #expect(box.cardOrientation == .ready)
+    private func printing(orientation: CardOrientation) -> CardPrinting {
+        CardPrinting(
+            id: "test-id",
+            name: "Test Card",
+            riftboundID: "test-000-000",
+            collectorNumber: nil,
+            attributes: .init(energy: nil, might: nil, power: nil),
+            classification: .init(type: "Unit", supertype: nil, rarity: nil, domain: []),
+            text: .init(plain: "", flavour: nil),
+            set: .init(setID: "TST", label: "Test Set"),
+            media: .init(imageURL: nil),
+            orientation: orientation
+        )
     }
 
-    @Test("A wider-than-tall box reads as Exhausted (tapped)")
-    func wideBoxIsExhausted() {
-        let box = CGRect(x: 0, y: 0, width: 30, height: 20)
-        #expect(box.cardOrientation == .exhausted)
+    @Test("A portrait card observed as a tall box is Ready (not exhausted)")
+    func portraitCardTallBoxIsReady() {
+        let card = printing(orientation: .portrait)
+        let tallBox = CGRect(x: 0, y: 0, width: 60, height: 90)
+
+        #expect(card.isExhausted(observedBoundingBox: tallBox) == false)
     }
 
-    /// A near-square box (within the deadzone) must not commit to Exhausted
-    /// — that's the transient mid-rotation frame the tolerance guards against.
-    @Test("A near-square box stays Ready rather than flickering to Exhausted")
-    func nearSquareStaysReady() {
-        // 20 vs 20.5: |Δ| = 0.5, deadzone = 20.5 * 0.05 ≈ 1.025 → inside.
-        let almostSquareWide = CGRect(x: 0, y: 0, width: 20.5, height: 20)
-        #expect(almostSquareWide.cardOrientation == .ready)
+    @Test("A portrait card observed as a wide box is Exhausted (rotated 90°)")
+    func portraitCardWideBoxIsExhausted() {
+        let card = printing(orientation: .portrait)
+        let wideBox = CGRect(x: 0, y: 0, width: 90, height: 60)
+
+        #expect(card.isExhausted(observedBoundingBox: wideBox) == true)
     }
 
-    @Test("A clearly wide box past the deadzone still reads Exhausted")
-    func wideBoxOutsideDeadzone() {
-        let box = CGRect(x: 0, y: 0, width: 25, height: 20)
-        #expect(box.cardOrientation == .exhausted)
+    @Test("A landscape card (e.g. a Battlefield) observed as a wide box is Ready")
+    func landscapeCardWideBoxIsReady() {
+        let card = printing(orientation: .landscape)
+        let wideBox = CGRect(x: 0, y: 0, width: 90, height: 60)
+
+        #expect(card.isExhausted(observedBoundingBox: wideBox) == false)
     }
 
-    @Test("An empty box degrades to Ready rather than dividing by zero")
-    func emptyBoxIsReady() {
-        #expect(CGRect.zero.cardOrientation == .ready)
-    }
+    @Test("A landscape card observed as a tall box is Exhausted (rotated 90°)")
+    func landscapeCardTallBoxIsExhausted() {
+        let card = printing(orientation: .landscape)
+        let tallBox = CGRect(x: 0, y: 0, width: 60, height: 90)
 
-    @Test("IoU of a rect with itself is 1")
-    func iouIdentity() {
-        let box = CGRect(x: 0, y: 0, width: 10, height: 10)
-        #expect(abs(box.intersectionOverUnion(box) - 1.0) < 0.0001)
-    }
-
-    @Test("IoU of disjoint rects is 0")
-    func iouDisjoint() {
-        let a = CGRect(x: 0, y: 0, width: 10, height: 10)
-        let b = CGRect(x: 100, y: 100, width: 10, height: 10)
-        #expect(a.intersectionOverUnion(b) == 0)
-    }
-
-    @Test("IoU of half-overlapping equal rects is 1/3")
-    func iouPartial() {
-        // Two 10×10 rects offset by 5 in x → intersection 5×10=50,
-        // union 100+100-50 = 150 → 50/150 = 0.333…
-        let a = CGRect(x: 0, y: 0, width: 10, height: 10)
-        let b = CGRect(x: 5, y: 0, width: 10, height: 10)
-        #expect(abs(a.intersectionOverUnion(b) - 1.0 / 3.0) < 0.0001)
+        #expect(card.isExhausted(observedBoundingBox: tallBox) == true)
     }
 }
