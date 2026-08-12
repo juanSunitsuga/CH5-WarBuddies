@@ -100,6 +100,9 @@ struct ContentView: View {
                 .toggleStyle(.button)
             }
             ToolbarItem {
+                zoomPicker
+            }
+            ToolbarItem {
                 // Diagnostic for "Continuity Camera works elsewhere but
                 // this app doesn't see it" — dumps every video device
                 // macOS reports (all device types, plus the legacy
@@ -199,6 +202,30 @@ struct ContentView: View {
         } label: {
             Label(cameraLabel, systemImage: selectedIsContinuityCamera ? "iphone" : "camera")
         }
+    }
+
+    /// Software zoom levels (0.5x/1x/2x) — see `CameraPipelineController
+    /// .zoomFactor`'s doc comment for why this is a frame crop, not a
+    /// hardware zoom (macOS has no `AVCaptureDevice.videoZoomFactor` at
+    /// all). Auto-focus is already disabled unconditionally down in
+    /// `AVFoundationCameraCapture.attachInputLocked` — there's nothing
+    /// left to toggle for that half of "disable zoom and focus, make the
+    /// app control zoom" beyond this picker.
+    private var zoomPicker: some View {
+        Picker("Zoom", selection: Binding(
+            get: { pipeline.zoomFactor },
+            set: { pipeline.setZoom($0) }
+        )) {
+            ForEach(CameraPipelineController.zoomLevels, id: \.self) { level in
+                Text(zoomLabel(level)).tag(level)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 140)
+    }
+
+    private func zoomLabel(_ level: CGFloat) -> String {
+        level == floor(level) ? "\(Int(level))x" : "\(level)x"
     }
 
     private var selectedIsContinuityCamera: Bool {
