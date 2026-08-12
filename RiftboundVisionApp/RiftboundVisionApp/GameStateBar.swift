@@ -17,12 +17,8 @@ struct GameStateBar: View {
             }
             .fixedSize()
 
-            Picker("Turn", selection: $gameState.turnPlayer) {
-                Text("You").tag(Player.player1)
-                Text("Opponent").tag(Player.player2)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 160)
+            // No Opponent seat to pick — this app tracks one physical
+            // mat/camera only, so "whose turn" isn't a real choice here.
 
             Picker("Phase", selection: $gameState.phase) {
                 ForEach(GamePhase.allCases, id: \.self) { phase in

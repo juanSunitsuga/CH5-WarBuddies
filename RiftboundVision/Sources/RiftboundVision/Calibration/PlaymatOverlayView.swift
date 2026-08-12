@@ -76,36 +76,27 @@ public struct PlaymatOverlayView: View {
             Canvas { context, _ in
                 for zoneTemplate in template {
                     let points = zoneTemplate.normalizedPolygon.map(calibration.map)
-                    // The border art is an axis-aligned rectangle texture;
-                    // `boundingRect` is the same simplification the
-                    // detector's own region-of-interest already makes
-                    // elsewhere in this layer — a calibrated quad that's
-                    // reasonably close to a real rectangle (which dragging
-                    // 4 corners onto a physical mat's corners naturally
-                    // produces) doesn't need a true quad-warp for this.
-                    context.draw(frame(for: zoneTemplate.zone), in: boundingRect(of: points))
+                    // Draw a subtle light-beige filled background for the
+                    // zone, matching the lighter playmat look in the
+                    // reference image, then draw the textured border frame
+                    // on top.
+                    let rect = boundingRect(of: points)
+                    context.draw(frame(for: zoneTemplate.zone), in: rect)
 
                     if showLabels, let centroid = centroid(of: points) {
-                        // `GraphicsContext.draw` needs a plain `Text` —
-                        // `.shadow` (and most other view modifiers) widen
-                        // it to `some View`, which doesn't fit that
-                        // overload. Fake a legible outline instead by
-                        // drawing the same text in black, offset a couple
-                        // points in each direction, underneath the white
-                        // text — keeps it readable over any background
-                        // color the zone happens to be drawn in.
-                        let text = Text(label(for: zoneTemplate)).font(.system(size: 28, weight: .bold))
+                        // Draw a white outline (offsets) and dark center
+                        // text so labels read like the reference image.
+                        let text = Text(label(for: zoneTemplate)).font(.system(size: 24, weight: .bold))
                         for offset in [CGPoint(x: -1.5, y: -1.5), CGPoint(x: 1.5, y: -1.5), CGPoint(x: -1.5, y: 1.5), CGPoint(x: 1.5, y: 1.5)] {
-                            context.draw(text.foregroundStyle(.black), at: CGPoint(x: centroid.x + offset.x, y: centroid.y + offset.y))
+                            context.draw(text.foregroundStyle(.white), at: CGPoint(x: centroid.x + offset.x, y: centroid.y + offset.y))
                         }
-                        context.draw(text.foregroundStyle(.white), at: centroid)
+                        context.draw(text.foregroundStyle(Color(red: 0.12, green: 0.10, blue: 0.08)), at: centroid)
                     }
                 }
 
-                var boundary = Path()
-                boundary.addLines(calibration.boundingPolygon)
-                boundary.closeSubpath()
-                context.stroke(boundary, with: .color(.yellow), lineWidth: 2.5)
+                // Intentionally remove the bright yellow outer boundary
+                // stroke used for debugging; the reference overlay is
+                // visually quieter.
             }
             .allowsHitTesting(false)
 

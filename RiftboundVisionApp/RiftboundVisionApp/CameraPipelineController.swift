@@ -94,9 +94,9 @@ final class CameraPipelineController: ObservableObject {
     /// Minted once per app session — there's no player-identification UI,
     /// so there's no real per-match `PlayerID` to use yet. `.player1`
     /// (the calibrated mat's owner, "You" throughout this app) maps to
-    /// `localPlayerID`; `.player2` is a placeholder opponent seat.
+    /// `localPlayerID`. No opponent seat — this app tracks one physical
+    /// mat/camera only.
     let localPlayerID = PlayerID()
-    let opponentPlayerID = PlayerID()
     /// One per `RiftboundPlaymatTemplate.singlePlayerZones()` Battlefield
     /// slot (just slot 0 now — the template calibrates a single physical
     /// Battlefield card) — same "minted once per session" caveat as the
@@ -243,7 +243,7 @@ final class CameraPipelineController: ObservableObject {
         // caveat.
         let adapter = ExpertSystemAdapter(
             zoneMapper: ZoneMapper(zones: calibration.boardZones()),
-            playerCalibration: [.player1: localPlayerID, .player2: opponentPlayerID],
+            playerCalibration: [.player1: localPlayerID],
             battlefieldCalibration: battlefieldSlotIDs
         )
         expertSystemAdapter = adapter

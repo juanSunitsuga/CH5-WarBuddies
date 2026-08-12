@@ -81,36 +81,24 @@ public enum RiftboundPlaymatTemplate {
         let row2Y0: CGFloat = 0.37, row2Y1: CGFloat = 0.65
         let row3Y0: CGFloat = 0.67, row3Y1: CGFloat = 0.95
 
-        // Legend/Champion/Main Deck/Rune Deck/Trash read landscape (wider
-        // than tall) rather than filling their row's full height — each
-        // is a short box vertically centered within its row's Y-band
-        // instead. Their column bounds (left/right edges) are untouched,
-        // so this doesn't move them or change row alignment, only their
-        // own aspect.
-        func landscapeBox(_ x0: CGFloat, _ x1: CGFloat, rowY0: CGFloat, rowY1: CGFloat) -> [CGPoint] {
-            let centerY = (rowY0 + rowY1) / 2
-            let halfHeight: CGFloat = 0.06
-            return rect(x0, centerY - halfHeight, x1, centerY + halfHeight)
-        }
-
         return [
             // Row 1: Battlefield — a single zone (no more internal slot
             // split; this mat only calibrates one physical Battlefield
             // card) + Legend + Champion.
             PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(leftMargin, row1Y0, 0.615, row1Y1), battlefieldSlot: 0),
-            PlaymatZoneTemplate(zone: .legend, owner: owner, normalizedPolygon: landscapeBox(0.625, bandX1, rowY0: row1Y0, rowY1: row1Y1)),
-            PlaymatZoneTemplate(zone: .champion, owner: owner, normalizedPolygon: landscapeBox(accessoryX0, accessoryX1, rowY0: row1Y0, rowY1: row1Y1)),
+            PlaymatZoneTemplate(zone: .legend, owner: owner, normalizedPolygon: rect(0.625, row1Y0, bandX1, row1Y1)),
+            PlaymatZoneTemplate(zone: .champion, owner: owner, normalizedPolygon: rect(accessoryX0, row1Y0, accessoryX1, row1Y1)),
 
             // Row 2: Base (wider than Battlefield — only one accessory box
             // beside it) + Main Deck.
             PlaymatZoneTemplate(zone: .base, owner: owner, normalizedPolygon: rect(leftMargin, row2Y0, bandX1, row2Y1)),
-            PlaymatZoneTemplate(zone: .mainDeck, owner: owner, normalizedPolygon: landscapeBox(accessoryX0, accessoryX1, rowY0: row2Y0, rowY1: row2Y1)),
+            PlaymatZoneTemplate(zone: .mainDeck, owner: owner, normalizedPolygon: rect(accessoryX0, row2Y0, accessoryX1, row2Y1)),
 
             // Row 3: Rune Deck (inline at the left, not in the accessory
             // column) + Rune Area + Trash.
-            PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: landscapeBox(leftMargin, 0.225, rowY0: row3Y0, rowY1: row3Y1)),
+            PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: rect(leftMargin, row3Y0, 0.225, row3Y1)),
             PlaymatZoneTemplate(zone: .runeArea, owner: owner, normalizedPolygon: rect(0.235, row3Y0, bandX1, row3Y1)),
-            PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: landscapeBox(accessoryX0, accessoryX1, rowY0: row3Y0, rowY1: row3Y1)),
+            PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: rect(accessoryX0, row3Y0, accessoryX1, row3Y1)),
 
             // Hand — spans the same outer left/right bounds as everything
             // else above (`leftMargin`/`accessoryX1`), so it stays aligned
