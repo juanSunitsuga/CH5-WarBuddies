@@ -30,14 +30,16 @@ let package = Package(
             ],
             resources: [
                 // Hand-drawn gold border frames for PlaymatOverlayView's
-                // zone boxes (the "RiftChamps" mockup look) — three
-                // variants, not because each is locked to one shape, but
-                // because that's the mapping the mockup specifies: Rectangle
-                // 2 for Battlefield, Rectangle 3 for Base, Rectangle 1 for
-                // every other zone, each stretched to its own zone's size.
+                // zone boxes (the "RiftChamps" mockup look) — see
+                // PlaymatOverlayView.frame(for:) for which asset goes on
+                // which zone and why (each is a stretchable texture, not
+                // shape-locked, but stretching one *too* far past its own
+                // native aspect visibly smears its corner accents — that's
+                // why there are 4 variants, not 1).
                 .copy("Resources/Rectangle 1.png"),
                 .copy("Resources/Rectangle 2.png"),
-                .copy("Resources/Rectangle 3.png")
+                .copy("Resources/Rectangle 3.png"),
+                .copy("Resources/Rectangle 4.png")
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)

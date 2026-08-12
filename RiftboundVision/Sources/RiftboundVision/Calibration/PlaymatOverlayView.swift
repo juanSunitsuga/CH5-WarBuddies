@@ -30,14 +30,24 @@ public struct PlaymatOverlayView: View {
     }
 
     /// The "RiftChamps" mockup's hand-drawn gold border frames — not
-    /// shape-locked art, just three sketchy-line textures stretched to
-    /// whatever box they're drawn into. Which one goes where is a fixed
-    /// per-zone assignment from the mockup, not a rule of thumb: Rectangle
-    /// 2 for Battlefield, Rectangle 3 for Base, Rectangle 1 for every
-    /// other zone (Legend, Champion, Main Deck, Rune Deck, Rune Area,
-    /// Trash, Hand).
+    /// shape-locked art in principle (each is just a sketchy-line texture
+    /// stretched to whatever box it's drawn into), but stretching one
+    /// *far* past its own native aspect visibly smears its corner accents
+    /// (confirmed against a real render: Rectangle 1 — a narrow,
+    /// near-square 121×164 texture — stretched across the full-width Hand
+    /// zone turned its corner strokes into long vertical streaks). So the
+    /// mapping is by actual zone shape, not a single default:
+    ///   - Rectangle 2 (394×164, landscape): Battlefield
+    ///   - Rectangle 3 (520×164, wider landscape): Base and Rune Area —
+    ///     both wide rows the same general proportions as Base
+    ///   - Rectangle 4 (645×164, widest): Hand — wider than either of the
+    ///     above, and the zone most prone to the stretching artifact
+    ///   - Rectangle 1 (121×164, narrow/near-square): everything else
+    ///     (Legend, Champion, Main Deck, Rune Deck, Trash) — zones that
+    ///     are actually close to this texture's own native aspect
     private static let battlefieldFrame = loadFrame("Rectangle 2")
     private static let baseFrame = loadFrame("Rectangle 3")
+    private static let handFrame = loadFrame("Rectangle 4")
     private static let defaultFrame = loadFrame("Rectangle 1")
 
     private static func loadFrame(_ name: String) -> Image {
@@ -55,7 +65,8 @@ public struct PlaymatOverlayView: View {
     private func frame(for zone: Zone) -> Image {
         switch zone {
         case .battlefield: return Self.battlefieldFrame
-        case .base: return Self.baseFrame
+        case .base, .runeArea: return Self.baseFrame
+        case .player1Hand, .player2Hand: return Self.handFrame
         default: return Self.defaultFrame
         }
     }
