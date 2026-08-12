@@ -98,9 +98,10 @@ final class CameraPipelineController: ObservableObject {
     let localPlayerID = PlayerID()
     let opponentPlayerID = PlayerID()
     /// One per `RiftboundPlaymatTemplate.singlePlayerZones()` Battlefield
-    /// slot (0 and 1) — same "minted once per session" caveat as the
+    /// slot (just slot 0 now — the template calibrates a single physical
+    /// Battlefield card) — same "minted once per session" caveat as the
     /// player IDs above.
-    let battlefieldSlotIDs: [Int: BattlefieldID] = [0: BattlefieldID(), 1: BattlefieldID()]
+    let battlefieldSlotIDs: [Int: BattlefieldID] = [0: BattlefieldID()]
 
     private let camera = AVFoundationCameraCapture()
     private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
