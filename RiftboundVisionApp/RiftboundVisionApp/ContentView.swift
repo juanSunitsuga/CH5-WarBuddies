@@ -10,6 +10,7 @@ import RiftboundVision
 /// architecture: no per-object tracking, no persistent identity).
 struct ContentView: View {
     @StateObject private var pipeline = CameraPipelineController()
+    @State private var isShowingPipelineSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,6 +73,12 @@ struct ContentView: View {
 
             DetectedCardsPanel(pipeline: pipeline)
             }
+
+            TurnControlBar(
+                gameState: $pipeline.gameState,
+                isAutoDetecting: $pipeline.isAutoDetectingPhase,
+                latestInstruction: pipeline.instructions.first
+            )
         }
         .frame(minWidth: 1160, minHeight: 675)
         .toolbar {
@@ -98,6 +105,22 @@ struct ContentView: View {
                     Label("Calibrate Playmat", systemImage: "square.dashed")
                 }
                 .toggleStyle(.button)
+            }
+            ToolbarItem {
+                // Debug settings overlay — per-stage toggles instead of one
+                // flat kill switch. Disabling an earlier stage cascades:
+                // everything downstream of it turns off too (enforced by
+                // `CameraPipelineController.setStage`/`isStageActive`), so
+                // there's no way to leave the pipeline in an inconsistent
+                // "stage 3 on, stage 2 off" state from this UI.
+                Button {
+                    isShowingPipelineSettings = true
+                } label: {
+                    Label("Pipeline Settings", systemImage: "gearshape")
+                }
+                .popover(isPresented: $isShowingPipelineSettings) {
+                    PipelineSettingsView(pipeline: pipeline)
+                }
             }
             ToolbarItem {
                 // Diagnostic for "Continuity Camera works elsewhere but

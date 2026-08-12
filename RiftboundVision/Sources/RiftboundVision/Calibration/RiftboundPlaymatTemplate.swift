@@ -52,6 +52,12 @@ public enum RiftboundPlaymatTemplate {
         [CGPoint(x: x0, y: y0), CGPoint(x: x1, y: y0), CGPoint(x: x1, y: y1), CGPoint(x: x0, y: y1)]
     }
 
+    /// The mat's true proportion (646 × 502 — see `singlePlayerZones`'s
+    /// derivation), so a calibration quad can be built at the same shape
+    /// the border artwork was drawn for. Drawing into a quad of any other
+    /// proportion is exactly what stretched the frames before.
+    public static let matAspectRatio: CGFloat = 646.0 / 502.0
+
     // MARK: - Single player (active default)
 
     /// `owner` is whichever seat this specific physical mat belongs to —
@@ -63,39 +69,81 @@ public enum RiftboundPlaymatTemplate {
         // calibrated for either seat's physical mat.
         let handZone: Zone = owner == .player1 ? .player1Hand : .player2Hand
 
-        // Shared column bounds — the printed mat is 3 full-width bands
-        // (Battlefield/Base/Runes) on the left with one consistent
-        // right-hand accessory column (Legend+Champion, then Main Deck,
-        // then Trash, top to bottom); Rune Deck is the one box that
-        // breaks the pattern, sitting inline at the *left* of the Runes
-        // band instead of in that right column.
-        let mainX0: CGFloat = 0.06
-        let mainX1: CGFloat = 0.62
-        let accessoryX0: CGFloat = 0.66
-        let accessoryX1: CGFloat = 0.90
+        // Derived from the border-art assets' REAL pixel dimensions, not
+        // from eyeballing the mockup — every zone's aspect ratio here is
+        // exactly its artwork's own, so `PlaymatOverlayView` can draw each
+        // frame into its zone rect with zero stretching. (Previously these
+        // were hand-transcribed approximations, which is why the art
+        // smeared.)
+        //
+        // The four assets all share height 164 and their widths compose
+        // into an exact grid once you allow a 5pt gutter:
+        //     Rectangle 1: 121 × 164   Legend, Champion, Deck, Rune Deck, Trash
+        //     Rectangle 2: 394 × 164   Battlefield, Runes
+        //     Rectangle 3: 520 × 164   Base
+        //     Rectangle 4: 645 × 164   Hand
+        //   row 1  394 + 5 + 121 + 5 + 121 = 646
+        //   row 2  520 + 5 + 121           = 646
+        //   row 3  121 + 5 + 394 + 5 + 121 = 646
+        // That the three rows land on the same 646 total is what fixes the
+        // gutter at exactly 5 — it isn't a tuning knob, it's the only
+        // value that makes the artwork tile. Keep these numbers in sync
+        // with the PNGs; if the art is ever re-exported at a different
+        // size, re-derive rather than nudging the normalized values.
+        let small: CGFloat = 121, medium: CGFloat = 394, large: CGFloat = 520, hand: CGFloat = 645
+        let rowHeight: CGFloat = 164
+        let gutter: CGFloat = 5
+
+        // The unit square is the *mat* (rows 1–3). Hand lives below it and
+        // is deliberately allowed past y = 1 — see its own comment below.
+        let matWidth = medium + gutter + small + gutter + small      // 646
+        let matHeight = rowHeight * 3 + gutter * 2                    // 502
+
+        func x(_ pixels: CGFloat) -> CGFloat { pixels / matWidth }
+        func y(_ pixels: CGFloat) -> CGFloat { pixels / matHeight }
+        /// A zone box placed by its real pixel origin and its artwork's
+        /// real pixel size, then normalized — never by a guessed fraction.
+        func box(_ px: CGFloat, _ py: CGFloat, _ width: CGFloat, _ height: CGFloat = rowHeight) -> [CGPoint] {
+            rect(x(px), y(py), x(px + width), y(py + height))
+        }
+
+        let row1Y: CGFloat = 0
+        let row2Y = rowHeight + gutter                                // 169
+        let row3Y = (rowHeight + gutter) * 2                          // 338
+
+        // Column origins, accumulated left to right per row.
+        let row1LegendX = medium + gutter                             // 399
+        let row1ChampionX = row1LegendX + small + gutter              // 525
+        let row2DeckX = large + gutter                                // 525
+        let row3RunesX = small + gutter                               // 126
+        let row3TrashX = row3RunesX + medium + gutter                 // 525
 
         return [
-            // Battlefield band — two independent slots side by side (the
-            // print shows one undivided band; the internal split is this
-            // app's own bookkeeping for multiple Battlefields in play,
-            // rule 111).
-            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(mainX0, 0.08, 0.335, 0.30), battlefieldSlot: 0),
-            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(0.345, 0.08, mainX1, 0.30), battlefieldSlot: 1),
-            PlaymatZoneTemplate(zone: .legend, owner: owner, normalizedPolygon: rect(accessoryX0, 0.08, 0.775, 0.30)),
-            PlaymatZoneTemplate(zone: .champion, owner: owner, normalizedPolygon: rect(0.785, 0.08, accessoryX1, 0.30)),
+            // Row 1: Battlefield — a single zone (no more internal slot
+            // split; this mat only calibrates one physical Battlefield
+            // card) + Legend + Champion.
+            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: box(0, row1Y, medium), battlefieldSlot: 0),
+            PlaymatZoneTemplate(zone: .legend, owner: owner, normalizedPolygon: box(row1LegendX, row1Y, small)),
+            PlaymatZoneTemplate(zone: .champion, owner: owner, normalizedPolygon: box(row1ChampionX, row1Y, small)),
 
-            // Base band.
-            PlaymatZoneTemplate(zone: .base, owner: owner, normalizedPolygon: rect(mainX0, 0.36, mainX1, 0.58)),
-            PlaymatZoneTemplate(zone: .mainDeck, owner: owner, normalizedPolygon: rect(accessoryX0, 0.36, accessoryX1, 0.58)),
+            // Row 2: Base (the widest band — only one accessory box beside
+            // it) + Main Deck.
+            PlaymatZoneTemplate(zone: .base, owner: owner, normalizedPolygon: box(0, row2Y, large)),
+            PlaymatZoneTemplate(zone: .mainDeck, owner: owner, normalizedPolygon: box(row2DeckX, row2Y, small)),
 
-            // Runes band — Rune Deck inline at the left instead of in the
-            // accessory column.
-            PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: rect(mainX0, 0.64, 0.175, 0.86)),
-            PlaymatZoneTemplate(zone: .runeArea, owner: owner, normalizedPolygon: rect(0.185, 0.64, mainX1, 0.86)),
-            PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: rect(accessoryX0, 0.64, accessoryX1, 0.86)),
+            // Row 3: Rune Deck (inline at the left, not in the accessory
+            // column) + Rune Area (same artwork, so same width, as
+            // Battlefield) + Trash.
+            PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: box(0, row3Y, small)),
+            PlaymatZoneTemplate(zone: .runeArea, owner: owner, normalizedPolygon: box(row3RunesX, row3Y, medium)),
+            PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: box(row3TrashX, row3Y, small)),
 
-            // Hand — no printed box on the physical mat itself (a hand is
-            // normally held, not laid on the table), but this project is
+            // Hand — spans the same outer left/right bounds as everything
+            // else above (`leftMargin`/`accessoryX1`), so it stays aligned
+            // to the grid's actual full width regardless of how the zones
+            // between those edges are laid out. No printed box on the
+            // physical mat itself (a hand is normally held, not laid on
+            // the table), but this project is
             // playing Open Hand: cards are laid face-up in front of the
             // player instead of held concealed, which is exactly what
             // makes camera-based tracking of hand cards feasible at all.
@@ -109,7 +157,15 @@ public enum RiftboundPlaymatTemplate {
             // front of the player, so this zone (and the detector's ROI,
             // which is this same quad's bounding rect) actually covers
             // where the hand is laid out.
-            PlaymatZoneTemplate(zone: handZone, owner: owner, normalizedPolygon: rect(mainX0, 0.92, accessoryX1, 1.34))
+            // Hand is 645 wide against the mat's 646, so it sits half a
+            // point in from each edge rather than spanning exactly 0...1 —
+            // using the artwork's real width instead of rounding it to the
+            // full mat width is the whole point of this rewrite.
+            PlaymatZoneTemplate(
+                zone: handZone,
+                owner: owner,
+                normalizedPolygon: box((matWidth - hand) / 2, matHeight + gutter, hand)
+            )
         ]
     }
 

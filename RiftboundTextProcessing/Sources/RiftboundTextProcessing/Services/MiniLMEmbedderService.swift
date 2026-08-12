@@ -96,16 +96,41 @@ public final class MiniLMEmbedderService {
     }
     
     /// Basic tokenization helper (For exact WordPiece tokenization, use `swift-transformers` SPM package)
+    ///
+    /// KNOWN LIMITATION: these are pseudo-token IDs, not this model's real
+    /// WordPiece vocabulary, so the embeddings are only self-consistent —
+    /// they don't carry the semantic structure the classifier was trained
+    /// on. That's why classification currently hovers near chance. Fixing
+    /// it properly means shipping the model's actual vocab file and a real
+    /// WordPiece tokenizer, not tuning this hash.
+    ///
+    /// What this hash MUST be, regardless of the above, is deterministic.
+    /// It previously used `word.hashValue`, which Swift seeds randomly per
+    /// process — so the same card text produced a different embedding on
+    /// every launch, and the same input classified differently run to run
+    /// (measured: 52.7% / 46.4% / 53.2% confidence for one fixed string).
+    /// FNV-1a is stable across processes and platforms.
     private func simpleTokenize(_ text: String) -> [Int32] {
         var tokenIds: [Int32] = [101] // [CLS] token start
-        
+
         let words = text.lowercased().components(separatedBy: .whitespacesAndNewlines)
         for word in words.prefix(maxSequenceLength - 2) {
-            let pseudoHash = abs(word.hashValue % 28000) + 1000
+            let pseudoHash = Int(Self.fnv1a(word) % 28000) + 1000
             tokenIds.append(Int32(pseudoHash))
         }
-        
+
         tokenIds.append(102) // [SEP] token end
         return tokenIds
+    }
+
+    /// FNV-1a, 64-bit. Chosen for being trivially implementable and
+    /// deterministic across processes — not for hash quality.
+    private static func fnv1a(_ string: String) -> UInt64 {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in string.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01B3
+        }
+        return hash
     }
 }

@@ -56,18 +56,31 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// Draw/Channel Rune coverage is actually missing right now.
     public private(set) var unrepresentableZoneEvents: [VisionEvent] = []
 
+    /// Maps a detector's raw class label (e.g. `"Annie Fiery"`) onto the
+    /// canonical `CardDefID` the Expert System's `GameState` is keyed by.
+    /// Without this, the label string was wrapped verbatim into a
+    /// `CardDefID` — which only ever matched a `GameState` if that state
+    /// happened to be built from the same raw label vocabulary, so a
+    /// `GameState` built from real card data (keyed by `riftboundID`)
+    /// silently failed to resolve every card the camera saw. Defaults to
+    /// the old verbatim behavior; the app injects a real
+    /// `CardDatabase`-backed resolver.
+    private let resolveLabel: @Sendable (String) -> CardDefID?
+
     public init(
         zoneMapper: ZoneMapper,
         playerCalibration: [Player: PlayerID],
         battlefieldCalibration: [Int: BattlefieldID] = [:],
         tracker: ObjectTracker = ObjectTracker(),
-        temporalDetector: TemporalEventDetector = TemporalEventDetector()
+        temporalDetector: TemporalEventDetector = TemporalEventDetector(),
+        resolveLabel: @escaping @Sendable (String) -> CardDefID? = { CardDefID(rawValue: $0) }
     ) {
         self.zoneMapper = zoneMapper
         self.playerCalibration = playerCalibration
         self.battlefieldCalibration = battlefieldCalibration
         self.tracker = tracker
         self.temporalDetector = temporalDetector
+        self.resolveLabel = resolveLabel
     }
 
     /// Record a card-recognition result for a tracked object. Safe to call
@@ -125,7 +138,7 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
             // helps a caller that has some *other* source of identity
             // (e.g. manual assignment) keyed by an ID it learned some
             // other way.
-            let definitionID = cardIdentity[event.objectID] ?? event.recognizedLabel.map(CardDefID.init(rawValue:))
+            let definitionID = cardIdentity[event.objectID] ?? event.recognizedLabel.flatMap(resolveLabel)
             return definitionID.map {
                 CardIdentification(cardDefinitionID: $0, physicalRegion: region, confidence: Double(event.confidence))
             }

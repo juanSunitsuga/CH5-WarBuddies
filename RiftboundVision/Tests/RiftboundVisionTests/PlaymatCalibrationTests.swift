@@ -73,14 +73,14 @@ struct PlaymatCalibrationTests {
         #expect(zones.contains { $0.type == .champion && $0.owner == .player2 })
     }
 
-    @Test("The single-player template's two Battlefield zones are unowned and carry distinct slots")
-    func singlePlayerBattlefieldZonesAreUnownedWithDistinctSlots() {
+    @Test("The single-player template has exactly one, unowned Battlefield zone at slot 0")
+    func singlePlayerBattlefieldZoneIsUnownedAtSlotZero() {
         let zones = calibration.boardZones()
         let battlefields = zones.filter { $0.type == .battlefield }
 
-        #expect(battlefields.count == 2)
+        #expect(battlefields.count == 1)
         #expect(battlefields.allSatisfy { $0.owner == nil })
-        #expect(Set(battlefields.compactMap(\.battlefieldSlot)) == [0, 1])
+        #expect(battlefields.first?.battlefieldSlot == 0)
     }
 
     @Test("Single-player template has exactly one Hand zone, owned by and named for the given player")
@@ -98,9 +98,9 @@ struct PlaymatCalibrationTests {
         let mapper = ZoneMapper(zones: calibration.boardZones())
 
         // Single-player template's first Battlefield slot spans normalized
-        // x 0.06...0.335, y 0.08...0.30 — its center should resolve as
+        // x 0.055...0.33, y 0.065...0.345 — its center should resolve as
         // Battlefield #0 regardless of calibration skew.
-        let center = calibration.map(CGPoint(x: 0.1975, y: 0.19))
+        let center = calibration.map(CGPoint(x: 0.1925, y: 0.205))
         let boardZone = mapper.boardZone(for: center)
 
         #expect(boardZone?.type == .battlefield)

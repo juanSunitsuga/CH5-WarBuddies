@@ -98,6 +98,12 @@ extension CameraCapturing {
 /// without it, a device-disconnect notification arriving on AVFoundation's
 /// callback thread could race a `switchCamera` call arriving from the
 /// UI/MainActor at the same moment.
+///
+/// No zoom control here — `AVCaptureDevice.videoZoomFactor` (and `min`/
+/// `maxAvailableVideoZoomFactor`) are explicitly `API_UNAVAILABLE(macos)`
+/// in the SDK headers, so there's no hardware zoom API to expose on this
+/// platform even for Continuity Camera input. This layer does lock
+/// focus, though (`disableAutoFocus`, which *is* available on macOS).
 public final class AVFoundationCameraCapture: NSObject, CameraCapturing, @unchecked Sendable {
     private let session = AVCaptureSession()
     private var currentInput: AVCaptureDeviceInput?
@@ -285,6 +291,30 @@ public final class AVFoundationCameraCapture: NSObject, CameraCapturing, @unchec
         guard session.canAddInput(newInput) else { throw CameraError.cannotConfigureSession }
         session.addInput(newInput)
         currentInput = newInput
+        disableAutoFocus(device)
+    }
+
+    /// Disables continuous auto-focus so the camera stops hunting/
+    /// refocusing on its own while scanning a static table. Tries
+    /// `.locked` first (freeze at
+    /// whatever's already in focus) and falls back to a one-shot
+    /// `.autoFocus` if the device doesn't support locking — not every
+    /// camera does (some virtual/Continuity devices only expose
+    /// continuous auto), so this degrades gracefully rather than failing
+    /// silently in a worse way.
+    private func disableAutoFocus(_ device: AVCaptureDevice) {
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            if device.isFocusModeSupported(.locked) {
+                device.focusMode = .locked
+            } else if device.isFocusModeSupported(.autoFocus) {
+                device.focusMode = .autoFocus
+            }
+        } catch {
+            // Best-effort — leaves whatever focus behavior the device
+            // already had rather than throwing and blocking capture.
+        }
     }
 
     private func detachInputLocked() {
