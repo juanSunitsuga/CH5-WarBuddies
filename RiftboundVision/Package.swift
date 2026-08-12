@@ -20,7 +20,13 @@ let package = Package(
         // purpose. This target must never redefine Riftbound rules,
         // legality, or card effects; it only produces `ObservedTableEvent`s
         // for the Expert System to interpret.
-        .package(path: "../RiftboundEngine")
+        .package(path: "../RiftboundEngine"),
+        // Test-only (see the test target below): the full-pipeline
+        // integration test needs the NLP translator, and this test target
+        // is the only place all four stages are visible at once. The
+        // library target deliberately does NOT depend on it — Vision must
+        // never need the NLP layer to do its own job.
+        .package(path: "../RiftboundTextProcessing")
     ],
     targets: [
         .target(
@@ -49,7 +55,8 @@ let package = Package(
             name: "RiftboundVisionTests",
             dependencies: [
                 "RiftboundVision",
-                .product(name: "RiftboundExpertSystem", package: "RiftboundEngine")
+                .product(name: "RiftboundExpertSystem", package: "RiftboundEngine"),
+                .product(name: "RiftboundTextProcessing", package: "RiftboundTextProcessing")
             ],
             resources: [
                 .copy("Fixtures/annie_trimmed.json")

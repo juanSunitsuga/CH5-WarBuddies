@@ -2,6 +2,7 @@ import SwiftUI
 import CoreImage
 import RiftboundVision
 import RiftboundExpertSystem
+import RiftboundTextProcessing
 
 /// One stage of the CV → Expert System pipeline, in dependency order —
 /// matches the 4-stage pipeline documented in the root README. Each
@@ -26,18 +27,14 @@ enum PipelineStage: Int, CaseIterable, Identifiable {
     }
 
     /// Whether this stage is actually implemented in the app's live
-    /// per-frame loop right now. ③/④ exist as real, tested components
-    /// elsewhere (`RiftboundTextProcessing.ExpertSystemTranslatorAdapter`,
-    /// `RiftboundExpertSystem.GameEngine`) but nothing in
-    /// `CameraPipelineController` drives them yet — shown here rather
-    /// than hidden, so the settings panel reflects the whole intended
-    /// pipeline shape, just visibly inert until that wiring exists.
-    var isWired: Bool {
-        switch self {
-        case .detection, .objectTracking: return true
-        case .nlpTranslation, .expertSystem: return false
-        }
-    }
+    /// per-frame loop right now. All four are wired: ③/④ run inside
+    /// `GameEngine.process`, which calls the NLP translator
+    /// (`ExpertSystemTranslatorAdapter`) and then the Expert System's
+    /// validator/applier/Cleanup in sequence. Because ③ and ④ live behind
+    /// that single call, toggling ③ off stops the whole engine — there's
+    /// no way to run the Expert System on actions the translator never
+    /// produced, which is exactly the cascade the settings panel models.
+    var isWired: Bool { true }
 }
 
 /// Drives camera → detector and publishes what the live overlay needs to
@@ -140,7 +137,13 @@ final class CameraPipelineController: ObservableObject {
     /// "requested" here and still do nothing if it isn't wired into
     /// `process(_:)` yet (see `isStageActive(_:)`, which is what actually
     /// gates behavior and accounts for both).
-    @Published var enabledStages: Set<PipelineStage> = [.detection, .objectTracking]
+    @Published var enabledStages: Set<PipelineStage> = Set(PipelineStage.allCases)
+
+    /// What the Expert System has decided about what it saw, newest first —
+    /// the end of the pipeline and the thing the user actually reads. Each
+    /// entry is a `PlayerInstruction` rendered to text (see
+    /// `InstructionLogEntry`).
+    @Published private(set) var instructions: [InstructionLogEntry] = []
 
     let cardDatabase = CardDatabaseLoader.loadBundled()
 
@@ -189,6 +192,15 @@ final class CameraPipelineController: ObservableObject {
     private var expertSystemAdapter: ExpertSystemAdapter?
     private var expertSystemFrameIndex = 0
     private var expertSystemEventLoop: Task<Void, Never>?
+
+    /// Stage ③+④. `GameEngine` owns the whole tail of the pipeline: it
+    /// calls the NLP translator to turn an `ObservedTableEvent` into a
+    /// candidate `GameAction`, runs `LegalityValidator`, applies it through
+    /// `GameStateStore` with `Cleanup`, and hands back a
+    /// `PlayerInstruction`. Built in `start()` alongside the vision
+    /// adapter, since it needs that adapter as its `BoardObserving` source.
+    private var gameEngine: GameEngine?
+    private var gameStateStore: GameStateStore?
 
     /// The starting calibration quad, sized so the *whole* active
     /// template — including Hand, which extrapolates past the quad's own
@@ -319,16 +331,49 @@ final class CameraPipelineController: ObservableObject {
         // of the same detections `process(_:)` feeds the live overlay —
         // see `expertSystemAdapter`'s doc comment for the snapshot-zone
         // caveat.
+        //
+        // `resolveLabel` is what makes the detector's raw class label
+        // ("Annie Fiery") agree with the `CardDefID`s `GameSessionBuilder`
+        // keyed `GameState` by (`riftboundID`). Without it the engine
+        // would never find the observed card in hand and would reject
+        // every Play — see `CardDatabase.printing(approximatelyNamed:)`.
+        let database = cardDatabase
         let adapter = ExpertSystemAdapter(
             zoneMapper: ZoneMapper(zones: calibration.boardZones()),
             playerCalibration: [.player1: localPlayerID],
-            battlefieldCalibration: battlefieldSlotIDs
+            battlefieldCalibration: battlefieldSlotIDs,
+            resolveLabel: { label in
+                database.printing(approximatelyNamed: label).map { CardDefID(rawValue: $0.riftboundID) }
+            }
         )
         expertSystemAdapter = adapter
         expertSystemFrameIndex = 0
+
+        // Stage ③+④: a real GameState, the NLP translator, and the engine
+        // that runs both against every observed event.
+        let session = GameSessionBuilder.makeSession(
+            database: database,
+            localPlayerID: localPlayerID,
+            battlefieldSlotIDs: battlefieldSlotIDs
+        )
+        let translator = ExpertSystemTranslatorAdapter { defID in
+            database.printing(riftboundID: defID.rawValue)?.text.plain
+        }
+        let engine = GameEngine(store: session.store, observer: adapter, translator: translator)
+        gameStateStore = session.store
+        gameEngine = engine
+        instructions = []
+
+        // One consumer, not two: the adapter's `events()` stream can only
+        // be consumed once (each call replaces the stored continuation),
+        // so the engine is driven per-event from here rather than via
+        // `engine.run()`, which would try to claim that same stream.
         expertSystemEventLoop = Task {
             for await event in adapter.events() {
                 await self.recordObservedEvent(event)
+                guard await self.isStageActive(.nlpTranslation) else { continue }
+                let instruction = await engine.process(event)
+                await self.recordInstruction(instruction, for: event)
             }
         }
 
@@ -352,6 +397,8 @@ final class CameraPipelineController: ObservableObject {
         expertSystemEventLoop = nil
         expertSystemAdapter = nil
         expertSystemFrameIndex = 0
+        gameEngine = nil
+        gameStateStore = nil
     }
 
     deinit {
@@ -363,6 +410,21 @@ final class CameraPipelineController: ObservableObject {
         if observedEvents.count > 50 {
             observedEvents.removeFirst(observedEvents.count - 50)
         }
+    }
+
+    private func recordInstruction(_ instruction: PlayerInstruction, for event: RiftboundExpertSystem.ObservedTableEvent) {
+        let entry = InstructionLogEntry(instruction: instruction, cardName: cardName(for: event))
+        instructions.insert(entry, at: 0)
+        if instructions.count > 30 {
+            instructions.removeLast(instructions.count - 30)
+        }
+    }
+
+    /// The printed name behind an event's `CardDefID`, for instruction text
+    /// that reads "Played Annie - Fiery" rather than an opaque ID.
+    private func cardName(for event: RiftboundExpertSystem.ObservedTableEvent) -> String? {
+        guard let defID = event.card?.cardDefinitionID else { return nil }
+        return cardDatabase.printing(riftboundID: defID.rawValue)?.name
     }
 
     /// Reacts to `CameraStatusEvent`s from the capture layer — most

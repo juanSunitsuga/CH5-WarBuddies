@@ -11,17 +11,35 @@ import RiftboundVision
 struct TurnControlBar: View {
     @Binding var gameState: ManualGameState
     @Binding var isAutoDetecting: Bool
+    /// Newest verdict from the Expert System, if the pipeline has produced
+    /// one — this is what makes the bar reflect what the camera actually
+    /// saw rather than only the manually-set phase.
+    var latestInstruction: InstructionLogEntry?
 
     var body: some View {
         HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Next Step")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.6))
-                Text(gameState.phase.instruction)
-                    .font(.callout)
-                    .foregroundStyle(.white)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let latestInstruction {
+                    HStack(spacing: 6) {
+                        Image(systemName: icon(for: latestInstruction.verdict))
+                            .foregroundStyle(color(for: latestInstruction.verdict))
+                        Text(latestInstruction.headline)
+                            .font(.callout.bold())
+                            .foregroundStyle(.white)
+                    }
+                    Text(latestInstruction.detail ?? gameState.phase.instruction)
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Next Step")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                    Text(gameState.phase.instruction)
+                        .font(.callout)
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -48,5 +66,23 @@ struct TurnControlBar: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
         .background(Color(red: 0.11, green: 0.23, blue: 0.33))
+    }
+
+    private func icon(for verdict: InstructionLogEntry.Verdict) -> String {
+        switch verdict {
+        case .accepted: return "checkmark.circle.fill"
+        case .rejected: return "exclamationmark.triangle.fill"
+        case .unrecognized: return "questionmark.circle.fill"
+        case .informational: return "info.circle.fill"
+        }
+    }
+
+    private func color(for verdict: InstructionLogEntry.Verdict) -> Color {
+        switch verdict {
+        case .accepted: return .green
+        case .rejected: return .orange
+        case .unrecognized: return .yellow
+        case .informational: return .cyan
+        }
     }
 }
