@@ -7,7 +7,6 @@
 
 # Antigravity and misc
 .history/
-**.zip
 
 # Swift Package Manager
 .build/
@@ -32,3 +31,4 @@ project.xcworkspace/xcuserdata/
 # CocoaPods / Carthage (unused here, but harmless to exclude if introduced later)
 Pods/
 Carthage/Build/
+*.zip
