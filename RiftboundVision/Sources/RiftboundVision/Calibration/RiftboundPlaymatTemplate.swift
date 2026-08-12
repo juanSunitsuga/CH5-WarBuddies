@@ -63,36 +63,44 @@ public enum RiftboundPlaymatTemplate {
         // calibrated for either seat's physical mat.
         let handZone: Zone = owner == .player1 ? .player1Hand : .player2Hand
 
-        // Shared column bounds — the printed mat is 3 full-width bands
-        // (Battlefield/Base/Runes) on the left with one consistent
-        // right-hand accessory column (Legend+Champion, then Main Deck,
-        // then Trash, top to bottom); Rune Deck is the one box that
-        // breaks the pattern, sitting inline at the *left* of the Runes
-        // band instead of in that right column.
-        let mainX0: CGFloat = 0.06
-        let mainX1: CGFloat = 0.62
-        let accessoryX0: CGFloat = 0.66
-        let accessoryX1: CGFloat = 0.90
+        // Transcribed directly off the RiftChamps layout mockup (pixel
+        // positions read off the design, not a guess) — replaces the
+        // earlier approximation, which wrongly gave Battlefield and Base
+        // the same width. They're not the same: Battlefield's row has
+        // *two* accessory boxes (Legend + Champion) beside it, so it's
+        // narrower; Base's row has only *one* (Main Deck), so Base
+        // extends further right, up to where Legend's right edge sits.
+        let leftMargin: CGFloat = 0.055
+        // Shared right edge for every full-width band (Battlefield, Base,
+        // Rune Area) — matches Legend's right edge in the mockup exactly.
+        let bandX1: CGFloat = 0.79
+        let accessoryX0: CGFloat = 0.80
+        let accessoryX1: CGFloat = 0.97
+
+        let row1Y0: CGFloat = 0.065, row1Y1: CGFloat = 0.345
+        let row2Y0: CGFloat = 0.37, row2Y1: CGFloat = 0.65
+        let row3Y0: CGFloat = 0.67, row3Y1: CGFloat = 0.95
 
         return [
-            // Battlefield band — two independent slots side by side (the
+            // Row 1: Battlefield — two independent slots side by side (the
             // print shows one undivided band; the internal split is this
             // app's own bookkeeping for multiple Battlefields in play,
-            // rule 111).
-            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(mainX0, 0.08, 0.335, 0.30), battlefieldSlot: 0),
-            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(0.345, 0.08, mainX1, 0.30), battlefieldSlot: 1),
-            PlaymatZoneTemplate(zone: .legend, owner: owner, normalizedPolygon: rect(accessoryX0, 0.08, 0.775, 0.30)),
-            PlaymatZoneTemplate(zone: .champion, owner: owner, normalizedPolygon: rect(0.785, 0.08, accessoryX1, 0.30)),
+            // rule 111) — + Legend + Champion.
+            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(leftMargin, row1Y0, 0.33, row1Y1), battlefieldSlot: 0),
+            PlaymatZoneTemplate(zone: .battlefield, owner: nil, normalizedPolygon: rect(0.34, row1Y0, 0.615, row1Y1), battlefieldSlot: 1),
+            PlaymatZoneTemplate(zone: .legend, owner: owner, normalizedPolygon: rect(0.625, row1Y0, bandX1, row1Y1)),
+            PlaymatZoneTemplate(zone: .champion, owner: owner, normalizedPolygon: rect(accessoryX0, row1Y0, accessoryX1, row1Y1)),
 
-            // Base band.
-            PlaymatZoneTemplate(zone: .base, owner: owner, normalizedPolygon: rect(mainX0, 0.36, mainX1, 0.58)),
-            PlaymatZoneTemplate(zone: .mainDeck, owner: owner, normalizedPolygon: rect(accessoryX0, 0.36, accessoryX1, 0.58)),
+            // Row 2: Base (wider than Battlefield — only one accessory box
+            // beside it) + Main Deck.
+            PlaymatZoneTemplate(zone: .base, owner: owner, normalizedPolygon: rect(leftMargin, row2Y0, bandX1, row2Y1)),
+            PlaymatZoneTemplate(zone: .mainDeck, owner: owner, normalizedPolygon: rect(accessoryX0, row2Y0, accessoryX1, row2Y1)),
 
-            // Runes band — Rune Deck inline at the left instead of in the
-            // accessory column.
-            PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: rect(mainX0, 0.64, 0.175, 0.86)),
-            PlaymatZoneTemplate(zone: .runeArea, owner: owner, normalizedPolygon: rect(0.185, 0.64, mainX1, 0.86)),
-            PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: rect(accessoryX0, 0.64, accessoryX1, 0.86)),
+            // Row 3: Rune Deck (inline at the left, not in the accessory
+            // column) + Rune Area + Trash.
+            PlaymatZoneTemplate(zone: .runeDeck, owner: owner, normalizedPolygon: rect(leftMargin, row3Y0, 0.225, row3Y1)),
+            PlaymatZoneTemplate(zone: .runeArea, owner: owner, normalizedPolygon: rect(0.235, row3Y0, bandX1, row3Y1)),
+            PlaymatZoneTemplate(zone: .trash, owner: owner, normalizedPolygon: rect(accessoryX0, row3Y0, accessoryX1, row3Y1)),
 
             // Hand — no printed box on the physical mat itself (a hand is
             // normally held, not laid on the table), but this project is
@@ -109,7 +117,7 @@ public enum RiftboundPlaymatTemplate {
             // front of the player, so this zone (and the detector's ROI,
             // which is this same quad's bounding rect) actually covers
             // where the hand is laid out.
-            PlaymatZoneTemplate(zone: handZone, owner: owner, normalizedPolygon: rect(mainX0, 0.92, accessoryX1, 1.34))
+            PlaymatZoneTemplate(zone: handZone, owner: owner, normalizedPolygon: rect(leftMargin, 0.98, accessoryX1, 1.4))
         ]
     }
 
