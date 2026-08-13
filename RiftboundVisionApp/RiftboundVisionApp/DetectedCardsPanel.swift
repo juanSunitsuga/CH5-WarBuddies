@@ -171,7 +171,12 @@ struct DetectedCardsPanel: View {
             ForEach(Array(recognizedCards.enumerated()), id: \.offset) { _, entry in
                 row(
                     printing: entry.printing,
-                    subtitle: "\(Int((entry.detection.confidence * 100).rounded()))% confidence"
+                    subtitle: "\(Int((entry.detection.confidence * 100).rounded()))% confidence",
+                    // Rules 592–593. Uses the printing-aware check, not the
+                    // identity-free `CGRect.cardStance` fallback — this row
+                    // already knows which card it is, so a landscape
+                    // Battlefield isn't misread as tapped.
+                    isExhausted: entry.printing.isExhausted(observedBoundingBox: entry.detection.boundingBox)
                 )
             }
         }
@@ -191,7 +196,7 @@ struct DetectedCardsPanel: View {
         }
     }
 
-    private func row(printing: CardPrinting, subtitle: String) -> some View {
+    private func row(printing: CardPrinting, subtitle: String, isExhausted: Bool = false) -> some View {
         Button {
             selected = printing
         } label: {
@@ -202,9 +207,14 @@ struct DetectedCardsPanel: View {
                         .font(.callout)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    Text(subtitle)
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.5))
+                    HStack(spacing: 6) {
+                        Text(subtitle)
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.5))
+                        if isExhausted {
+                            badge("Exhausted", color: .orange)
+                        }
+                    }
                 }
                 Spacer()
             }
@@ -213,6 +223,16 @@ struct DetectedCardsPanel: View {
             .cornerRadius(6)
         }
         .buttonStyle(.plain)
+    }
+
+    private func badge(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.caption2.bold())
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(color.opacity(0.25))
+            .foregroundStyle(color)
+            .clipShape(Capsule())
     }
 
     // MARK: - Chrome

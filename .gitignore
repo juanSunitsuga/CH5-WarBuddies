@@ -5,6 +5,9 @@
 **/.claude/settings.local.json
 **/CLAUDE.md
 
+# Antigravity and misc
+.history/
+
 # Swift Package Manager
 .build/
 .swiftpm/
@@ -28,3 +31,4 @@ project.xcworkspace/xcuserdata/
 # CocoaPods / Carthage (unused here, but harmless to exclude if introduced later)
 Pods/
 Carthage/Build/
+*.zip

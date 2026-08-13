@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import AppKit
 import RiftboundVision
 
@@ -9,8 +10,15 @@ import RiftboundVision
 /// comment — this matches `feature/riftbound-scanner-prototype`'s
 /// architecture: no per-object tracking, no persistent identity).
 struct ContentView: View {
-    @StateObject private var pipeline = CameraPipelineController()
+    @StateObject private var pipeline: CameraPipelineController
     @State private var isShowingPipelineSettings = false
+
+    /// `modelContext` is optional so SwiftUI previews (and the no-arg
+    /// `ContentView()` used in `#Preview`) still work without a container —
+    /// persistence just no-ops when it's absent.
+    init(modelContext: ModelContext? = nil) {
+        _pipeline = StateObject(wrappedValue: CameraPipelineController(modelContext: modelContext))
+    }
 
     var body: some View {
         VStack(spacing: 0) {

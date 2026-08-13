@@ -147,8 +147,17 @@ struct FullPipelineIntegrationTests {
         let adapter = Self.makeAdapter(database: database, player: player, battlefieldID: battlefieldID)
 
         let store = GameStateStore(initialState: Self.makeState(database: database, player: player, battlefieldID: battlefieldID))
+        // Same wiring the app uses: `printing.id` is the catalogue id the
+        // NLP package's card database is keyed by. Without it every lookup
+        // misses, since the pipeline's `riftbound_id` shares no values with
+        // that id space.
         let translator = ExpertSystemTranslatorAdapter { defID in
-            database.printing(riftboundID: defID.rawValue)?.text.plain
+            let printing = database.printing(riftboundID: defID.rawValue)
+            return .init(
+                databaseID: printing?.id,
+                name: printing?.name,
+                printedText: printing?.text.plain
+            )
         }
         let engine = GameEngine(store: store, observer: adapter, translator: translator)
 
@@ -203,8 +212,17 @@ struct FullPipelineIntegrationTests {
         let battlefieldID = BattlefieldID()
 
         let store = GameStateStore(initialState: Self.makeState(database: database, player: player, battlefieldID: battlefieldID))
+        // Same wiring the app uses: `printing.id` is the catalogue id the
+        // NLP package's card database is keyed by. Without it every lookup
+        // misses, since the pipeline's `riftbound_id` shares no values with
+        // that id space.
         let translator = ExpertSystemTranslatorAdapter { defID in
-            database.printing(riftboundID: defID.rawValue)?.text.plain
+            let printing = database.printing(riftboundID: defID.rawValue)
+            return .init(
+                databaseID: printing?.id,
+                name: printing?.name,
+                printedText: printing?.text.plain
+            )
         }
         let engine = GameEngine(store: store, observer: NeverObservingStub(), translator: translator)
 

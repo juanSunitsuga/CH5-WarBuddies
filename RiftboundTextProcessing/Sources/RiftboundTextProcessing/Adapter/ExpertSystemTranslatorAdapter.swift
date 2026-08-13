@@ -23,20 +23,59 @@ import RiftboundExpertSystem
 /// pipeline's adapters.
 public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked Sendable {
     private let engine: ActionTranslatingEngine
-    /// Resolves a `CardDefID` to its real printed rules text. This is the
-    /// simplification noted in the pipeline writeup: `ActionTranslatingEngine
-    /// .inferAction` asks for `ocrText`, but nothing here runs actual OCR —
-    /// once Stage 1/2 have identified *which* card this is, its real
-    /// printed text is already known (e.g. via `RiftboundVision.CardDatabase
-    /// .printing(riftboundID:)?.text.plain`, keyed the same way `identify
-    /// (objectID:as:)` populated the `CardDefID` in the first place). The
-    /// caller owns that lookup so this package doesn't need to depend on
-    /// `RiftboundVision`.
-    private let printedText: @Sendable (CardDefID) -> String?
+    /// Resolves a `CardDefID` to what the caller knows about that printing.
+    /// Nothing here runs actual OCR: once Stage 1/2 have identified *which*
+    /// card this is, its real printed text and name are already known (e.g.
+    /// via `RiftboundVision.CardDatabase.printing(riftboundID:)`, keyed the
+    /// same way the `CardDefID` was produced). The caller owns that lookup
+    /// so this package doesn't need to depend on `RiftboundVision`.
+    ///
+    /// Returning `nil` means "this card isn't in my catalogue" — a normal
+    /// outcome, not a failure. The engine still runs, falling back to its
+    /// own SQLite database and then to regex; refusing to translate here
+    /// would make those fallbacks unreachable for exactly the unknown
+    /// cards they exist to handle.
+    private let cardContext: @Sendable (CardDefID) -> CardContext?
 
-    public init(engine: ActionTranslatingEngine = ActionTranslatingEngine(), printedText: @escaping @Sendable (CardDefID) -> String?) {
+    /// What the host app can tell this package about an identified card.
+    public struct CardContext: Sendable {
+        /// This package's SQLite `card_id`. The rest of the pipeline keys
+        /// cards by `riftbound_id` (`ogn-007-298`) while the database is
+        /// keyed by the catalogue's own hex id
+        /// (`69bc5bc6d308c64675ca86bc`) — two disjoint ID spaces, so
+        /// without this the database lookup can never hit on an ID that
+        /// came from the vision pipeline.
+        /// `RiftboundVision.CardPrinting.id` is exactly this value; it
+        /// matches all 75 rows of the shipped database.
+        public let databaseID: String?
+        public let name: String?
+        public let printedText: String?
+
+        public init(databaseID: String? = nil, name: String?, printedText: String?) {
+            self.databaseID = databaseID
+            self.name = name
+            self.printedText = printedText
+        }
+    }
+
+    public init(
+        engine: ActionTranslatingEngine = ActionTranslatingEngine(),
+        cardContext: @escaping @Sendable (CardDefID) -> CardContext?
+    ) {
         self.engine = engine
-        self.printedText = printedText
+        self.cardContext = cardContext
+    }
+
+    /// Convenience for callers that only have rules text. Prefer the
+    /// `cardContext:` initializer — without a `databaseID` or a name there
+    /// is no key that joins to this package's SQLite database, so every
+    /// lookup misses and the engine is forced down the CoreML/regex
+    /// fallback even for cards the database knows.
+    public convenience init(
+        engine: ActionTranslatingEngine = ActionTranslatingEngine(),
+        printedText: @escaping @Sendable (CardDefID) -> String?
+    ) {
+        self.init(engine: engine) { CardContext(name: nil, printedText: printedText($0)) }
     }
 
     /// Stage 3a: `RiftboundExpertSystem.ObservedTableEvent` → `GameAction?`.
@@ -87,12 +126,21 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         state: GameState,
         player: PlayerID
     ) async -> GameAction? {
-        guard let rawText = printedText(card.cardDefinitionID) else { return nil }
+        // An unknown card is still translatable — the engine's own SQLite
+        // lookup and regex fallback exist for exactly this case, and
+        // bailing here would make them dead code.
+        let context = cardContext(card.cardDefinitionID)
 
         let internalEvent = ObservedTableEvent(
             cardID: card.cardDefinitionID.rawValue,
-            ocrText: rawText,
-            sourceRegion: from.map(regionName) ?? "Hand",
+            databaseID: context?.databaseID,
+            cardName: context?.name,
+            ocrText: context?.printedText ?? "",
+            // Deliberately not `?? "Hand"`: `from` is nil when the card's
+            // origin was never observed (it appeared already on the board,
+            // or its track dropped and was re-acquired). Defaulting that to
+            // the hand reports a missed observation as a confident play.
+            sourceRegion: from.map(regionName),
             destinationRegion: regionName(to)
         )
 
