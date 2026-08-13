@@ -365,8 +365,20 @@ final class CameraPipelineController: ObservableObject {
             localPlayerID: localPlayerID,
             battlefieldSlotIDs: battlefieldSlotIDs
         )
+        // `CardPrinting.id` is what makes the NLP package's SQLite lookup
+        // reachable at all: that database keys on a hex `card_id`
+        // (`69bc5bc6d308c64675ca86bc`) which shares no values with the
+        // `riftbound_id` (`ogn-007-298`) this pipeline uses for `CardDefID`.
+        // Both come from the same catalogue, so `printing.id` matches every
+        // row — without passing it every lookup missed, and the engine fell
+        // through to the CoreML/regex path for cards it already knew.
         let translator = ExpertSystemTranslatorAdapter { defID in
-            database.printing(riftboundID: defID.rawValue)?.text.plain
+            let printing = database.printing(riftboundID: defID.rawValue)
+            return .init(
+                databaseID: printing?.id,
+                name: printing?.name,
+                printedText: printing?.text.plain
+            )
         }
         let engine = GameEngine(store: session.store, observer: adapter, translator: translator)
         gameStateStore = session.store
