@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 import RiftboundExpertSystem
 
 /// One `PlayerInstruction` rendered for the screen — the last step of the
@@ -171,6 +171,34 @@ struct InstructionLogEntry: Identifiable {
             return "Nothing has called for that action yet — it can't be taken freely."
         case .notImplemented:
             return "The engine doesn't handle that action yet."
+        }
+    }
+}
+
+// MARK: - Presentation
+
+/// Icon and tint for a verdict, defined once.
+///
+/// These were copy-pasted into both `TurnControlBar` and
+/// `DetectedCardsPanel`, so the same verdict could drift to different
+/// colours in two places on the same screen. Living on the type keeps them
+/// in step and makes the compiler catch a new case.
+extension InstructionLogEntry.Verdict {
+    var iconName: String {
+        switch self {
+        case .accepted: return "checkmark.circle.fill"
+        case .rejected: return "exclamationmark.triangle.fill"
+        case .unrecognized: return "questionmark.circle.fill"
+        case .informational: return "info.circle.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .accepted: return .green
+        case .rejected: return .orange
+        case .unrecognized: return .yellow
+        case .informational: return .cyan
         }
     }
 }

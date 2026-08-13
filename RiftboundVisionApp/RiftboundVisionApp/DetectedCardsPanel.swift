@@ -256,9 +256,9 @@ struct DetectedCardsPanel: View {
 
     private func logRow(_ entry: InstructionLogEntry) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: icon(for: entry.verdict))
+            Image(systemName: entry.verdict.iconName)
                 .font(.caption)
-                .foregroundStyle(color(for: entry.verdict))
+                .foregroundStyle(entry.verdict.tint)
                 .frame(width: 14)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -271,7 +271,7 @@ struct DetectedCardsPanel: View {
                 // What the engine made of it.
                 Text(entry.headline)
                     .font(.caption2)
-                    .foregroundStyle(color(for: entry.verdict).opacity(0.95))
+                    .foregroundStyle(entry.verdict.tint.opacity(0.95))
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let detail = entry.detail {
@@ -290,24 +290,6 @@ struct DetectedCardsPanel: View {
         }
         .padding(8)
         .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
-    }
-
-    private func icon(for verdict: InstructionLogEntry.Verdict) -> String {
-        switch verdict {
-        case .accepted: return "checkmark.circle.fill"
-        case .rejected: return "exclamationmark.triangle.fill"
-        case .unrecognized: return "questionmark.circle.fill"
-        case .informational: return "info.circle.fill"
-        }
-    }
-
-    private func color(for verdict: InstructionLogEntry.Verdict) -> Color {
-        switch verdict {
-        case .accepted: return .green
-        case .rejected: return .orange
-        case .unrecognized: return .yellow
-        case .informational: return .cyan
-        }
     }
 
     private func cardDetail(_ printing: CardPrinting) -> some View {

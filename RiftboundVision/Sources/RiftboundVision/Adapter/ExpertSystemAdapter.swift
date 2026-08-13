@@ -161,7 +161,13 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         }
 
         trackedObjects = trackerResult.objects
+        lastDisappearedIDs = trackerResult.disappearedIDs
     }
+
+    /// Tracks dropped during the most recent `ingest`. Exposed so a
+    /// consumer can release per-object bookkeeping without running a second
+    /// tracker of its own just to learn the same thing.
+    public private(set) var lastDisappearedIDs: [TrackedObjectID] = []
 
     /// Everything the tracker is currently following, with its stable
     /// `TrackedObjectID`, centroid, and zone.
