@@ -13,6 +13,25 @@ public enum VisionEventType: String, Sendable, Equatable, Codable {
     case objectDisappeared
 }
 
+/// A `VisionEvent` together with whether it survived translation into an
+/// `ObservedTableEvent` — the debug tap for the vision layer itself.
+///
+/// The translated stream is a filtered view: it silently drops events in
+/// zones `TableRegion` can't represent (Rune Area, Trash, the decks) and
+/// events with no seat to attribute them to. Those are exactly the cases
+/// worth seeing when tracking looks broken, so this pairs each event with
+/// its fate rather than reporting only the survivors.
+public struct VisionEventTrace: Sendable {
+    public let event: VisionEvent
+    /// `false` when the event never reached the Expert System.
+    public let wasForwarded: Bool
+
+    public init(event: VisionEvent, wasForwarded: Bool) {
+        self.event = event
+        self.wasForwarded = wasForwarded
+    }
+}
+
 /// The interface between Computer Vision and the Expert System. Produced
 /// only after temporal confirmation (`TemporalEventDetector`) — never
 /// straight from a single frame's detection.

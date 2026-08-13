@@ -37,6 +37,22 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
     /// cards they exist to handle.
     private let cardContext: @Sendable (CardDefID) -> CardContext?
 
+    /// Called with a human-readable reason whenever an observed event was
+    /// understood but doesn't correspond to a proposable `GameAction`.
+    ///
+    /// `ActionTranslating.inferAction` can only answer `GameAction?`, so a
+    /// `nil` collapses "that isn't an action" (a Battlefield being placed),
+    /// "that card isn't in hand," and "the text didn't parse" into one
+    /// indistinguishable outcome — which surfaced to players as the
+    /// unhelpful "couldn't tell what it meant" for every one of them. This
+    /// carries the reason out of band so the UI can say something true
+    /// without widening the protocol.
+    ///
+    /// Invoked synchronously inside `inferAction`, so a caller driving
+    /// events serially can read whatever it captured immediately after
+    /// `GameEngine.process` returns.
+    public var onUntranslatable: (@Sendable (String) -> Void)?
+
     /// What the host app can tell this package about an identified card.
     public struct CardContext: Sendable {
         /// This package's SQLite `card_id`. The rest of the pipeline keys
@@ -86,13 +102,22 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
     ) async -> GameAction? {
         // No identity, nothing to translate — same "not proposable" outcome
         // `ActionTranslating`'s doc comment describes for tracking jitter.
-        guard let card = event.card else { return nil }
+        guard let card = event.card else {
+            onUntranslatable?("Something moved, but the recognizer couldn't say which card it was.")
+            return nil
+        }
 
         switch event.kind {
-        case .cardOrientationChanged, .cardRemoved:
-            // Rotation and removal aren't "a card was played" signatures —
-            // Exhaust/Ready and leaving-play are handled elsewhere in the
-            // pipeline (rules 592/593, Cleanup), not by this translator.
+        case .cardOrientationChanged(_, let nowExhausted):
+            // Rotation isn't a "card was played" signature — Exhaust/Ready
+            // (rules 592/593) is handled elsewhere in the pipeline, not by
+            // this translator.
+            onUntranslatable?("Turned \(nowExhausted ? "sideways (exhausted)" : "upright (readied)") — tracked, but not a move to propose.")
+            return nil
+
+        case .cardRemoved:
+            // Leaving play is Cleanup's business, not a proposable action.
+            onUntranslatable?("Left the table — removal is resolved during Cleanup, not proposed as a move.")
             return nil
 
         case .cardAppeared(let region):
@@ -100,6 +125,7 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
                 // A card newly visible *in hand* isn't a play — it's the
                 // camera catching up to a card that was already there
                 // (game start, hand reshuffled into view). Nothing to infer.
+                onUntranslatable?("Came into view in the hand — nothing was played.")
                 return nil
             }
             return await translate(card: card, from: nil, to: region, state: state, player: player)
@@ -186,8 +212,9 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         player: PlayerID
     ) -> GameAction? {
         switch candidate {
-        case .playUnit(let cardID, _, _, _, _), .castSpell(let cardID, _, _, _):
+        case .playUnit(let cardID, let cardName, _, _, _), .castSpell(let cardID, let cardName, _, _):
             guard let objectID = handObjectID(definitionID: CardDefID(rawValue: cardID), player: player, in: state) else {
+                onUntranslatable?("\(cardName) isn't in the hand the engine is tracking, so playing it can't be resolved.")
                 return nil
             }
             return .play(card: objectID, destination: playDestination(destination), additionalChoices: [])
@@ -202,9 +229,11 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
             // Discretionary action to propose here. Nothing to translate —
             // this also can never actually be reached today, since
             // `regionName` can't produce "RuneArea" (see its doc comment).
+            onUntranslatable?("Channeling a Rune is a scripted step of the Channel Phase, not a move to propose.")
             return nil
 
-        case .rejected:
+        case .rejected(let reason):
+            onUntranslatable?(reason)
             return nil
         }
     }

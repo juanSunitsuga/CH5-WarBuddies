@@ -230,6 +230,15 @@ public final class ActionTranslatingEngine: @unchecked Sendable {
                 return .rejected(reason: "Runes must be played in the Rune Placement Area.")
             }
 
+        case "Battlefield", "Legend":
+            // Rule 052/106: Battlefields and Legends are Game Objects but
+            // explicitly *not* Main Deck cards — they're placed during
+            // setup and stay put, so seeing one move is never a Play. This
+            // is a real answer ("that isn't an action"), not a parse
+            // failure; without the case they fell to `default` and the app
+            // reported the far more alarming "couldn't tell what it meant."
+            return .rejected(reason: "\(cardName) is a \(cardType) — placed during setup, not played as an action.")
+
         default:
             return .rejected(reason: "Unhandled card type: \(cardType)")
         }

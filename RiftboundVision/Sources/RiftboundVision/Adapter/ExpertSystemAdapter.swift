@@ -36,11 +36,32 @@ import Foundation
 /// `TemporalEventDetector` (both of which it wraps) — `ingest(...)` must
 /// be called strictly in frame order by one caller.
 public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
-    private let zoneMapper: ZoneMapper
+    /// Deliberately a `var`: this used to be fixed at construction, which
+    /// meant the calibration the user actually dragged into place never
+    /// reached zone resolution. The overlay reads `calibration` live on
+    /// every redraw, so the mat *looked* correctly aligned while this
+    /// still held whatever calibration existed at `start()` — before the
+    /// first frame had even sized it to the camera. Cards then resolved to
+    /// `.unknown` (dropped outright) or to the wrong zone entirely. Push
+    /// updates through `updateZones(_:)`, which keeps tracking history
+    /// alive, unlike rebuilding the whole adapter.
+    private var zoneMapper: ZoneMapper
     private let tracker: ObjectTracker
     private let temporalDetector: TemporalEventDetector
     private let playerCalibration: [Player: PlayerID]
     private let battlefieldCalibration: [Int: BattlefieldID]
+    /// Seat to attribute an event to when its zone implies none of its own.
+    ///
+    /// A Battlefield is deliberately unowned (rule 181 — Control is
+    /// contested, not a property of the printed region), so
+    /// `BoardZone.owner` and `Zone.impliedOwner` are both `nil` there. But
+    /// `TableRegion` requires a `PlayerID`, so without a fallback every
+    /// event about a card whose track *began* on a Battlefield was
+    /// dropped for lack of a seat — which is exactly what happens to a
+    /// card played from hand, since the pickup ends one track and the
+    /// placement starts a new one. On a single-seat mat there is only one
+    /// answer, so refusing to give it wasn't caution, just silence.
+    private let defaultSeat: Player?
 
     /// `TrackedObjectID` → recognized card definition, filled in by a
     /// card-recognition system this layer doesn't own. Public so that
@@ -55,6 +76,9 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// the type's doc comment). Inspect this in debug/testing to see what
     /// Draw/Channel Rune coverage is actually missing right now.
     public private(set) var unrepresentableZoneEvents: [VisionEvent] = []
+
+    /// Buffer behind `drainVisionTrace()`.
+    private var visionTrace: [VisionEventTrace] = []
 
     /// Maps a detector's raw class label (e.g. `"Annie Fiery"`) onto the
     /// canonical `CardDefID` the Expert System's `GameState` is keyed by.
@@ -73,7 +97,8 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         battlefieldCalibration: [Int: BattlefieldID] = [:],
         tracker: ObjectTracker = ObjectTracker(),
         temporalDetector: TemporalEventDetector = TemporalEventDetector(),
-        resolveLabel: @escaping @Sendable (String) -> CardDefID? = { CardDefID(rawValue: $0) }
+        resolveLabel: @escaping @Sendable (String) -> CardDefID? = { CardDefID(rawValue: $0) },
+        defaultSeat: Player? = nil
     ) {
         self.zoneMapper = zoneMapper
         self.playerCalibration = playerCalibration
@@ -81,6 +106,15 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         self.tracker = tracker
         self.temporalDetector = temporalDetector
         self.resolveLabel = resolveLabel
+        self.defaultSeat = defaultSeat
+    }
+
+    /// Re-points zone resolution at the current calibration. Cheap enough
+    /// to call every detection poll; the tracker and temporal detector
+    /// keep their history, so a mid-session recalibration doesn't reset
+    /// what's already being followed.
+    public func updateZones(_ zoneMapper: ZoneMapper) {
+        self.zoneMapper = zoneMapper
     }
 
     /// Record a card-recognition result for a tracked object. Safe to call
@@ -117,12 +151,59 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
 
         let visionEvents = temporalDetector.process(trackerResult, zoneMapper: zoneMapper, timestamp: timestamp)
         for visionEvent in visionEvents {
-            if let observed = observedTableEvent(for: visionEvent) {
+            let observed = observedTableEvent(for: visionEvent)
+            if let observed {
                 continuation?.yield(observed)
             } else {
                 unrepresentableZoneEvents.append(visionEvent)
             }
+            record(VisionEventTrace(event: visionEvent, wasForwarded: observed != nil))
         }
+
+        trackedObjects = trackerResult.objects
+        lastDisappearedIDs = trackerResult.disappearedIDs
+    }
+
+    /// Tracks dropped during the most recent `ingest`. Exposed so a
+    /// consumer can release per-object bookkeeping without running a second
+    /// tracker of its own just to learn the same thing.
+    public private(set) var lastDisappearedIDs: [TrackedObjectID] = []
+
+    /// Everything the tracker is currently following, with its stable
+    /// `TrackedObjectID`, centroid, and zone.
+    ///
+    /// Exposed so the UI can draw the tracker's own view of the table
+    /// rather than the raw per-frame detections. Those two look alike
+    /// until tracking breaks, at which point the detections stay put and
+    /// the IDs churn — which is invisible unless the ID is on screen.
+    public private(set) var trackedObjects: [TrackedObject] = []
+
+    /// How many physical objects the tracker is currently following. A
+    /// count that keeps climbing while cards stay put means tracks are
+    /// being abandoned and re-created rather than followed.
+    public var liveTrackCount: Int { trackedObjects.count }
+
+    private func record(_ trace: VisionEventTrace) {
+        visionTrace.append(trace)
+        // Bounded in case nothing ever drains this — a debug tap must not
+        // become a leak.
+        if visionTrace.count > 200 {
+            visionTrace.removeFirst(visionTrace.count - 200)
+        }
+    }
+
+    /// Every `VisionEvent` produced since the last call, paired with
+    /// whether it made it across the boundary into the Expert System.
+    ///
+    /// This is the *pre-translation* view: it includes events for zones
+    /// `TableRegion` can't represent (Rune Area, Trash, the decks) and
+    /// events dropped for want of a seat, neither of which is visible
+    /// downstream. Debugging tracking through the translated stream means
+    /// debugging it through a filter that silently removes the
+    /// interesting cases.
+    public func drainVisionTrace() -> [VisionEventTrace] {
+        defer { visionTrace = [] }
+        return visionTrace
     }
 
     // MARK: - VisionEvent → ObservedTableEvent
@@ -191,7 +272,10 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// forward," not as a legal empty region.
     private func region(for zone: Zone?, battlefieldSlot: Int?, player: Player?) -> TableRegion? {
         guard let zone else { return nil }
-        guard let seat = player, let ownerID = playerCalibration[seat] else { return nil }
+        // `defaultSeat` covers zones that imply no seat of their own —
+        // most importantly the Battlefield, where a played card's brand
+        // new track would otherwise carry no seat and be dropped.
+        guard let seat = player ?? defaultSeat, let ownerID = playerCalibration[seat] else { return nil }
 
         switch zone {
         case .player1Hand, .player2Hand:

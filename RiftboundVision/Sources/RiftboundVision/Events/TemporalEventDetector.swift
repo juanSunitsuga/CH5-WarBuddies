@@ -51,9 +51,33 @@ public final class TemporalEventDetector: @unchecked Sendable {
     /// (591–593); finer-grained rotation tracking can lower this later.
     public let rotationBucketDegrees: CGFloat
 
-    public init(confirmationFrames: Int = 2, rotationBucketDegrees: CGFloat = 90) {
+    /// Zones this detector stops reporting on. A card in the Trash has left
+    /// play, so its arrival there, any later shuffling within the pile, and
+    /// its eventual disappearance are all noise — none of it says anything
+    /// about what a player is doing on the board.
+    ///
+    /// Suppression, not removal: the object stays tracked, so a card fished
+    /// back out of the Trash keeps the identity it had rather than coming
+    /// back as a stranger. Tracks in an ignored zone are still subject to
+    /// the usual occlusion timeout.
+    public let ignoredZones: Set<Zone>
+
+    public init(
+        confirmationFrames: Int = 2,
+        rotationBucketDegrees: CGFloat = 90,
+        ignoredZones: Set<Zone> = [.trash]
+    ) {
         self.confirmationFrames = confirmationFrames
         self.rotationBucketDegrees = rotationBucketDegrees
+        self.ignoredZones = ignoredZones
+    }
+
+    /// Whether an event should be reported at all. Checks where the card
+    /// ended up, falling back to where it came from — a card vanishing out
+    /// of the Trash has no current zone but is still Trash business.
+    private func isReportable(_ event: VisionEvent) -> Bool {
+        guard let zone = event.currentZone ?? event.previousZone else { return true }
+        return !ignoredZones.contains(zone)
     }
 
     private func rotationBucket(_ radians: CGFloat) -> Int {
@@ -215,6 +239,8 @@ public final class TemporalEventDetector: @unchecked Sendable {
             ))
         }
 
-        return events
+        // Filtered once at the exit rather than at each of the four emit
+        // sites, so a new event type can't quietly bypass the rule.
+        return events.filter(isReportable)
     }
 }

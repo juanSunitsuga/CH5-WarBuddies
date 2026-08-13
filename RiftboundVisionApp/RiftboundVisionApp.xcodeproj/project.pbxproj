@@ -22,7 +22,6 @@
 		76DA6F984DFB4D99A0C5E470 /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880B3B2F2F93462E90B88A3A /* CardDetailView.swift */; };
 		A85A01502EB54B35B708A490 /* DetectedCardsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */; };
 		E16FF14ECC8F4448823BFD1F /* RiftboundExpertSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 1A78B4275C9F40C0A74AFCE8 /* RiftboundExpertSystem */; };
-		973FD350302AF2FF00FB41ED /* CardIntegrationPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 973FD34F302AF2FF00FB41ED /* CardIntegrationPipeline.swift */; };
 		E9DDFFDCB8224BC3BC9ED19C /* RiftboundTextProcessing in Frameworks */ = {isa = PBXBuildFile; productRef = C060F6247F344B33BA6FE317 /* RiftboundTextProcessing */; };
 		FB1E6BC3244E442BAF1B7766 /* GameSessionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72026DCCA9ED4F599499A115 /* GameSessionBuilder.swift */; };
 		60C3BF9F45FE4D8AA0EFFCE3 /* InstructionLogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */; };
@@ -30,6 +29,8 @@
 		CCCC6491D5C14229AAC7452C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D88B8B2034A14CA4A0D53DCE /* Assets.xcassets */; };
 		3017319CBC1F45C2A4AAC042 /* ScoreTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 251D5F4F0E7D46AA9AA7C612 /* ScoreTracker.swift */; };
 		690BCB3309B5473291FEE083 /* PipelineSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED891118FA894EA18345F333 /* PipelineSettingsView.swift */; };
+		BED27183FF894312832F24D9 /* TrackingLogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9CCDD764F424FE69DE25C3F /* TrackingLogEntry.swift */; };
+		C3AA581B11C8447994662CBF /* BoardStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -48,13 +49,14 @@
 		3055869C4ECE495FA5A42260 /* GameStateBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameStateBar.swift; sourceTree = "<group>"; };
 		880B3B2F2F93462E90B88A3A /* CardDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailView.swift; sourceTree = "<group>"; };
 		B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectedCardsPanel.swift; sourceTree = "<group>"; };
-		973FD34F302AF2FF00FB41ED /* CardIntegrationPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardIntegrationPipeline.swift; sourceTree = "<group>"; };
 		24E64947F63B40999CFAA66D /* TurnControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnControlBar.swift; sourceTree = "<group>"; };
 		72026DCCA9ED4F599499A115 /* GameSessionBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSessionBuilder.swift; sourceTree = "<group>"; };
 		3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstructionLogEntry.swift; sourceTree = "<group>"; };
 		D88B8B2034A14CA4A0D53DCE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		251D5F4F0E7D46AA9AA7C612 /* ScoreTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreTracker.swift; sourceTree = "<group>"; };
 		ED891118FA894EA18345F333 /* PipelineSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineSettingsView.swift; sourceTree = "<group>"; };
+		F9CCDD764F424FE69DE25C3F /* TrackingLogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingLogEntry.swift; sourceTree = "<group>"; };
+		7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardStatePersistence.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -103,13 +105,14 @@
 				D88B8B2034A14CA4A0D53DCE /* Assets.xcassets */,
 				3055869C4ECE495FA5A42260 /* GameStateBar.swift */,
 				24E64947F63B40999CFAA66D /* TurnControlBar.swift */,
+				7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */,
+				F9CCDD764F424FE69DE25C3F /* TrackingLogEntry.swift */,
 				ED891118FA894EA18345F333 /* PipelineSettingsView.swift */,
 				251D5F4F0E7D46AA9AA7C612 /* ScoreTracker.swift */,
 				72026DCCA9ED4F599499A115 /* GameSessionBuilder.swift */,
 				3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */,
 				880B3B2F2F93462E90B88A3A /* CardDetailView.swift */,
 				B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */,
-				973FD34F302AF2FF00FB41ED /* CardIntegrationPipeline.swift */,
 				91954CFFD8744AD891AB10D4 /* CardData */,
 				E30AC5E6649148CCA7C653DA /* Resources */,
 				76363767637E4BB6B3E788C4 /* Info.plist */,
@@ -238,13 +241,14 @@
 				C427EAAA0BF04C90A9681A5E /* CardDetectionModelLoader.swift in Sources */,
 				93F14F27D8F144288BE9E603 /* GameStateBar.swift in Sources */,
 				C23F1F80285A40E1A5E4C4E1 /* TurnControlBar.swift in Sources */,
+				C3AA581B11C8447994662CBF /* BoardStatePersistence.swift in Sources */,
+				BED27183FF894312832F24D9 /* TrackingLogEntry.swift in Sources */,
 				690BCB3309B5473291FEE083 /* PipelineSettingsView.swift in Sources */,
 				3017319CBC1F45C2A4AAC042 /* ScoreTracker.swift in Sources */,
 				FB1E6BC3244E442BAF1B7766 /* GameSessionBuilder.swift in Sources */,
 				60C3BF9F45FE4D8AA0EFFCE3 /* InstructionLogEntry.swift in Sources */,
 				76DA6F984DFB4D99A0C5E470 /* CardDetailView.swift in Sources */,
 				A85A01502EB54B35B708A490 /* DetectedCardsPanel.swift in Sources */,
-				973FD350302AF2FF00FB41ED /* CardIntegrationPipeline.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

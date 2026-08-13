@@ -21,8 +21,8 @@ struct TurnControlBar: View {
             VStack(alignment: .leading, spacing: 4) {
                 if let latestInstruction {
                     HStack(spacing: 6) {
-                        Image(systemName: icon(for: latestInstruction.verdict))
-                            .foregroundStyle(color(for: latestInstruction.verdict))
+                        Image(systemName: latestInstruction.verdict.iconName)
+                            .foregroundStyle(latestInstruction.verdict.tint)
                         Text(latestInstruction.headline)
                             .font(.callout.bold())
                             .foregroundStyle(.white)
@@ -66,23 +66,5 @@ struct TurnControlBar: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
         .background(Color(red: 0.11, green: 0.23, blue: 0.33))
-    }
-
-    private func icon(for verdict: InstructionLogEntry.Verdict) -> String {
-        switch verdict {
-        case .accepted: return "checkmark.circle.fill"
-        case .rejected: return "exclamationmark.triangle.fill"
-        case .unrecognized: return "questionmark.circle.fill"
-        case .informational: return "info.circle.fill"
-        }
-    }
-
-    private func color(for verdict: InstructionLogEntry.Verdict) -> Color {
-        switch verdict {
-        case .accepted: return .green
-        case .rejected: return .orange
-        case .unrecognized: return .yellow
-        case .informational: return .cyan
-        }
     }
 }
