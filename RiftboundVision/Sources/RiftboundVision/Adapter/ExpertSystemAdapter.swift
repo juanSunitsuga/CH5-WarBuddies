@@ -160,13 +160,22 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
             record(VisionEventTrace(event: visionEvent, wasForwarded: observed != nil))
         }
 
-        liveTrackCount = trackerResult.objects.count
+        trackedObjects = trackerResult.objects
     }
+
+    /// Everything the tracker is currently following, with its stable
+    /// `TrackedObjectID`, centroid, and zone.
+    ///
+    /// Exposed so the UI can draw the tracker's own view of the table
+    /// rather than the raw per-frame detections. Those two look alike
+    /// until tracking breaks, at which point the detections stay put and
+    /// the IDs churn — which is invisible unless the ID is on screen.
+    public private(set) var trackedObjects: [TrackedObject] = []
 
     /// How many physical objects the tracker is currently following. A
     /// count that keeps climbing while cards stay put means tracks are
     /// being abandoned and re-created rather than followed.
-    public private(set) var liveTrackCount = 0
+    public var liveTrackCount: Int { trackedObjects.count }
 
     private func record(_ trace: VisionEventTrace) {
         visionTrace.append(trace)

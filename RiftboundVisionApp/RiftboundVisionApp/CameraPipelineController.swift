@@ -173,9 +173,15 @@ final class CameraPipelineController: ObservableObject {
     /// stream can't show a card entering the Rune Area or Trash at all.
     @Published private(set) var trackingEvents: [TrackingLogEntry] = []
 
+    /// The tracker's own view of the table — stable IDs and centroids,
+    /// as opposed to `detections`, which is a fresh identity-free array
+    /// every poll. Drawn on screen so ID churn is visible: the boxes look
+    /// identical whether tracking is holding or not.
+    @Published private(set) var trackedObjects: [TrackedObject] = []
+
     /// Objects the tracker is currently following. Rising while cards sit
     /// still means tracks are being abandoned and re-created.
-    @Published private(set) var liveTrackCount = 0
+    var liveTrackCount: Int { trackedObjects.count }
 
     /// Which `PipelineStage`s the user has asked to run, via the settings
     /// overlay. Independent of `PipelineStage.isWired` — a stage can be
@@ -445,7 +451,7 @@ final class CameraPipelineController: ObservableObject {
         expertSystemAdapter = adapter
         expertSystemFrameIndex = 0
         trackingEvents = []
-        liveTrackCount = 0
+        trackedObjects = []
 
         // Stage ③+④: a real GameState, the NLP translator, and the engine
         // that runs both against every observed event.
@@ -682,7 +688,7 @@ final class CameraPipelineController: ObservableObject {
             if trackingEvents.count > 60 {
                 trackingEvents.removeLast(trackingEvents.count - 60)
             }
-            liveTrackCount = expertSystemAdapter.liveTrackCount
+            trackedObjects = expertSystemAdapter.trackedObjects
         }
 
         // Third consumer: stacking + durable board state, off its own

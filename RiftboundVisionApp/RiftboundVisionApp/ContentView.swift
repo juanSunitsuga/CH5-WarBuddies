@@ -59,6 +59,16 @@ struct ContentView: View {
                         .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                         .allowsHitTesting(false)
 
+                    // Above the detection boxes: the tracker's centroids
+                    // and their stable IDs. This is the layer that shows
+                    // whether a card keeps its identity across a pickup —
+                    // the boxes below look the same either way.
+                    TrackedObjectOverlayView(objects: pipeline.trackedObjects)
+                        .frame(width: pipeline.frameSize.width, height: pipeline.frameSize.height)
+                        .scaleEffect(scale)
+                        .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+                        .allowsHitTesting(false)
+
                     VStack {
                         detectionCountBadge
                         Spacer()

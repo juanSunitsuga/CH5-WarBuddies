@@ -118,25 +118,114 @@ public struct PlaymatOverlayView: View {
             .allowsHitTesting(false)
 
             if isEditable {
-                handle(\.topLeft)
-                handle(\.topRight)
-                handle(\.bottomRight)
-                handle(\.bottomLeft)
+                handle(.topLeft)
+                handle(.topRight)
+                handle(.bottomRight)
+                handle(.bottomLeft)
+                moveHandle
             }
         }
     }
 
-    private func handle(_ keyPath: WritableKeyPath<PlaymatCalibration, CGPoint>) -> some View {
-        Circle()
+    /// Which corner a handle drives. Dragging one resizes the rectangle
+    /// with the *opposite* corner pinned, so the mat only ever gets wider
+    /// or taller — it can never be sheared into a parallelogram.
+    private enum Corner {
+        case topLeft, topRight, bottomRight, bottomLeft
+    }
+
+    /// Corner drags used to set that corner's raw location, which let the
+    /// four points form any quadrilateral at all. One nudge and the mat
+    /// went crooked, every zone inside it sheared with it, and the
+    /// calibrated regions stopped matching what the camera saw — the
+    /// overlay "disorienting" on every move. Resizing an axis-aligned
+    /// rectangle instead keeps the grid square by construction.
+    ///
+    /// This gives up free-quad perspective correction for a camera mounted
+    /// at an angle. `PlaymatCalibration.map` still interpolates all four
+    /// corners, so restoring it later is a UI change, not a model one.
+    private func handle(_ corner: Corner) -> some View {
+        let position = point(for: corner)
+        return Circle()
             .fill(Color.yellow)
             .overlay(Circle().stroke(Color.black, lineWidth: 1))
             .frame(width: 18, height: 18)
-            .position(calibration[keyPath: keyPath])
+            .position(position)
             .gesture(
                 DragGesture(minimumDistance: 0).onChanged { value in
-                    calibration[keyPath: keyPath] = value.location
+                    resize(corner: corner, to: value.location)
                 }
             )
+    }
+
+    /// Drags the whole mat without changing its size — separate from the
+    /// corners so repositioning can't accidentally reshape it.
+    private var moveHandle: some View {
+        let rect = currentRect
+        return Circle()
+            .fill(Color.yellow.opacity(0.85))
+            .overlay(Image(systemName: "arrow.up.and.down.and.arrow.left.and.right").font(.system(size: 11, weight: .bold)).foregroundStyle(.black))
+            .frame(width: 26, height: 26)
+            .position(x: rect.midX, y: rect.midY)
+            .gesture(
+                DragGesture(minimumDistance: 0).onChanged { value in
+                    let dx = value.location.x - rect.midX
+                    let dy = value.location.y - rect.midY
+                    apply(rect.offsetBy(dx: dx, dy: dy))
+                }
+            )
+    }
+
+    private var currentRect: CGRect {
+        let xs = [calibration.topLeft.x, calibration.topRight.x, calibration.bottomRight.x, calibration.bottomLeft.x]
+        let ys = [calibration.topLeft.y, calibration.topRight.y, calibration.bottomRight.y, calibration.bottomLeft.y]
+        let minX = xs.min() ?? 0, maxX = xs.max() ?? 0
+        let minY = ys.min() ?? 0, maxY = ys.max() ?? 0
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    private func point(for corner: Corner) -> CGPoint {
+        let rect = currentRect
+        switch corner {
+        case .topLeft: return CGPoint(x: rect.minX, y: rect.minY)
+        case .topRight: return CGPoint(x: rect.maxX, y: rect.minY)
+        case .bottomRight: return CGPoint(x: rect.maxX, y: rect.maxY)
+        case .bottomLeft: return CGPoint(x: rect.minX, y: rect.maxY)
+        }
+    }
+
+    private func resize(corner: Corner, to location: CGPoint) {
+        let rect = currentRect
+        // A minimum keeps a fast drag past the opposite edge from
+        // inverting the mat (which would mirror every zone).
+        let minimumSize: CGFloat = 40
+        var minX = rect.minX, maxX = rect.maxX, minY = rect.minY, maxY = rect.maxY
+
+        switch corner {
+        case .topLeft:
+            minX = min(location.x, maxX - minimumSize)
+            minY = min(location.y, maxY - minimumSize)
+        case .topRight:
+            maxX = max(location.x, minX + minimumSize)
+            minY = min(location.y, maxY - minimumSize)
+        case .bottomRight:
+            maxX = max(location.x, minX + minimumSize)
+            maxY = max(location.y, minY + minimumSize)
+        case .bottomLeft:
+            minX = min(location.x, maxX - minimumSize)
+            maxY = max(location.y, minY + minimumSize)
+        }
+
+        apply(CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY))
+    }
+
+    private func apply(_ rect: CGRect) {
+        calibration = PlaymatCalibration(
+            topLeft: CGPoint(x: rect.minX, y: rect.minY),
+            topRight: CGPoint(x: rect.maxX, y: rect.minY),
+            bottomRight: CGPoint(x: rect.maxX, y: rect.maxY),
+            bottomLeft: CGPoint(x: rect.minX, y: rect.maxY)
+        )
     }
 
     private func label(for template: PlaymatZoneTemplate) -> String {
