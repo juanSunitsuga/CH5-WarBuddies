@@ -77,6 +77,9 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// Draw/Channel Rune coverage is actually missing right now.
     public private(set) var unrepresentableZoneEvents: [VisionEvent] = []
 
+    /// Buffer behind `drainVisionTrace()`.
+    private var visionTrace: [VisionEventTrace] = []
+
     /// Maps a detector's raw class label (e.g. `"Annie Fiery"`) onto the
     /// canonical `CardDefID` the Expert System's `GameState` is keyed by.
     /// Without this, the label string was wrapped verbatim into a
@@ -148,12 +151,44 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
 
         let visionEvents = temporalDetector.process(trackerResult, zoneMapper: zoneMapper, timestamp: timestamp)
         for visionEvent in visionEvents {
-            if let observed = observedTableEvent(for: visionEvent) {
+            let observed = observedTableEvent(for: visionEvent)
+            if let observed {
                 continuation?.yield(observed)
             } else {
                 unrepresentableZoneEvents.append(visionEvent)
             }
+            record(VisionEventTrace(event: visionEvent, wasForwarded: observed != nil))
         }
+
+        liveTrackCount = trackerResult.objects.count
+    }
+
+    /// How many physical objects the tracker is currently following. A
+    /// count that keeps climbing while cards stay put means tracks are
+    /// being abandoned and re-created rather than followed.
+    public private(set) var liveTrackCount = 0
+
+    private func record(_ trace: VisionEventTrace) {
+        visionTrace.append(trace)
+        // Bounded in case nothing ever drains this — a debug tap must not
+        // become a leak.
+        if visionTrace.count > 200 {
+            visionTrace.removeFirst(visionTrace.count - 200)
+        }
+    }
+
+    /// Every `VisionEvent` produced since the last call, paired with
+    /// whether it made it across the boundary into the Expert System.
+    ///
+    /// This is the *pre-translation* view: it includes events for zones
+    /// `TableRegion` can't represent (Rune Area, Trash, the decks) and
+    /// events dropped for want of a seat, neither of which is visible
+    /// downstream. Debugging tracking through the translated stream means
+    /// debugging it through a filter that silently removes the
+    /// interesting cases.
+    public func drainVisionTrace() -> [VisionEventTrace] {
+        defer { visionTrace = [] }
+        return visionTrace
     }
 
     // MARK: - VisionEvent → ObservedTableEvent

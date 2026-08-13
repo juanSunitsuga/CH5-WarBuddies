@@ -22,7 +22,10 @@ struct DetectedCardsPanel: View {
     @State private var searchText = ""
     @State private var isScoreExpanded = true
     @State private var isDetailsExpanded = true
-    @State private var isLogExpanded = true
+    @State private var isTrackingExpanded = true
+    /// Collapsed by default — tracking is what's being debugged right now,
+    /// and the rules-engine verdicts are downstream noise until it's right.
+    @State private var isLogExpanded = false
     @State private var isShowingSettings = false
 
     private static let panelBackground = Color(red: 0.11, green: 0.23, blue: 0.33)
@@ -66,6 +69,8 @@ struct DetectedCardsPanel: View {
                     scoreSection
                     Divider().overlay(.white.opacity(0.15))
                     detailsSection
+                    Divider().overlay(.white.opacity(0.15))
+                    trackingSection
                     Divider().overlay(.white.opacity(0.15))
                     logSection
                 }
@@ -117,6 +122,105 @@ struct DetectedCardsPanel: View {
                     detectedList
                 }
             }
+        }
+    }
+
+    /// The vision layer's own log: track identity and zone transitions, as
+    /// the tracker actually saw them. Shown above the Event Log because
+    /// the Event Log is downstream of a filter — it can't show a card
+    /// entering the Rune Area or Trash at all, so an empty Event Log next
+    /// to a busy Tracking Log localises the problem immediately.
+    private var trackingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                sectionHeader("Tracking Log", isExpanded: $isTrackingExpanded)
+                Text("\(pipeline.liveTrackCount) tracked")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+
+            if isTrackingExpanded {
+                if pipeline.trackingEvents.isEmpty {
+                    Text("No tracking events yet. Press Start, then move a card.")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.45))
+                } else {
+                    ForEach(pipeline.trackingEvents) { entry in
+                        trackingRow(entry)
+                    }
+                }
+            }
+        }
+    }
+
+    private func trackingRow(_ entry: TrackingLogEntry) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon(for: entry.kind))
+                .font(.caption)
+                .foregroundStyle(color(for: entry.kind))
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    // Track identity — the number to watch. A card that
+                    // gets a new one every time it's touched is being
+                    // re-created instead of followed.
+                    Text("#\(entry.trackID)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+
+                    Text(entry.card)
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                }
+
+                Text(entry.transition)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(color(for: entry.kind))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !entry.wasForwarded {
+                    Text("not sent to the rules engine — this zone has no representation yet")
+                        .font(.caption2)
+                        .foregroundStyle(.orange.opacity(0.8))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(entry.timestamp, format: .dateTime.hour().minute().second())
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.35))
+                Text("\(Int((entry.confidence * 100).rounded()))%")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+        }
+        .padding(8)
+        .background(.white.opacity(entry.wasForwarded ? 0.05 : 0.09), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func icon(for kind: TrackingLogEntry.Kind) -> String {
+        switch kind {
+        case .appeared: return "plus.circle.fill"
+        case .moved: return "arrow.right.circle.fill"
+        case .rotated: return "rotate.right.fill"
+        case .disappeared: return "minus.circle.fill"
+        }
+    }
+
+    private func color(for kind: TrackingLogEntry.Kind) -> Color {
+        switch kind {
+        case .appeared: return .green
+        case .moved: return .cyan
+        case .rotated: return .purple
+        case .disappeared: return .orange
         }
     }
 

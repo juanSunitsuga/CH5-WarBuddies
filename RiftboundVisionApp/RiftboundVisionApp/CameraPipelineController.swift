@@ -167,6 +167,16 @@ final class CameraPipelineController: ObservableObject {
     /// would read from.
     @Published private(set) var observedEvents: [RiftboundExpertSystem.ObservedTableEvent] = []
 
+    /// Raw vision-layer events (track identity, zone transitions), captured
+    /// *before* translation into `ObservedTableEvent` drops anything. This
+    /// is the log to read when tracking itself is suspect — the translated
+    /// stream can't show a card entering the Rune Area or Trash at all.
+    @Published private(set) var trackingEvents: [TrackingLogEntry] = []
+
+    /// Objects the tracker is currently following. Rising while cards sit
+    /// still means tracks are being abandoned and re-created.
+    @Published private(set) var liveTrackCount = 0
+
     /// Which `PipelineStage`s the user has asked to run, via the settings
     /// overlay. Independent of `PipelineStage.isWired` — a stage can be
     /// "requested" here and still do nothing if it isn't wired into
@@ -434,6 +444,8 @@ final class CameraPipelineController: ObservableObject {
         )
         expertSystemAdapter = adapter
         expertSystemFrameIndex = 0
+        trackingEvents = []
+        liveTrackCount = 0
 
         // Stage ③+④: a real GameState, the NLP translator, and the engine
         // that runs both against every observed event.
@@ -662,6 +674,15 @@ final class CameraPipelineController: ObservableObject {
             expertSystemAdapter.updateZones(ZoneMapper(zones: calibration.boardZones()))
             expertSystemFrameIndex += 1
             expertSystemAdapter.ingest(detections: detections, frameIndex: expertSystemFrameIndex, timestamp: frame.timestamp)
+
+            // Raw vision-layer events, before translation drops anything.
+            for trace in expertSystemAdapter.drainVisionTrace() {
+                trackingEvents.insert(TrackingLogEntry(trace: trace), at: 0)
+            }
+            if trackingEvents.count > 60 {
+                trackingEvents.removeLast(trackingEvents.count - 60)
+            }
+            liveTrackCount = expertSystemAdapter.liveTrackCount
         }
 
         // Third consumer: stacking + durable board state, off its own
