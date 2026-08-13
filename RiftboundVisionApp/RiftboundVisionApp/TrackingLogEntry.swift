@@ -11,11 +11,18 @@ import RiftboundVision
 /// translated stream means debugging through a filter that hides the
 /// interesting cases.
 struct TrackingLogEntry: Identifiable {
+    /// The three things worth seeing while debugging tracking: a card
+    /// arriving, a card changing zone, and a card being turned.
+    ///
+    /// `.objectDisappeared` deliberately has no case. A track ending is a
+    /// statement about the *camera* — occlusion, a hand in the way, a
+    /// dropped frame — not about the player, and it fired constantly enough
+    /// to bury the three events that do matter.
     enum Kind {
         case appeared
         case moved
-        case rotated
-        case disappeared
+        /// Rule 592–593: turned sideways is Exhaust, turned back is Ready.
+        case turned
     }
 
     let id = UUID()
@@ -33,13 +40,16 @@ struct TrackingLogEntry: Identifiable {
     let wasForwarded: Bool
     let timestamp: Date
 
-    init(trace: VisionEventTrace) {
+    /// `nil` for events this log doesn't show — currently only a track
+    /// ending. Filtering here rather than at the call site keeps the rule
+    /// next to the enum that states it.
+    init?(trace: VisionEventTrace) {
         let event = trace.event
         switch event.type {
         case .objectAppeared: kind = .appeared
         case .objectMoved: kind = .moved
-        case .objectRotated: kind = .rotated
-        case .objectDisappeared: kind = .disappeared
+        case .objectRotated: kind = .turned
+        case .objectDisappeared: return nil
         }
 
         trackID = event.objectID
@@ -55,12 +65,12 @@ struct TrackingLogEntry: Identifiable {
             transition = "\(from) → \(to)"
         case .objectAppeared:
             transition = "appeared in \(to)"
-        case .objectDisappeared:
-            transition = "left \(from)"
         case .objectRotated:
             // 592/593: a 90° turn is Exhaust, back to 0° is Ready.
             let exhausted = event.currentRotation.map { abs($0.truncatingRemainder(dividingBy: .pi)) > 0.01 } ?? false
-            transition = "\(exhausted ? "exhausted" : "readied") in \(to)"
+            transition = "\(exhausted ? "EXHAUSTED" : "readied") in \(to)"
+        case .objectDisappeared:
+            transition = ""   // unreachable — filtered out above
         }
     }
 

@@ -210,8 +210,7 @@ struct DetectedCardsPanel: View {
         switch kind {
         case .appeared: return "plus.circle.fill"
         case .moved: return "arrow.right.circle.fill"
-        case .rotated: return "rotate.right.fill"
-        case .disappeared: return "minus.circle.fill"
+        case .turned: return "rotate.right.fill"
         }
     }
 
@@ -219,8 +218,7 @@ struct DetectedCardsPanel: View {
         switch kind {
         case .appeared: return .green
         case .moved: return .cyan
-        case .rotated: return .purple
-        case .disappeared: return .orange
+        case .turned: return .purple
         }
     }
 

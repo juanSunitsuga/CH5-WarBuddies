@@ -666,8 +666,10 @@ final class CameraPipelineController: ObservableObject {
             expertSystemAdapter.ingest(detections: detections, frameIndex: expertSystemFrameIndex, timestamp: frame.timestamp)
 
             // Raw vision-layer events, before translation drops anything.
+            // `init?` returns nil for event types this log doesn't show.
             for trace in expertSystemAdapter.drainVisionTrace() {
-                trackingEvents.insert(TrackingLogEntry(trace: trace), at: 0)
+                guard let entry = TrackingLogEntry(trace: trace) else { continue }
+                trackingEvents.insert(entry, at: 0)
             }
             if trackingEvents.count > 60 {
                 trackingEvents.removeLast(trackingEvents.count - 60)
