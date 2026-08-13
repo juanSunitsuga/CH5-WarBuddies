@@ -37,6 +37,22 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
     /// cards they exist to handle.
     private let cardContext: @Sendable (CardDefID) -> CardContext?
 
+    /// Called with a human-readable reason whenever an observed event was
+    /// understood but doesn't correspond to a proposable `GameAction`.
+    ///
+    /// `ActionTranslating.inferAction` can only answer `GameAction?`, so a
+    /// `nil` collapses "that isn't an action" (a Battlefield being placed),
+    /// "that card isn't in hand," and "the text didn't parse" into one
+    /// indistinguishable outcome — which surfaced to players as the
+    /// unhelpful "couldn't tell what it meant" for every one of them. This
+    /// carries the reason out of band so the UI can say something true
+    /// without widening the protocol.
+    ///
+    /// Invoked synchronously inside `inferAction`, so a caller driving
+    /// events serially can read whatever it captured immediately after
+    /// `GameEngine.process` returns.
+    public var onUntranslatable: (@Sendable (String) -> Void)?
+
     /// What the host app can tell this package about an identified card.
     public struct CardContext: Sendable {
         /// This package's SQLite `card_id`. The rest of the pipeline keys
@@ -186,8 +202,9 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         player: PlayerID
     ) -> GameAction? {
         switch candidate {
-        case .playUnit(let cardID, _, _, _, _), .castSpell(let cardID, _, _, _):
+        case .playUnit(let cardID, let cardName, _, _, _), .castSpell(let cardID, let cardName, _, _):
             guard let objectID = handObjectID(definitionID: CardDefID(rawValue: cardID), player: player, in: state) else {
+                onUntranslatable?("\(cardName) isn't in the hand the engine is tracking, so playing it can't be resolved.")
                 return nil
             }
             return .play(card: objectID, destination: playDestination(destination), additionalChoices: [])
@@ -202,9 +219,11 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
             // Discretionary action to propose here. Nothing to translate —
             // this also can never actually be reached today, since
             // `regionName` can't produce "RuneArea" (see its doc comment).
+            onUntranslatable?("Channeling a Rune is a scripted step of the Channel Phase, not a move to propose.")
             return nil
 
-        case .rejected:
+        case .rejected(let reason):
+            onUntranslatable?(reason)
             return nil
         }
     }

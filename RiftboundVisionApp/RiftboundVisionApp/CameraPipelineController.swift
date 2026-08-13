@@ -38,6 +38,31 @@ enum PipelineStage: Int, CaseIterable, Identifiable {
     var isWired: Bool { true }
 }
 
+/// One-slot, lock-guarded hand-off for the NLP translator's explanation of
+/// an event it declined to turn into an action. The translator runs inside
+/// `GameEngine.process` off the main actor, while the UI reads on it, so
+/// the value can't simply live on `CameraPipelineController`.
+final class TranslationNoteBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: String?
+
+    func set(_ newValue: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        value = newValue
+    }
+
+    /// Reads and clears in one atomic step, so a note is attached to
+    /// exactly one instruction.
+    func take() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        let current = value
+        value = nil
+        return current
+    }
+}
+
 /// Drives camera → detector and publishes what the live overlay needs to
 /// render. This is deliberately app-shell code (lives here, not in the
 /// `RiftboundVision` library) — it exists to make the detection pipeline's
@@ -249,6 +274,14 @@ final class CameraPipelineController: ObservableObject {
     /// `PlayerInstruction`. Built in `start()` alongside the vision
     /// adapter, since it needs that adapter as its `BoardObserving` source.
     private var gameEngine: GameEngine?
+
+    /// The translator's explanation for the event currently being
+    /// processed, if it declined to produce an action. Written from
+    /// whatever context `GameEngine.process` runs the translator on and
+    /// read back on the main actor, so it needs its own synchronization
+    /// rather than living directly on this `@MainActor` type — see
+    /// `ExpertSystemTranslatorAdapter.onUntranslatable`.
+    private let translationNote = TranslationNoteBox()
     private var gameStateStore: GameStateStore?
 
     /// The starting calibration quad, sized so the *whole* active
@@ -421,6 +454,13 @@ final class CameraPipelineController: ObservableObject {
                 printedText: printing?.text.plain
             )
         }
+        // Written synchronously from inside `GameEngine.process`, read
+        // synchronously by `recordInstruction` right after it returns.
+        // Deliberately not a `Task { @MainActor … }` hop: that would race
+        // the read and attach the note to the wrong event, or lose it.
+        translator.onUntranslatable = { [translationNote] reason in
+            translationNote.set(reason)
+        }
         let engine = GameEngine(store: session.store, observer: adapter, translator: translator)
         gameStateStore = session.store
         gameEngine = engine
@@ -482,7 +522,14 @@ final class CameraPipelineController: ObservableObject {
     }
 
     private func recordInstruction(_ instruction: PlayerInstruction, for event: RiftboundExpertSystem.ObservedTableEvent) {
-        let entry = InstructionLogEntry(instruction: instruction, cardName: cardName(for: event))
+        // Consume (not just read) the note the translator left during this
+        // same event's `GameEngine.process` call, so it can't leak onto a
+        // later event that had no note of its own.
+        let entry = InstructionLogEntry(
+            instruction: instruction,
+            cardName: cardName(for: event),
+            note: translationNote.take()
+        )
         instructions.insert(entry, at: 0)
         if instructions.count > 30 {
             instructions.removeLast(instructions.count - 30)

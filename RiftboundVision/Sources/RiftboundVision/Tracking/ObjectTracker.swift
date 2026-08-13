@@ -86,6 +86,42 @@ public final class ObjectTracker: @unchecked Sendable {
         self.matchDistanceThreshold = matchDistanceThreshold
     }
 
+    /// Folds a matched detection into an existing track, whichever pass
+    /// matched it. Shared so identity re-association can't drift out of
+    /// step with distance matching — notably `previousZone`/`currentZone`,
+    /// which is what makes a zone change observable downstream.
+    private func adopt(
+        detection: Detection,
+        into trackID: TrackedObjectID,
+        zoneMapper: ZoneMapper,
+        frameIndex: Int,
+        timestamp: TimeInterval,
+        previousTimestamp: TimeInterval?
+    ) {
+        guard var track = tracked[trackID] else { return }
+        let dt = previousTimestamp.map { timestamp - $0 } ?? 0
+        let velocity: CGVector = dt > 0
+            ? CGVector(dx: (detection.center.x - track.center.x) / dt, dy: (detection.center.y - track.center.y) / dt)
+            : .zero
+
+        track.center = detection.center
+        track.boundingBox = detection.boundingBox
+        track.rotation = detection.rotation
+        track.confidence = detection.confidence
+        track.velocity = velocity
+        track.isVisible = true
+        track.lastSeenFrame = frameIndex
+        track.previousZone = track.currentZone
+        track.currentZone = zoneMapper.zone(for: detection.center)
+        // A recognizer's label is trusted the moment it's supplied; a `nil`
+        // from a non-recognizing detector should not erase a
+        // previously-recognized label for the same physical object.
+        if let recognizedLabel = detection.recognizedLabel {
+            track.recognizedLabel = recognizedLabel
+        }
+        tracked[trackID] = track
+    }
+
     /// Feeds one frame's detections in. Must be called once per frame, in
     /// frame order — `frameIndex` should be strictly increasing.
     @discardableResult
@@ -114,32 +150,65 @@ public final class ObjectTracker: @unchecked Sendable {
             guard !matchedTrackIDs.contains(pair.trackID), !claimedDetectionIndices.contains(pair.detectionIndex) else { continue }
             matchedTrackIDs.insert(pair.trackID)
             claimedDetectionIndices.insert(pair.detectionIndex)
-
-            var track = tracked[pair.trackID]!
-            let detection = detections[pair.detectionIndex]
-            let dt = previousTimestamp.map { timestamp - $0 } ?? 0
-            let velocity: CGVector = dt > 0
-                ? CGVector(dx: (detection.center.x - track.center.x) / dt, dy: (detection.center.y - track.center.y) / dt)
-                : .zero
-
-            track.center = detection.center
-            track.boundingBox = detection.boundingBox
-            track.rotation = detection.rotation
-            track.confidence = detection.confidence
-            track.velocity = velocity
-            track.isVisible = true
-            track.lastSeenFrame = frameIndex
-            track.previousZone = track.currentZone
-            track.currentZone = zoneMapper.zone(for: detection.center)
-            // A recognizer's label is trusted the moment it's supplied;
-            // a `nil` from a non-recognizing detector should not erase a
-            // previously-recognized label for the same physical object.
-            if let recognizedLabel = detection.recognizedLabel {
-                track.recognizedLabel = recognizedLabel
-            }
-            tracked[pair.trackID] = track
+            adopt(
+                detection: detections[pair.detectionIndex],
+                into: pair.trackID,
+                zoneMapper: zoneMapper,
+                frameIndex: frameIndex,
+                timestamp: timestamp,
+                previousTimestamp: previousTimestamp
+            )
         }
         remainingDetections.removeAll { claimedDetectionIndices.contains($0.offset) }
+
+        // Second pass: re-associate by card IDENTITY, ignoring distance.
+        //
+        // Distance matching alone can only follow a card that *slides*
+        // across the table. The way a card is actually played — picked up,
+        // carried (occluded by the hand), set down somewhere else — moves
+        // it far past `matchDistanceThreshold` in a single detection poll,
+        // so the track was dropped and a new one created. Downstream that
+        // reads as `.objectAppeared` with no origin rather than
+        // `.objectMoved(from: hand)`, and an origin-less appearance can't
+        // be translated into a Play at all — which meant essentially no
+        // real play was ever recognized.
+        //
+        // The recognizer already tells us *which card* each detection is,
+        // so a reappearing card with the same label as a track that just
+        // went missing is that same physical card. Restricted to tracks
+        // not matched this frame; among several copies of the same card
+        // (`recognizedLabel` is a card name, not a per-copy identity) the
+        // nearest is taken, which keeps two Fury Runes sitting side by
+        // side from swapping identities.
+        if !remainingDetections.isEmpty {
+            var identityPairs: [(distance: CGFloat, trackID: TrackedObjectID, detectionIndex: Int)] = []
+            for (existingID, existing) in tracked where !matchedTrackIDs.contains(existingID) {
+                guard let trackLabel = existing.recognizedLabel else { continue }
+                for (index, detection) in remainingDetections {
+                    guard detection.type == existing.type,
+                          detection.recognizedLabel == trackLabel else { continue }
+                    let distance = hypot(detection.center.x - existing.center.x, detection.center.y - existing.center.y)
+                    identityPairs.append((distance, existingID, index))
+                }
+            }
+            identityPairs.sort { $0.distance < $1.distance }
+
+            var identityClaimed = Set<Int>()
+            for pair in identityPairs {
+                guard !matchedTrackIDs.contains(pair.trackID), !identityClaimed.contains(pair.detectionIndex) else { continue }
+                matchedTrackIDs.insert(pair.trackID)
+                identityClaimed.insert(pair.detectionIndex)
+                adopt(
+                    detection: detections[pair.detectionIndex],
+                    into: pair.trackID,
+                    zoneMapper: zoneMapper,
+                    frameIndex: frameIndex,
+                    timestamp: timestamp,
+                    previousTimestamp: previousTimestamp
+                )
+            }
+            remainingDetections.removeAll { identityClaimed.contains($0.offset) }
+        }
 
         // Unmatched detections are new objects.
         for (_, detection) in remainingDetections {

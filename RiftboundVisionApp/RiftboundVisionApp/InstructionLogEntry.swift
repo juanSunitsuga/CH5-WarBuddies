@@ -19,7 +19,13 @@ struct InstructionLogEntry: Identifiable {
     let headline: String
     let detail: String?
 
-    init(instruction: PlayerInstruction, cardName: String?) {
+    /// `note` is the translator's out-of-band explanation for an event it
+    /// understood but couldn't turn into a proposable action (see
+    /// `ExpertSystemTranslatorAdapter.onUntranslatable`). Without it every
+    /// such event reads as "couldn't tell what it meant," which is wrong
+    /// for the common cases — a Battlefield being placed is perfectly
+    /// understood, it just isn't a move.
+    init(instruction: PlayerInstruction, cardName: String?, note: String? = nil) {
         let card = cardName ?? "an unidentified card"
 
         switch instruction {
@@ -35,8 +41,14 @@ struct InstructionLogEntry: Identifiable {
 
         case .unrecognizedEvent:
             verdict = .unrecognized
-            headline = "Saw something move, but couldn't tell what it meant."
-            detail = "Involving \(card)."
+            if let note {
+                // The translator did understand it — it just isn't a move.
+                headline = "Nothing to do for \(card)."
+                detail = note
+            } else {
+                headline = "Saw something move, but couldn't tell what it meant."
+                detail = "Involving \(card)."
+            }
 
         case .choiceRequired(let prompt):
             verdict = .informational
