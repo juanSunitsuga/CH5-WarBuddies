@@ -4,11 +4,11 @@
 /// deltas — see docs/architecture.md section 5 for the "untrusted
 /// proposer" framing.
 ///
-/// Only `standardMove` has real logic below, as a worked example of the
-/// level of rigor expected — reference the exact rule for every branch.
-/// Fill in the remaining cases in the build order from
-/// docs/architecture.md (Play Card next, since it's the other half of the
-/// two actions most directly observable from a physical table).
+/// `standardMove`, `draw`/other Limited Actions, and `play` have real logic
+/// below — `standardMove` was the original worked example of the level of
+/// rigor expected (reference the exact rule for every branch); `play`
+/// follows the same pattern, citing rules 555–563. Fill in the remaining
+/// cases in the build order from docs/architecture.md.
 public enum LegalityValidator {
     public enum Failure: Error, Equatable {
         case notPlayersPriority
@@ -16,6 +16,18 @@ public enum LegalityValidator {
         case unitNotFound(ObjectID)
         case destinationOccupiedByTwoOtherControllers(BattlefieldID)
         case moveOriginsMismatch  // 140.3.b requires same Destination, not same Origin — but all named units must actually exist and be movable
+        /// Rule 555/558: the proposed card isn't in the proposing player's
+        /// Hand — either it's already been played, or the observed event
+        /// misidentified which card moved.
+        case cardNotInHand(ObjectID)
+        /// Rule 559.2: a Unit must be given a real board Location to enter
+        /// (`.none` is only valid for Spells/abilities, which have no board
+        /// form).
+        case invalidPlayDestination(PlayDestination)
+        /// Rule 560–561: the player's Rune Pool doesn't have enough Energy
+        /// to pay the card's cost. Power-cost checking is a known gap, not
+        /// yet enforced here — see `validatePlay`'s doc comment.
+        case insufficientEnergy(required: Int, available: Int)
         /// Rule 589.2: this Limited Action was proposed without any rule or
         /// effect having called for it — nothing in
         /// `GameState.pendingLimitedActions` matches. The classic case:
@@ -27,6 +39,9 @@ public enum LegalityValidator {
 
     public static func validate(_ action: GameAction, in state: GameState, proposedBy player: PlayerID) -> Result<Void, Failure> {
         switch action {
+        case .play(let card, let destination, let additionalChoices):
+            return validatePlay(card: card, destination: destination, additionalChoices: additionalChoices, in: state, player: player)
+
         case .standardMove(let unitIDs, let destination):
             return validateStandardMove(unitIDs, destination: destination, in: state, player: player)
 
@@ -42,6 +57,75 @@ public enum LegalityValidator {
         default:
             return .failure(.notImplemented)
         }
+    }
+
+    /// Rule 555–561: Playing a Card (the legality-relevant substeps only —
+    /// 562's "would this create an illegal state" and the Chain/Reaction
+    /// machinery of 558/563.2.a aren't modeled here, see `applyPlay`'s doc
+    /// comment for why).
+    ///   - 516.2.b: Playing is a Discretionary Action — only legal with
+    ///     Priority. Restricted to Neutral Open here, same simplification
+    ///     `validateStandardMove` makes (Showdown/Focus-based Play isn't
+    ///     modeled yet).
+    ///   - 555.1/558: the card must actually be in the player's Hand.
+    ///   - 559.2: a Unit must be given a real Location (not `.none`); a
+    ///     Battlefield destination already Controlled by two *other*
+    ///     players is invalid, the same 610.2.a/623.2 restriction
+    ///     `validateStandardMove` checks for Move.
+    ///   - 560–561: the card's Energy cost must be payable from the
+    ///     player's Rune Pool. Power-cost checking against `Cost.power`'s
+    ///     `[Domain]` is a known gap — flagged rather than guessed at,
+    ///     since `RunePool.power` isn't typed the same way yet.
+    private static func validatePlay(
+        card cardID: ObjectID,
+        destination: PlayDestination,
+        additionalChoices: [ObjectID],
+        in state: GameState,
+        player: PlayerID
+    ) -> Result<Void, LegalityValidator.Failure> {
+        guard case .neutralOpen = state.turnState else {
+            return .failure(.notPlayersPriority)
+        }
+        guard state.playerWithPriority(for: player) else {
+            return .failure(.notPlayersPriority)
+        }
+        guard let card = state.zones[player]?.hand.first(where: { $0.id == cardID }) else {
+            return .failure(.cardNotInHand(cardID))
+        }
+
+        switch (card.type, destination) {
+        case (.unit, .none):
+            return .failure(.invalidPlayDestination(destination))
+        case (.gear, .battlefield):
+            // 144.2: Gear always enters at the player's Base, never a
+            // Battlefield — `applyPlay` corrects the Location regardless,
+            // but a Battlefield destination for Gear signals the proposer
+            // misread the observed event, so reject rather than silently
+            // reinterpret it.
+            return .failure(.invalidPlayDestination(destination))
+        default:
+            break
+        }
+
+        if case .battlefield(let battlefieldID) = destination {
+            let controllersPresent = Set(
+                state.units.values
+                    .filter { $0.location == .battlefield(battlefieldID) }
+                    .map(\.controller)
+            )
+            let otherControllers = controllersPresent.subtracting([player])
+            if otherControllers.count >= 2 {
+                return .failure(.destinationOccupiedByTwoOtherControllers(battlefieldID))
+            }
+        }
+
+        let energyCost = card.cost.energy
+        let availableEnergy = state.zones[player]?.runePool.energy ?? 0
+        guard availableEnergy >= energyCost else {
+            return .failure(.insufficientEnergy(required: energyCost, available: availableEnergy))
+        }
+
+        return .success(())
     }
 
     /// Rule 589.2: legal iff a rule or effect has already authorized this

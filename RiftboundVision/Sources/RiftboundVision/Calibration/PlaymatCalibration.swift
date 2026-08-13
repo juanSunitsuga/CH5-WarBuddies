@@ -35,18 +35,42 @@ public struct PlaymatCalibration: Sendable, Equatable {
     /// visible frame entirely before the user has dragged anything. Instead
     /// this shrinks the quad (and pushes it toward the top of the frame)
     /// so the *whole* `0...contentHeight` range fits on screen by default.
-    public static func centered(in imageSize: CGSize, inset: CGFloat = 0.1, contentHeight: CGFloat = 1.0) -> PlaymatCalibration {
+    ///
+    /// `aspectRatio` (width ÷ height of the *mat*, i.e. the `0...1` unit
+    /// square) is what keeps the border artwork from stretching: the
+    /// template's zones are sized from their PNGs' real pixel dimensions
+    /// (see `RiftboundPlaymatTemplate.matAspectRatio`), so a quad with a
+    /// different proportion would squash every frame drawn into it. Pass
+    /// `nil` to fill the inset area regardless of proportion.
+    public static func centered(
+        in imageSize: CGSize,
+        inset: CGFloat = 0.1,
+        contentHeight: CGFloat = 1.0,
+        aspectRatio: CGFloat? = RiftboundPlaymatTemplate.matAspectRatio
+    ) -> PlaymatCalibration {
         let marginX = imageSize.width * inset
         let marginY = imageSize.height * inset
+        let availableWidth = max(imageSize.width - 2 * marginX, 1)
         let availableHeight = max(imageSize.height - 2 * marginY, 1)
-        let quadHeight = availableHeight / contentHeight
-        let quadBottomY = marginY + quadHeight
+
+        // Fit the whole `0...contentHeight` range inside the inset area
+        // without distortion: the quad itself is `0...1`, so the content
+        // is `contentHeight` quads tall.
+        var quadWidth = availableWidth
+        var quadHeight = availableHeight / contentHeight
+        if let aspectRatio, aspectRatio > 0 {
+            quadHeight = min(quadHeight, quadWidth / aspectRatio)
+            quadWidth = quadHeight * aspectRatio
+        }
+
+        let originX = (imageSize.width - quadWidth) / 2
+        let originY = marginY
 
         return PlaymatCalibration(
-            topLeft: CGPoint(x: marginX, y: marginY),
-            topRight: CGPoint(x: imageSize.width - marginX, y: marginY),
-            bottomRight: CGPoint(x: imageSize.width - marginX, y: quadBottomY),
-            bottomLeft: CGPoint(x: marginX, y: quadBottomY)
+            topLeft: CGPoint(x: originX, y: originY),
+            topRight: CGPoint(x: originX + quadWidth, y: originY),
+            bottomRight: CGPoint(x: originX + quadWidth, y: originY + quadHeight),
+            bottomLeft: CGPoint(x: originX, y: originY + quadHeight)
         )
     }
 

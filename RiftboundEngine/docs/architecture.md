@@ -15,54 +15,77 @@ This means your expert system isn't really "validate this specific move" — it'
 
 ## 1. Layered System Overview
 
+This is the original design sketch, written before any of it existed. It's
+now real — three sibling Swift packages implement it, wired together
+through this package's two ingestion protocols
+(`BoardObserving`/`ActionTranslating`). See the root `README.md` for the
+current per-stage status (what's implemented/tested/live in the app).
+
 ```
 ┌─────────────────────────────────────────────┐
-│  Physical Table (OCR + Object Tracking)      │  ← your existing layer
+│  Physical Table                              │  RiftboundVision:
+│  YOLO detection → Object Tracking →          │  CoreMLCardDetector,
+│  calibrated zone resolution                  │  ObjectTracker, ZoneMapper
 └───────────────────┬───────────────────────────┘
-                     │ raw observations (card X now at zone Y, exhausted/ready)
+                     │ VisionEvent (debounced, zone-resolved)
                      ▼
 ┌─────────────────────────────────────────────┐
-│  Event Ingestion / Reconciliation Layer      │  ← NEW
-│  - diffs observed board state vs expected    │
-│  - maps observation → candidate Game Action  │
+│  Event Ingestion (BoardObserving)            │  RiftboundVision:
+│  - VisionEvent → ObservedTableEvent          │  ExpertSystemAdapter
+└───────────────────┬───────────────────────────┘
+                     │ ObservedTableEvent
+                     ▼
+┌─────────────────────────────────────────────┐
+│  NLP Translation (ActionTranslating)         │  RiftboundTextProcessing:
+│  - card text → candidate GameAction          │  ExpertSystemTranslatorAdapter
+│  - resolved against real GameState.zones     │  wrapping ActionTranslatingEngine
 └───────────────────┬───────────────────────────┘
                      │ candidate GameAction
                      ▼
 ┌─────────────────────────────────────────────┐
-│  Legality Validator                          │  ← NEW (core of "expert system")
-│  - checks action against current GameState   │
+│  Legality Validator (core of "expert system")│  this package:
+│  - checks action against current GameState   │  LegalityValidator
 │  - references rules 587–615 (Game Actions)   │
 └───────────────────┬───────────────────────────┘
                      │ accepted GameAction
                      ▼
 ┌─────────────────────────────────────────────┐
-│  State Machine (Turn/Phase/Chain/Showdown)   │  ← NEW
-│  - owns GameState (single source of truth)   │
-│  - applies action, runs Cleanup sweep         │
+│  State Machine (Turn/Phase/Chain/Showdown)   │  this package:
+│  - owns GameState (single source of truth)   │  GameStateStore, GameEngine,
+│  - applies action, runs Cleanup sweep         │  GameActionApplier, Cleanup
 └───────────────────┬───────────────────────────┘
                      │ triggers "ability text needs resolving"
                      ▼
 ┌─────────────────────────────────────────────┐
-│  Ability Resolution Pipeline                 │  ← plugs into your NLP layer
-│  - NLP parses card text → structured Effect  │
-│  - Effect executed against GameState          │
+│  Ability Resolution Pipeline                 │  this package:
+│  - NLP parses card text → structured Effect  │  EffectInstruction (defined,
+│  - Effect executed against GameState          │  not yet executed — see §7)
 └───────────────────┬───────────────────────────┘
                      │ resulting state diff
                      ▼
 ┌─────────────────────────────────────────────┐
-│  Instruction / Feedback Layer                │  ← NEW
-│  - tells player what to physically do next    │
-│  - flags illegal moves already made physically│
-└─────────────────────────────────────────────┘
+│  Instruction / Feedback Layer                │  this package:
+│  - tells player what to physically do next    │  PlayerInstruction
+│  - flags illegal moves already made physically│  (defined; app doesn't
+└─────────────────────────────────────────────┘  render it live yet — see §7)
 ```
 
 The key architectural decision: **GameState is the single source of truth, and the physical table is treated as an untrusted client that proposes actions.** OCR doesn't drive the state directly — it proposes deltas, the validator accepts/rejects them, and only accepted deltas mutate GameState. This is what lets you catch a player physically making an illegal move (e.g. moving a unit to an already-2-controlled battlefield) and flag it instead of silently corrupting your model.
 
 ## 2. Core Data Model
 
+Below is the *original* pre-implementation sketch, kept for the rationale
+in its comments — the real types have since drifted from it in a few
+places (no `Identifiable` conformance; `PlayerZones` field names are
+`legend`/`championZoneCard`, not `legendZone`/`championZone`). Treat this
+as illustrative, not authoritative — for the real shapes, read
+`Sources/RiftboundExpertSystem/Model/*.swift` directly (`GameObject` in
+`Location.swift`, `Unit` in `BoardPermanent.swift`, `PlayerZones` in
+`Zones.swift`).
+
 ```swift
 // Game Objects (rule 119–123) — everything that can produce effects or be a target
-protocol GameObject: Identifiable {
+protocol GameObject {
     var id: ObjectID { get }
     var owner: PlayerID { get }
     var controller: PlayerID { get set }   // rule 179–183, Control ≠ Ownership
@@ -93,8 +116,8 @@ struct PlayerZones {
     var runeDeck: [RuneCard]          // ordered, secret
     var trash: [Card]                 // unordered, public
     var banishment: [Card]            // unordered, public
-    var legendZone: ChampionLegend
-    var championZone: ChampionUnit?   // empty once played to board
+    var legend: ChampionLegend
+    var championZoneCard: MainDeckCard?   // empty once played to board
     var runePool: RunePool            // ephemeral, empties at Draw Phase end + turn end
 }
 ```
@@ -180,20 +203,32 @@ Because OCR gives you physical ground truth (card moved from base to battlefield
 
 Given your Swift 6 strict-concurrency experience from PlantPal:
 
-- **Model `GameState` as an actor.** All mutations (Chain pushes/pops, Cleanup, effect application) go through it serially — this avoids the exact class of races you dealt with in CoreBluetooth handling, and matters more here since OCR events, NLP resolution, and user-facing instructions are all separate async producers.
-- **Make `GameState` itself a `Codable` value type snapshotted inside the actor**, so you can trivially serialize state for replay/debugging/undo (useful for a physical-table app, since players will make mistakes and want to roll back).
-- **Effects and Chain items as an enum, not a class hierarchy** — matches the closed-set nature of section 590–607 and makes exhaustive `switch` your friend for correctness (compiler yells if you add a new Game Action and forget to handle it somewhere).
-- Keep the **OCR/NLP integration behind protocols** (`BoardObserving`, `CardTextParsing`) so you can swap in fixtures/mocks for testing rule logic without needing the camera pipeline running — you'll want to unit-test Chain/Showdown/Cleanup extensively against known rules examples (the rulebook is full of worked examples, e.g. 559.3.c.5, 594.5, 638 — these make excellent test cases verbatim).
+- **`GameState` is a plain, `Sendable` value type; `GameStateStore` is the actor that owns and serializes mutation of it** (implemented — see `Model/GameState.swift`/`StateMachine/GameStateStore.swift`). All mutations (Chain pushes/pops, Cleanup, effect application) go through the store serially — this matters more here than it would elsewhere since detection events, NLP resolution, and user-facing instructions are all separate async producers. `GameState` isn't `Codable` yet (no replay/undo serialization built), which was originally sketched here as a nice-to-have — still a reasonable future addition, not yet needed for anything currently built.
+- **Effects and Chain items as an enum, not a class hierarchy** — matches the closed-set nature of section 590–607 and makes exhaustive `switch` your friend for correctness (compiler yells if you add a new Game Action and forget to handle it somewhere). Implemented: `GameAction`, `EffectInstruction`.
+- Keep the **detection/NLP integration behind protocols** (`BoardObserving`, `ActionTranslating` — implemented in `Ingestion/`) so you can swap in fixtures/mocks for testing rule logic without needing the camera pipeline running. Both are implemented for real now by sibling-package adapters (`RiftboundVision.ExpertSystemAdapter`, `RiftboundTextProcessing.ExpertSystemTranslatorAdapter`), not just fixtures — see `GameEngineTests`/`LegalityValidatorTests` for the fixture-based side of this, and the sibling packages' own test suites for the adapters. The rulebook's worked examples (559.3.c.5, 594.5, 638, etc.) are already used verbatim as test cases across this package's test suite.
 
-## 7. Suggested Build Order
+## 7. Build Order — actual status
 
-1. Core types (GameObject/Zones/Location) + static deck/board setup (rules 100–184)
-2. Turn phase state machine, no Chain yet — just Awaken → Beginning → Channel → Draw → Action → End (515–517)
-3. Chain + priority passing (532–544), tested against Reaction-timing examples in the rulebook
-4. Showdown + Combat steps (545–553, 620–628) — this is the most rule-dense area, budget the most test time here
-5. Cleanup as a first-class function, wired in everywhere
-6. Legality Validator for Standard Move + Play Card only
-7. Effect execution pipeline + Layers, starting with a handful of real cards manually encoded (skip NLP at first — hardcode Jinx/a few commons to validate the pipeline shape)
-8. Wire in NLP output → EffectInstruction mapping
-9. Wire in OCR/tracking → GameAction inference
-10. Feedback/instruction UI layer
+The original suggested order, annotated with what's actually true today
+(cross-check against the root `README.md`'s pipeline status table, which
+is the single source of truth for current state — this list shouldn't
+drift from it again):
+
+1. ✅ Core types (GameObject/Zones/Location) + static deck/board setup (rules 100–184)
+2. ✅ Turn phase state machine — `Phase`/`StartOfTurnStep`/`EndOfTurnStep` (515–517)
+3. ✅ Chain + priority passing (532–544) — `Chain.swift`
+4. ✅ Showdown + Combat steps (545–553, 620–628) — `Showdown.swift`
+5. ✅ Cleanup as a first-class function (518–526) — `Cleanup.swift`, called from `GameEngine.process`
+6. 🟡 Legality Validator — implemented for `standardMove` and `draw` only; every other `GameAction` case (critically `.play`) falls through a `.notImplemented` default in both `LegalityValidator` and `GameActionApplier`. **This is the actual next item**, not a fresh integration step.
+7. 🟡 Effect execution pipeline + Layers — `EffectInstruction` is fully defined (rule 590–607 vocabulary), but nothing executes it against `GameState` yet, and `TargetSpec`/`LocationSpec`/`EffectCondition` are still placeholders (by design — see the type's own doc comment: don't guess the shape before real card text is in hand to pressure-test against). No cards manually encoded yet either.
+8. ✅ Wire in NLP output → candidate `GameAction` mapping — `RiftboundTextProcessing.ExpertSystemTranslatorAdapter` implements `ActionTranslating` for real, resolving against actual `GameState.zones[player].hand` (not a fabricated `ObjectID`). Note this produces `GameAction`, not `EffectInstruction` — item 7 (ability *text* → effect) is a separate, still-unstarted piece from item 8 (a card *entering play* → the action of playing it).
+9. ✅ Wire in detection/tracking → `ObservedTableEvent` — `RiftboundVision.ExpertSystemAdapter` implements `BoardObserving` for real, reconnected as a live second consumer in `RiftboundVisionApp.CameraPipelineController` (independent of the app's own stateless live-detection overlay).
+10. ❌ Feedback/instruction UI layer — `PlayerInstruction` is fully defined, but nothing in `RiftboundVisionApp` constructs a live `GameEngine`/`GameState` yet to produce or render one. The app currently only shows the raw detection count and a debug count of `ObservedTableEvent`s, not real game state or player-facing instructions.
+
+**What's actually blocking end-to-end play**, in priority order: (a) item 6
+— fill in `LegalityValidator`/`GameActionApplier` for `.play` at minimum;
+(b) real game setup (deck loading, player identification) so
+`RiftboundVisionApp` can construct a real `GameState` instead of
+placeholder `PlayerID`s; (c) wiring a live `GameEngine` in the app,
+consuming the already-reconnected `ObservedTableEvent` stream and
+rendering `PlayerInstruction`.

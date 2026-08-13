@@ -29,6 +29,21 @@ public enum GamePhase: String, Sendable, Equatable, Codable, CaseIterable {
         case .cleanup: return "Cleanup"
         }
     }
+
+    /// Short player-facing instruction for the turn control bar — mirrors
+    /// this case's rule citation above rather than restating `displayName`.
+    public var instruction: String {
+        switch self {
+        case .awaken: return "Ready all Game Objects you control (Rule 515.1)."
+        case .beginning: return "Resolve any start-of-turn triggers, then Scoring and Holding (Rule 515.2)."
+        case .channel: return "Channel 2 Runes, plus any turn-one bonus (Rule 515.3)."
+        case .draw: return "Draw 1 card. The Rune Pool empties at the end of this step (Rule 515.4)."
+        case .action: return "Take Discretionary Actions until you're ready to end your turn (Rule 516)."
+        case .ending: return "Resolve any end-of-turn triggers (Rule 517.1)."
+        case .expiration: return "Damage clears, \"this turn\" effects expire, and the Rune Pool empties (Rule 517.2)."
+        case .cleanup: return "Perform Cleanup (Rule 518–526)."
+        }
+    }
 }
 
 /// The physical-table state this app has no way to infer from vision
@@ -67,6 +82,18 @@ public struct ManualGameState: Sendable, Equatable {
             phase = Self.phaseOrder[index + 1]
             return
         }
+        phase = .awaken
+        turnPlayer = (turnPlayer == .player1) ? .player2 : .player1
+        if turnPlayer == .player1 {
+            round += 1
+        }
+    }
+
+    /// Rule 506: jumps straight to the next Turn Player's Awaken phase
+    /// regardless of which phase is currently active — the "I'm done, end
+    /// my turn now" fast path, as opposed to `advance()`'s one-step-at-a-
+    /// time progression through 515–517.
+    public mutating func endTurn() {
         phase = .awaken
         turnPlayer = (turnPlayer == .player1) ? .player2 : .player1
         if turnPlayer == .player1 {

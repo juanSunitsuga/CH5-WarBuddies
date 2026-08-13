@@ -13,6 +13,8 @@ public enum GameActionApplier {
     /// performs no validation of its own.
     public static func apply(_ action: GameAction, to state: inout GameState, proposedBy player: PlayerID) {
         switch action {
+        case .play(let card, let destination, let additionalChoices):
+            applyPlay(card: card, destination: destination, additionalChoices: additionalChoices, to: &state, proposedBy: player)
         case .standardMove(let units, let destination):
             applyStandardMove(units: units, destination: destination, to: &state, proposedBy: player)
         case .draw(let count):
@@ -24,6 +26,76 @@ public enum GameActionApplier {
             // currently keeps this branch unreachable from `GameEngine`).
             break
         }
+    }
+
+    /// Rule 558/560–561/563: Playing a Card, simplified to resolve
+    /// immediately rather than passing through the Chain's open/close cycle
+    /// and Reaction pass-around (563.2.a) — CLAUDE.md point 5 flags the
+    /// Chain as load-bearing for real Reaction/Legion timing, but a live
+    /// single-mat demo with `LegalityValidator` restricted to Neutral Open
+    /// has no second player to pass priority to yet, so there's no
+    /// observable difference today. Revisit once the Chain is actually
+    /// driven by this pipeline instead of only unit-tested in isolation.
+    ///   - 558: remove the card from the Hand.
+    ///   - 561: pay its Energy cost from the Rune Pool (already confirmed
+    ///     payable by `LegalityValidator.validatePlay`).
+    ///   - 563.1.c: a Unit enters the Board exhausted (`Unit.init`'s
+    ///     default) at the chosen Location.
+    ///   - 563.1.d: Gear always enters at the player's Base, Ready,
+    ///     regardless of `destination` (144.2 — `LegalityValidator` already
+    ///     rejects a Battlefield destination for Gear before this runs).
+    ///   - 556.2/563.2.b: a Spell has no board form. Ability resolution
+    ///     isn't implemented yet (`parseAbility` always returns `[]`), so
+    ///     this moves it straight to the Trash rather than executing an
+    ///     effect that doesn't exist — flagged, not guessed at.
+    private static func applyPlay(
+        card cardID: ObjectID,
+        destination: PlayDestination,
+        additionalChoices: [ObjectID],
+        to state: inout GameState,
+        proposedBy player: PlayerID
+    ) {
+        guard var zones = state.zones[player],
+              let index = zones.hand.firstIndex(where: { $0.id == cardID }) else { return }
+        let card = zones.hand.remove(at: index)
+        zones.runePool.energy = max(0, zones.runePool.energy - card.cost.energy)
+
+        switch card.type {
+        case .unit(let isChampion):
+            let location: Location
+            switch destination {
+            case .base(let owner): location = .base(owner)
+            case .battlefield(let battlefieldID): location = .battlefield(battlefieldID)
+            case .none: location = .base(player)  // shouldn't happen — LegalityValidator rejects `.none` for Units
+            }
+            let unit = Unit(
+                owner: player,
+                cardDefinitionID: card.definitionID,
+                name: card.name,
+                isChampion: isChampion,
+                baseMight: card.might ?? 0,
+                location: location
+            )
+            state.units[unit.id] = unit
+
+            if case .battlefield(let battlefieldID) = location {
+                var control = state.battlefieldControl[battlefieldID] ?? BattlefieldControl()
+                if control.controller != player {   // 181.3.a, same as applyStandardMove
+                    control.isContested = true
+                    control.contestedBy = player
+                }
+                state.battlefieldControl[battlefieldID] = control
+            }
+
+        case .gear:
+            let gear = Gear(owner: player, cardDefinitionID: card.definitionID, name: card.name)
+            state.gear[gear.id] = gear
+
+        case .spell:
+            zones.trash.append(card)
+        }
+
+        state.zones[player] = zones
     }
 
     /// Rule 140: Standard Move.
