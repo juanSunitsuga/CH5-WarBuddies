@@ -10,31 +10,63 @@ import SwiftData
 
 @MainActor
 public final class SwiftDataCardService {
-    
-    private let container: ModelContainer
-    private let context: ModelContext
-    
+
+    private let container: ModelContainer?
+    private let context: ModelContext?
+
+    /// This package's own store file.
+    ///
+    /// A `ModelConfiguration` without an explicit URL uses the process-wide
+    /// default (`Application Support/default.store`) — which the *host app*
+    /// is already using for its own, completely different schema. Two
+    /// containers backing one file with mismatched models makes the store
+    /// unopenable, and SwiftData then throws from inside a fault, far from
+    /// the cause: `NSCocoaErrorDomain 256, "default.store couldn't be
+    /// opened"` raised in the app's own board-state code. Owning a
+    /// separate file keeps the two schemas from colliding at all.
+    private static var storeURL: URL? {
+        guard let base = try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+        ) else { return nil }
+        let directory = base.appendingPathComponent("RiftboundTextProcessing", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("CardTags.store")
+    }
+
     public init() {
-        do {
-            let schema = Schema([RiftboundCard.self])
-            let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-            self.container = try ModelContainer(for: schema, configurations: [config])
+        let schema = Schema([RiftboundCard.self])
+        let configuration: ModelConfiguration = Self.storeURL.map {
+            ModelConfiguration(schema: schema, url: $0)
+        } ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+
+        // Deliberately not `fatalError`: this store is a cache in front of
+        // the bundled SQLite database, which remains the source of truth.
+        // An unwritable or incompatible store should cost cached tags, not
+        // take the whole app down at launch.
+        if let container = try? ModelContainer(for: schema, configurations: [configuration]) {
+            self.container = container
             self.context = ModelContext(container)
-        } catch {
-            fatalError("Failed to initialize SwiftData ModelContainer: \(error)")
+        } else {
+            print("⚠️ SwiftData card cache unavailable — falling back to the bundled SQLite database only.")
+            self.container = nil
+            self.context = nil
         }
     }
     
-    /// Lookup card by ID in SwiftData
+    /// Lookup card by ID in SwiftData. `nil` both when the card isn't
+    /// cached and when there's no usable store — callers fall back to the
+    /// bundled SQLite database either way.
     public func fetchCard(by cardID: String) -> RiftboundCard? {
+        guard let context else { return nil }
         let descriptor = FetchDescriptor<RiftboundCard>(
             predicate: #Predicate { $0.cardID == cardID }
         )
         return try? context.fetch(descriptor).first
     }
-    
+
     /// Insert or update a card tagged by the Foundation Model into SwiftData
     public func saveCard(_ card: RiftboundCard) {
+        guard let context else { return }
         context.insert(card)
         try? context.save()
     }
@@ -47,6 +79,7 @@ public final class SwiftDataCardService {
     /// so it's safe to call on every launch and isn't defeated by unrelated
     /// Foundation-Model-cached entries already in the store.
     public func seedFromBundledDatabase() {
+        guard let context else { return }
         let cards = CardDatabaseService().fetchAllCards()
         guard !cards.isEmpty else { return }
 
