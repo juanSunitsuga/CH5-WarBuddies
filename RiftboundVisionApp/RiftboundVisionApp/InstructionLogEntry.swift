@@ -18,6 +18,23 @@ struct InstructionLogEntry: Identifiable {
     let verdict: Verdict
     let headline: String
     let detail: String?
+    /// What the camera actually saw, phrased as a zone transition
+    /// ("Hand → Battlefield"). Kept separate from `headline` so the log can
+    /// show the *observation* and the *verdict* as two distinct columns —
+    /// when they disagree, that difference is the whole debugging signal.
+    let eventSummary: String
+    let timestamp: Date
+
+    /// The observation with no verdict attached — for events the pipeline
+    /// saw but never ran the engine on (e.g. NLP translation switched off
+    /// in the pipeline settings).
+    init(unprocessed event: ObservedTableEvent, cardName: String?, reason: String) {
+        verdict = .informational
+        headline = reason
+        detail = nil
+        eventSummary = Self.summarize(event, card: cardName ?? "unidentified card")
+        timestamp = Date()
+    }
 
     /// `note` is the translator's out-of-band explanation for an event it
     /// understood but couldn't turn into a proposable action (see
@@ -25,8 +42,10 @@ struct InstructionLogEntry: Identifiable {
     /// such event reads as "couldn't tell what it meant," which is wrong
     /// for the common cases — a Battlefield being placed is perfectly
     /// understood, it just isn't a move.
-    init(instruction: PlayerInstruction, cardName: String?, note: String? = nil) {
+    init(instruction: PlayerInstruction, cardName: String?, note: String? = nil, event: ObservedTableEvent? = nil) {
         let card = cardName ?? "an unidentified card"
+        eventSummary = event.map { Self.summarize($0, card: cardName ?? "unidentified card") } ?? "—"
+        timestamp = Date()
 
         switch instruction {
         case .actionAccepted(let action, let followUp):
@@ -64,6 +83,32 @@ struct InstructionLogEntry: Identifiable {
             verdict = .informational
             headline = "That's the game — you win."
             detail = nil
+        }
+    }
+
+    /// Renders the raw observation. `TableRegion` can only express Hand,
+    /// Base, and Battlefield (rule 106.5.b), so a card entering the Rune
+    /// Area or Trash never reaches this at all — if a physical move
+    /// produces no log row, that gap is the first place to look.
+    static func summarize(_ event: ObservedTableEvent, card: String) -> String {
+        switch event.kind {
+        case .cardAppeared(let region):
+            return "\(card): appeared in \(name(region))"
+        case .cardRemoved(let region):
+            return "\(card): left \(name(region))"
+        case .cardMoved(let from, let to):
+            return "\(card): \(name(from)) → \(name(to))"
+        case .cardOrientationChanged(let region, let nowExhausted):
+            return "\(card): \(nowExhausted ? "exhausted" : "readied") in \(name(region))"
+        }
+    }
+
+    private static func name(_ region: TableRegion) -> String {
+        if region.isHandRegion { return "Hand" }
+        switch region.location {
+        case .base: return "Base"
+        case .battlefield: return "Battlefield"
+        case nil: return "unknown zone"
         }
     }
 

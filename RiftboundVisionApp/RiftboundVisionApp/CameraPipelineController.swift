@@ -473,7 +473,12 @@ final class CameraPipelineController: ObservableObject {
         expertSystemEventLoop = Task {
             for await event in adapter.events() {
                 await self.recordObservedEvent(event)
-                guard await self.isStageActive(.nlpTranslation) else { continue }
+                guard await self.isStageActive(.nlpTranslation) else {
+                    // Still log it, otherwise switching stage ③ off looks
+                    // identical to the camera seeing nothing at all.
+                    await self.recordUnprocessed(event)
+                    continue
+                }
                 let instruction = await engine.process(event)
                 await self.recordInstruction(instruction, for: event)
             }
@@ -521,6 +526,21 @@ final class CameraPipelineController: ObservableObject {
         }
     }
 
+    private func recordUnprocessed(_ event: RiftboundExpertSystem.ObservedTableEvent) {
+        append(InstructionLogEntry(
+            unprocessed: event,
+            cardName: cardName(for: event),
+            reason: "NLP translation is switched off — event seen but not interpreted."
+        ))
+    }
+
+    private func append(_ entry: InstructionLogEntry) {
+        instructions.insert(entry, at: 0)
+        if instructions.count > 30 {
+            instructions.removeLast(instructions.count - 30)
+        }
+    }
+
     private func recordInstruction(_ instruction: PlayerInstruction, for event: RiftboundExpertSystem.ObservedTableEvent) {
         // Consume (not just read) the note the translator left during this
         // same event's `GameEngine.process` call, so it can't leak onto a
@@ -528,12 +548,10 @@ final class CameraPipelineController: ObservableObject {
         let entry = InstructionLogEntry(
             instruction: instruction,
             cardName: cardName(for: event),
-            note: translationNote.take()
+            note: translationNote.take(),
+            event: event
         )
-        instructions.insert(entry, at: 0)
-        if instructions.count > 30 {
-            instructions.removeLast(instructions.count - 30)
-        }
+        append(entry)
     }
 
     /// The printed name behind an event's `CardDefID`, for instruction text

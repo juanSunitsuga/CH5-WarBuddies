@@ -22,6 +22,7 @@ struct DetectedCardsPanel: View {
     @State private var searchText = ""
     @State private var isScoreExpanded = true
     @State private var isDetailsExpanded = true
+    @State private var isLogExpanded = true
     @State private var isShowingSettings = false
 
     private static let panelBackground = Color(red: 0.11, green: 0.23, blue: 0.33)
@@ -65,6 +66,8 @@ struct DetectedCardsPanel: View {
                     scoreSection
                     Divider().overlay(.white.opacity(0.15))
                     detailsSection
+                    Divider().overlay(.white.opacity(0.15))
+                    logSection
                 }
                 .padding(16)
             }
@@ -114,6 +117,92 @@ struct DetectedCardsPanel: View {
                     detectedList
                 }
             }
+        }
+    }
+
+    /// Every table event the pipeline produced, newest first, paired with
+    /// what the engine decided about it. The two halves are shown
+    /// separately on purpose: when the camera clearly saw a move but the
+    /// verdict is "nothing to do", the disagreement between the two lines
+    /// is what points at the stage that's wrong.
+    private var logSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                sectionHeader("Event Log", isExpanded: $isLogExpanded)
+                if !pipeline.instructions.isEmpty {
+                    Text("\(pipeline.instructions.count)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+            }
+
+            if isLogExpanded {
+                if pipeline.instructions.isEmpty {
+                    Text("No table events yet. Move a card on the mat to see one.")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.45))
+                } else {
+                    ForEach(pipeline.instructions) { entry in
+                        logRow(entry)
+                    }
+                }
+            }
+        }
+    }
+
+    private func logRow(_ entry: InstructionLogEntry) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon(for: entry.verdict))
+                .font(.caption)
+                .foregroundStyle(color(for: entry.verdict))
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 3) {
+                // What the camera saw.
+                Text(entry.eventSummary)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                // What the engine made of it.
+                Text(entry.headline)
+                    .font(.caption2)
+                    .foregroundStyle(color(for: entry.verdict).opacity(0.95))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let detail = entry.detail {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Text(entry.timestamp, format: .dateTime.hour().minute().second())
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.35))
+        }
+        .padding(8)
+        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func icon(for verdict: InstructionLogEntry.Verdict) -> String {
+        switch verdict {
+        case .accepted: return "checkmark.circle.fill"
+        case .rejected: return "exclamationmark.triangle.fill"
+        case .unrecognized: return "questionmark.circle.fill"
+        case .informational: return "info.circle.fill"
+        }
+    }
+
+    private func color(for verdict: InstructionLogEntry.Verdict) -> Color {
+        switch verdict {
+        case .accepted: return .green
+        case .rejected: return .orange
+        case .unrecognized: return .yellow
+        case .informational: return .cyan
         }
     }
 

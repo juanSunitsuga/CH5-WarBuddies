@@ -102,13 +102,22 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
     ) async -> GameAction? {
         // No identity, nothing to translate — same "not proposable" outcome
         // `ActionTranslating`'s doc comment describes for tracking jitter.
-        guard let card = event.card else { return nil }
+        guard let card = event.card else {
+            onUntranslatable?("Something moved, but the recognizer couldn't say which card it was.")
+            return nil
+        }
 
         switch event.kind {
-        case .cardOrientationChanged, .cardRemoved:
-            // Rotation and removal aren't "a card was played" signatures —
-            // Exhaust/Ready and leaving-play are handled elsewhere in the
-            // pipeline (rules 592/593, Cleanup), not by this translator.
+        case .cardOrientationChanged(_, let nowExhausted):
+            // Rotation isn't a "card was played" signature — Exhaust/Ready
+            // (rules 592/593) is handled elsewhere in the pipeline, not by
+            // this translator.
+            onUntranslatable?("Turned \(nowExhausted ? "sideways (exhausted)" : "upright (readied)") — tracked, but not a move to propose.")
+            return nil
+
+        case .cardRemoved:
+            // Leaving play is Cleanup's business, not a proposable action.
+            onUntranslatable?("Left the table — removal is resolved during Cleanup, not proposed as a move.")
             return nil
 
         case .cardAppeared(let region):
@@ -116,6 +125,7 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
                 // A card newly visible *in hand* isn't a play — it's the
                 // camera catching up to a card that was already there
                 // (game start, hand reshuffled into view). Nothing to infer.
+                onUntranslatable?("Came into view in the hand — nothing was played.")
                 return nil
             }
             return await translate(card: card, from: nil, to: region, state: state, player: player)
