@@ -427,7 +427,10 @@ final class CameraPipelineController: ObservableObject {
             battlefieldCalibration: battlefieldSlotIDs,
             resolveLabel: { label in
                 database.printing(approximatelyNamed: label).map { CardDefID(rawValue: $0.riftboundID) }
-            }
+            },
+            // One physical mat, one seat: an event in an unowned zone (the
+            // Battlefield) can only be this player's.
+            defaultSeat: .player1
         )
         expertSystemAdapter = adapter
         expertSystemFrameIndex = 0
@@ -651,6 +654,12 @@ final class CameraPipelineController: ObservableObject {
         // Object Tracking off in the pipeline settings actually stops it,
         // not just stage 1.
         if isStageActive(.objectTracking), let expertSystemAdapter {
+            // Re-point zone resolution at the *current* calibration before
+            // every ingest. The overlay always drew from `calibration`
+            // live, so a mis-set mapper looked perfectly aligned on screen
+            // while silently resolving cards into the wrong zone — or into
+            // none at all, which drops the event entirely.
+            expertSystemAdapter.updateZones(ZoneMapper(zones: calibration.boardZones()))
             expertSystemFrameIndex += 1
             expertSystemAdapter.ingest(detections: detections, frameIndex: expertSystemFrameIndex, timestamp: frame.timestamp)
         }
