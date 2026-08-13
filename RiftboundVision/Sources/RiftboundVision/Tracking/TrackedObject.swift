@@ -41,6 +41,28 @@ public struct TrackedObject: Sendable, Equatable {
 
     public var lastSeenFrame: Int
 
+    /// Stacking order when this object overlaps others: higher sits on top.
+    /// A Unit with an Equipment/Rune tucked beneath it gets the higher
+    /// `zIndex`; the piece underneath keeps a lower one. Populated by
+    /// `UnderlayResolver`, not the tracker — the tracker only knows
+    /// geometry, and z-order depends on card *roles* it can't see.
+    public var zIndex: Int
+    /// IDs of objects physically underlaid beneath this one (an Equipment
+    /// or Rune under a Unit). Also populated by `UnderlayResolver`. Empty
+    /// for a lone card. See `underlaidCardIDs`'s role in surviving
+    /// occlusion: an underlaid piece keeps its identity here even once the
+    /// top card hides its bounding box from the detector.
+    public var underlaidCardIDs: [TrackedObjectID]
+
+    /// Ready (upright) vs Exhausted (tapped), inferred purely from the
+    /// current bounding box — see `CGRect.cardStance`. Cheap and robust
+    /// across the bbox re-initialization that happens when a card rotates,
+    /// unlike `rotation`. This is the identity-free fallback: once a card
+    /// *is* recognized, `CardPrinting.isExhausted(observedBoundingBox:)` is
+    /// the better answer, since it knows whether the card is printed
+    /// portrait or landscape.
+    public var stance: CardStance { boundingBox.cardStance }
+
     /// The class label a recognizer attached to the detection that last
     /// matched this track, if any (e.g. `CoreMLCardDetector`'s YOLO class
     /// name — "Annie Fiery"). `nil` for detectors that don't do identity
@@ -62,6 +84,8 @@ public struct TrackedObject: Sendable, Equatable {
         confidence: Float,
         isVisible: Bool,
         lastSeenFrame: Int,
+        zIndex: Int = 0,
+        underlaidCardIDs: [TrackedObjectID] = [],
         recognizedLabel: String? = nil
     ) {
         self.id = id
@@ -75,6 +99,8 @@ public struct TrackedObject: Sendable, Equatable {
         self.confidence = confidence
         self.isVisible = isVisible
         self.lastSeenFrame = lastSeenFrame
+        self.zIndex = zIndex
+        self.underlaidCardIDs = underlaidCardIDs
         self.recognizedLabel = recognizedLabel
     }
 }

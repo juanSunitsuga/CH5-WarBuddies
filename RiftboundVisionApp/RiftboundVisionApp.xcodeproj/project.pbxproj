@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -22,6 +22,7 @@
 		76DA6F984DFB4D99A0C5E470 /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880B3B2F2F93462E90B88A3A /* CardDetailView.swift */; };
 		A85A01502EB54B35B708A490 /* DetectedCardsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */; };
 		E16FF14ECC8F4448823BFD1F /* RiftboundExpertSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 1A78B4275C9F40C0A74AFCE8 /* RiftboundExpertSystem */; };
+		973FD350302AF2FF00FB41ED /* CardIntegrationPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 973FD34F302AF2FF00FB41ED /* CardIntegrationPipeline.swift */; };
 		E9DDFFDCB8224BC3BC9ED19C /* RiftboundTextProcessing in Frameworks */ = {isa = PBXBuildFile; productRef = C060F6247F344B33BA6FE317 /* RiftboundTextProcessing */; };
 		FB1E6BC3244E442BAF1B7766 /* GameSessionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72026DCCA9ED4F599499A115 /* GameSessionBuilder.swift */; };
 		60C3BF9F45FE4D8AA0EFFCE3 /* InstructionLogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */; };
@@ -47,6 +48,7 @@
 		3055869C4ECE495FA5A42260 /* GameStateBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameStateBar.swift; sourceTree = "<group>"; };
 		880B3B2F2F93462E90B88A3A /* CardDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailView.swift; sourceTree = "<group>"; };
 		B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectedCardsPanel.swift; sourceTree = "<group>"; };
+		973FD34F302AF2FF00FB41ED /* CardIntegrationPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardIntegrationPipeline.swift; sourceTree = "<group>"; };
 		24E64947F63B40999CFAA66D /* TurnControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnControlBar.swift; sourceTree = "<group>"; };
 		72026DCCA9ED4F599499A115 /* GameSessionBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSessionBuilder.swift; sourceTree = "<group>"; };
 		3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstructionLogEntry.swift; sourceTree = "<group>"; };
@@ -54,6 +56,10 @@
 		251D5F4F0E7D46AA9AA7C612 /* ScoreTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreTracker.swift; sourceTree = "<group>"; };
 		ED891118FA894EA18345F333 /* PipelineSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		974B0F3E302C4C9F006D11B9 /* DataModel */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = DataModel; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		EF4B7FFBC02B449CB61D4FF8 /* Frameworks */ = {
@@ -88,6 +94,7 @@
 		86DD048489FD4C61AC3CCD3E /* RiftboundVisionApp */ = {
 			isa = PBXGroup;
 			children = (
+				974B0F3E302C4C9F006D11B9 /* DataModel */,
 				8139118751494CA29BC83F55 /* RiftboundVisionAppApp.swift */,
 				A67FDE6B5FD54571BA3EE059 /* ContentView.swift */,
 				38DB5B31D91340FBAFB23CD8 /* CameraPipelineController.swift */,
@@ -102,6 +109,7 @@
 				3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */,
 				880B3B2F2F93462E90B88A3A /* CardDetailView.swift */,
 				B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */,
+				973FD34F302AF2FF00FB41ED /* CardIntegrationPipeline.swift */,
 				91954CFFD8744AD891AB10D4 /* CardData */,
 				E30AC5E6649148CCA7C653DA /* Resources */,
 				76363767637E4BB6B3E788C4 /* Info.plist */,
@@ -150,6 +158,9 @@
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				974B0F3E302C4C9F006D11B9 /* DataModel */,
 			);
 			name = RiftboundVisionApp;
 			packageProductDependencies = (
@@ -233,6 +244,7 @@
 				60C3BF9F45FE4D8AA0EFFCE3 /* InstructionLogEntry.swift in Sources */,
 				76DA6F984DFB4D99A0C5E470 /* CardDetailView.swift in Sources */,
 				A85A01502EB54B35B708A490 /* DetectedCardsPanel.swift in Sources */,
+				973FD350302AF2FF00FB41ED /* CardIntegrationPipeline.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -456,6 +468,7 @@
 		};
 		C060F6247F344B33BA6FE317 /* RiftboundTextProcessing */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = FF5B29316FF740BF9C8CDC6D /* XCLocalSwiftPackageReference "../RiftboundTextProcessing" */;
 			productName = RiftboundTextProcessing;
 		};
 /* End XCSwiftPackageProductDependency section */

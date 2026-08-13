@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import CoreImage
 import RiftboundVision
 import RiftboundExpertSystem
@@ -156,6 +157,11 @@ final class CameraPipelineController: ObservableObject {
 
     let cardDatabase = CardDatabaseLoader.loadBundled()
 
+    /// Overlaps the rules forbid (currently Unit-on-Unit), recomputed each
+    /// detection poll by `UnderlayResolver` — surfaced so the UI can warn
+    /// the player instead of silently mis-modeling an illegal stack.
+    @Published var illegalOverlaps: [IllegalOverlap] = []
+
     /// Minted once per app session — there's no player-identification UI,
     /// so there's no real per-match `PlayerID` to use yet. `.player1`
     /// (the calibrated mat's owner, "You" throughout this app) maps to
@@ -179,6 +185,40 @@ final class CameraPipelineController: ObservableObject {
     /// keep in sync frame-to-frame.
     private static let detectionPollInterval: TimeInterval = 0.35
     private var lastDetectionTimestamp: TimeInterval?
+
+    // MARK: - Persistence consumer
+
+    /// A *third* consumer of the same polled detections (after the live
+    /// overlay and `expertSystemAdapter`): its own `ObjectTracker`, so the
+    /// durable board store has the stable per-card identity the stateless
+    /// overlay deliberately doesn't keep. `ExpertSystemAdapter` owns its
+    /// tracker privately, so this can't share that one — the duplication is
+    /// the price of not reverting the overlay to tracked mode.
+    private let persistenceTracker = ObjectTracker()
+    private let underlayResolver = UnderlayResolver()
+    private var persistenceFrameIndex = 0
+    private var persistencePreviousTimestamp: TimeInterval?
+
+    /// Durable board store, injected from the app's `ModelContainer`. `nil`
+    /// in previews / the no-arg path, where persistence simply no-ops.
+    private let modelContext: ModelContext?
+    /// In-memory mirror of persisted rows, keyed by tracking id, so the
+    /// per-poll sync doesn't fetch from disk every time — we insert once
+    /// and mutate in place, saving only when a field actually changed.
+    private var persistedCards: [TrackedObjectID: PersistentTrackedCard] = [:]
+    /// How many consecutive detection polls each card has sat in the Trash
+    /// zone. A card only gets deleted after `trashConfirmationPolls`, so a
+    /// card merely dragged *across* the trash area on its way elsewhere
+    /// isn't destroyed. Cleared the moment a card leaves the trash zone.
+    private var trashPollCounts: [TrackedObjectID: Int] = [:]
+    /// ~1s at the 0.35s poll cadence — the design brief's deletion buffer,
+    /// restated in polls now that detection no longer runs per frame.
+    private let trashConfirmationPolls = 3
+
+    /// Rebuilt from `calibration` on every access rather than cached —
+    /// cheap (it's ~15 small polygons), and guarantees it's never one
+    /// poll stale relative to a corner the user just dragged.
+    private var zoneMapper: ZoneMapper { ZoneMapper(zones: calibration.boardZones()) }
 
     private var hasSizedCalibrationToFrame = false
     private var runLoop: Task<Void, Never>?
@@ -226,7 +266,8 @@ final class CameraPipelineController: ObservableObject {
         return .centered(in: frameSize, contentHeight: contentHeight)
     }
 
-    init() {
+    init(modelContext: ModelContext? = nil) {
+        self.modelContext = modelContext
         // Listening starts immediately, not just while capturing — device
         // list changes (an iPhone's Continuity Camera reappearing) should
         // refresh the picker even before the user ever presses Start.
@@ -420,6 +461,13 @@ final class CameraPipelineController: ObservableObject {
         expertSystemFrameIndex = 0
         gameEngine = nil
         gameStateStore = nil
+
+        // Persisted rows survive a stop (that's the point of the durable
+        // store) — only the in-flight bookkeeping resets, since the next
+        // session's tracker mints fresh `TrackedObjectID`s.
+        persistencePreviousTimestamp = nil
+        trashPollCounts = [:]
+        illegalOverlaps = []
     }
 
     deinit {
@@ -541,5 +589,165 @@ final class CameraPipelineController: ObservableObject {
             expertSystemFrameIndex += 1
             expertSystemAdapter.ingest(detections: detections, frameIndex: expertSystemFrameIndex, timestamp: frame.timestamp)
         }
+
+        // Third consumer: stacking + durable board state, off its own
+        // tracker (see `persistenceTracker`'s doc comment).
+        syncBoardState(detections: detections, timestamp: frame.timestamp)
+    }
+
+    /// Tracks this poll's detections, resolves stacking (Equipment/Rune
+    /// under Unit, reject Unit-on-Unit), and mirrors the result into
+    /// SwiftData. No-ops entirely when there's no `modelContext` — nothing
+    /// else in the app reads `illegalOverlaps` off a preview.
+    private func syncBoardState(detections: [Detection], timestamp: TimeInterval) {
+        guard modelContext != nil else { return }
+
+        persistenceFrameIndex += 1
+        let result = persistenceTracker.update(
+            detections: detections,
+            zoneMapper: zoneMapper,
+            frameIndex: persistenceFrameIndex,
+            timestamp: timestamp,
+            previousTimestamp: persistencePreviousTimestamp
+        )
+        persistencePreviousTimestamp = timestamp
+
+        // The tracker only knows geometry; card *roles* come from what the
+        // detector recognized, resolved against the card database here.
+        let resolution = underlayResolver.resolve(result.objects) { [weak self] id in
+            self?.role(for: id, in: result.objects) ?? .unknown
+        }
+        illegalOverlaps = resolution.illegalOverlaps
+
+        // Drop disappeared tracks from our per-object bookkeeping so counts
+        // and cached rows don't leak (the DB row is left as last-known
+        // state; only trash-zone entry deletes it).
+        for id in result.disappearedIDs {
+            trashPollCounts[id] = nil
+            persistedCards[id] = nil
+        }
+
+        syncPersistence(resolution.objects)
+    }
+
+    /// Maps a tracked object to the coarse stacking role `UnderlayResolver`
+    /// needs, via the recognizer's class label. `.unknown` while nothing has
+    /// recognized the card yet, which the resolver treats as "never link,
+    /// never flag."
+    private func role(for id: TrackedObjectID, in objects: [TrackedObject]) -> CardRole {
+        guard let printing = printing(for: id, in: objects) else { return .unknown }
+        switch printing.classification.type {
+        case "Unit": return .unit
+        case "Gear", "Rune": return .attachment
+        default: return .other
+        }
+    }
+
+    /// The recognized `CardPrinting` behind a track, if the detector
+    /// labeled it and the label matches the bundled database — the same
+    /// label→printing lookup `DetectedCardsPanel` does for display.
+    private func printing(for id: TrackedObjectID, in objects: [TrackedObject]) -> CardPrinting? {
+        guard let label = objects.first(where: { $0.id == id })?.recognizedLabel else { return nil }
+        return cardDatabase.printing(approximatelyNamed: label)
+    }
+
+    /// Mirrors this poll's card objects into SwiftData, and deletes a card
+    /// once it's held steady in the Trash zone for `trashConfirmationPolls`
+    /// — the "dead unit → remove from board" path. Deletes only the
+    /// on-board `PersistentTrackedCard` instance, never a card *definition*.
+    private func syncPersistence(_ objects: [TrackedObject]) {
+        guard let modelContext else { return }
+
+        for object in objects where object.type == .card {
+            let zone = zoneMapper.zone(for: object.center)
+
+            if zone == .trash {
+                let count = (trashPollCounts[object.id] ?? 0) + 1
+                trashPollCounts[object.id] = count
+                if count >= trashConfirmationPolls {
+                    deletePersisted(trackingID: object.id, context: modelContext)
+                    trashPollCounts[object.id] = nil
+                    continue
+                }
+            } else {
+                trashPollCounts[object.id] = nil
+            }
+
+            upsert(object, in: objects, zone: zone, context: modelContext)
+        }
+    }
+
+    /// Insert-or-update the row for one object, saving only when a field
+    /// actually changed (cards sitting still shouldn't churn the disk every
+    /// poll). Uses the in-memory cache first, falling back to a fetch for
+    /// rows persisted in a previous session.
+    private func upsert(_ object: TrackedObject, in objects: [TrackedObject], zone: Zone, context: ModelContext) {
+        let printing = printing(for: object.id, in: objects)
+        let zoneRaw = zone.rawValue
+        // Prefer the printing-aware Exhaust check once the card is
+        // recognized (a Battlefield is printed landscape and would read as
+        // permanently tapped under the geometry-only fallback).
+        let stance: CardStance = printing.map {
+            $0.isExhausted(observedBoundingBox: object.boundingBox) ? .exhausted : .ready
+        } ?? object.stance
+        let orientationRaw = stance.rawValue
+        let underlaid = object.underlaidCardIDs
+
+        let card: PersistentTrackedCard
+        if let cached = persistedCards[object.id] {
+            card = cached
+        } else if let fetched = fetchPersisted(trackingID: object.id, context: context) {
+            card = fetched
+            persistedCards[object.id] = fetched
+        } else {
+            let inserted = PersistentTrackedCard(
+                trackingID: object.id,
+                cardID: printing?.riftboundID,
+                displayName: printing?.name,
+                zoneRaw: zoneRaw,
+                orientationRaw: orientationRaw,
+                zIndex: object.zIndex,
+                underlaidTrackingIDs: underlaid,
+                lastSeenFrame: object.lastSeenFrame
+            )
+            context.insert(inserted)
+            persistedCards[object.id] = inserted
+            try? context.save()
+            return
+        }
+
+        // Dirty-check: skip the save entirely if nothing meaningful moved.
+        let changed = card.cardID != printing?.riftboundID
+            || card.displayName != printing?.name
+            || card.zoneRaw != zoneRaw
+            || card.orientationRaw != orientationRaw
+            || card.zIndex != object.zIndex
+            || card.underlaidTrackingIDs != underlaid
+        card.lastSeenFrame = object.lastSeenFrame
+        guard changed else { return }
+
+        card.cardID = printing?.riftboundID
+        card.displayName = printing?.name
+        card.zoneRaw = zoneRaw
+        card.orientationRaw = orientationRaw
+        card.zIndex = object.zIndex
+        card.underlaidTrackingIDs = underlaid
+        card.updatedAt = .now
+        try? context.save()
+    }
+
+    private func fetchPersisted(trackingID: TrackedObjectID, context: ModelContext) -> PersistentTrackedCard? {
+        let descriptor = FetchDescriptor<PersistentTrackedCard>(
+            predicate: #Predicate { $0.trackingID == trackingID }
+        )
+        return try? context.fetch(descriptor).first
+    }
+
+    private func deletePersisted(trackingID: TrackedObjectID, context: ModelContext) {
+        if let card = persistedCards[trackingID] ?? fetchPersisted(trackingID: trackingID, context: context) {
+            context.delete(card)
+            try? context.save()
+        }
+        persistedCards[trackingID] = nil
     }
 }
