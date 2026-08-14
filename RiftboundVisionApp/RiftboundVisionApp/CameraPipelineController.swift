@@ -183,6 +183,11 @@ final class CameraPipelineController: ObservableObject {
     /// still means tracks are being abandoned and re-created.
     var liveTrackCount: Int { trackedObjects.count }
 
+    /// Cards that reached the Trash. Listed for the player, but no longer
+    /// tracked — a card in the Trash is out of play and following it costs
+    /// a tracking slot for the rest of the game.
+    @Published private(set) var discardedCards: [ObjectTracker.DiscardedObject] = []
+
     /// Which `PipelineStage`s the user has asked to run, via the settings
     /// overlay. Independent of `PipelineStage.isWired` — a stage can be
     /// "requested" here and still do nothing if it isn't wired into
@@ -219,12 +224,18 @@ final class CameraPipelineController: ObservableObject {
     private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
     private let ciContext = CIContext()
 
-    /// Matches `feature/riftbound-scanner-prototype`'s
-    /// `DetectionCoordinator.pollInterval` (0.35s) — the CoreML/Vision
-    /// pass is the expensive step and doesn't need to run at full camera
-    /// framerate, especially now that there's no per-object tracking to
-    /// keep in sync frame-to-frame.
-    private static let detectionPollInterval: TimeInterval = 0.35
+    /// How often the detector runs. Tracking can only react as fast as
+    /// this, since a card's position is only ever learned from a detection
+    /// — at the old 0.35s (≈3 Hz) a card could cross half the mat between
+    /// two samples, which is what made fast moves look untracked.
+    ///
+    /// Affordable at ~8 Hz because detection is now restricted to the
+    /// calibrated mat (see `regionOfInterest` at the call site): the model
+    /// sees a fraction of the frame it used to. If a slower Mac can't keep
+    /// up, frames are skipped rather than queued — the check below is a
+    /// "has enough time passed" gate, not a backlog — so this degrades
+    /// into a lower sample rate instead of falling behind.
+    private static let detectionPollInterval: TimeInterval = 0.12
     private var lastDetectionTimestamp: TimeInterval?
 
     // MARK: - Persistence
@@ -437,6 +448,7 @@ final class CameraPipelineController: ObservableObject {
         expertSystemFrameIndex = 0
         trackingEvents = []
         trackedObjects = []
+        discardedCards = []
 
         // Stage ③+④: a real GameState, the NLP translator, and the engine
         // that runs both against every observed event.
@@ -644,12 +656,15 @@ final class CameraPipelineController: ObservableObject {
         }
         lastDetectionTimestamp = frame.timestamp
 
-        // Full-frame scan, no `regionOfInterest` — matches the
-        // prototype's detector, which has no calibrated-area restriction
-        // either. `CoreMLCardDetector`'s own confidence floor and
-        // card-shape (aspect ratio) gate are what keep this from
-        // re-introducing "every square object gets identified."
-        detections = (try? detector.detect(in: frame.pixelBuffer)) ?? []
+        // Scan only the calibrated mat. Two wins at once: the model gets a
+        // much smaller image, which is what pays for the faster poll above,
+        // and clutter off the mat — a keyboard, a hand, a phone — can't
+        // become a `Detection` at all rather than relying on the confidence
+        // and card-shape gates to reject it afterwards.
+        detections = (try? detector.detect(
+            in: frame.pixelBuffer,
+            regionOfInterest: calibration.detectionRegion()
+        )) ?? []
 
         // Second consumer of the same detections, same poll cadence — see
         // `expertSystemAdapter`'s doc comment. Gated on stage 2 so turning
@@ -675,6 +690,7 @@ final class CameraPipelineController: ObservableObject {
                 trackingEvents.removeLast(trackingEvents.count - 60)
             }
             trackedObjects = expertSystemAdapter.trackedObjects
+            discardedCards = expertSystemAdapter.discardedObjects
 
             // Durable board state runs off these same tracked objects, not
             // a second tracker of its own — screen and disk must agree on

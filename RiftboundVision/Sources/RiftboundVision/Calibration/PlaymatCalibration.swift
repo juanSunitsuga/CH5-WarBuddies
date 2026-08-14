@@ -111,6 +111,36 @@ public struct PlaymatCalibration: Sendable, Equatable {
         )
     }
 
+    /// Region the detector should actually scan: every calibrated zone's
+    /// extent, plus a margin.
+    ///
+    /// Not `boundingRect` — that's the calibration quad, and the Hand zone
+    /// deliberately extends past its bottom edge (`y ≈ 1.34`) out onto the
+    /// table. Scanning only the quad would make hand cards undetectable.
+    ///
+    /// Handing this to `ObjectDetecting.detect(in:regionOfInterest:)` is
+    /// what "detection should only look at the mat" means in practice: the
+    /// model sees a smaller image, so inference is cheaper *and* clutter
+    /// off the mat can't become a `Detection` in the first place.
+    ///
+    /// - Parameter margin: fraction of the region's own size to expand by,
+    ///   so a card overhanging a zone edge isn't clipped.
+    public func detectionRegion(
+        template: [PlaymatZoneTemplate] = RiftboundPlaymatTemplate.singlePlayerZones(),
+        margin: CGFloat = 0.04
+    ) -> CGRect {
+        let points = template.flatMap(\.normalizedPolygon).map(map)
+        guard !points.isEmpty else { return boundingRect }
+        let xs = points.map(\.x), ys = points.map(\.y)
+        let rect = CGRect(
+            x: xs.min() ?? 0,
+            y: ys.min() ?? 0,
+            width: (xs.max() ?? 0) - (xs.min() ?? 0),
+            height: (ys.max() ?? 0) - (ys.min() ?? 0)
+        )
+        return rect.insetBy(dx: -rect.width * margin, dy: -rect.height * margin)
+    }
+
     /// Every zone in `template`, mapped through this calibration into real
     /// pixel-space `BoardZone`s — feed the result straight to `ZoneMapper`.
     /// Defaults to the single-player mat layout (`RiftboundPlaymatTemplate

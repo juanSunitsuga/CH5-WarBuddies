@@ -84,12 +84,34 @@ public final class ObjectTracker: @unchecked Sendable {
         occlusionToleranceFrames: Int = 15,
         settledOcclusionToleranceFrames: Int = 300,
         matchDistanceThreshold: CGFloat = 60,
-        identityMemoryFrames: Int = 1_800
+        identityMemoryFrames: Int = 1_800,
+        discardZones: Set<Zone> = [.trash],
+        discardConfirmationFrames: Int = 3
     ) {
         self.occlusionToleranceFrames = occlusionToleranceFrames
         self.settledOcclusionToleranceFrames = settledOcclusionToleranceFrames
         self.matchDistanceThreshold = matchDistanceThreshold
         self.identityMemoryFrames = identityMemoryFrames
+        self.discardZones = discardZones
+        self.discardConfirmationFrames = discardConfirmationFrames
+    }
+
+    /// Records a card as discarded, keyed by identity so the same card
+    /// re-detected in the pile doesn't pile up duplicate rows.
+    private func discard(_ track: TrackedObject, atFrame frameIndex: Int) {
+        tracked.removeValue(forKey: track.id)
+        discardStreaks[track.id] = nil
+        // Don't let identity memory resurrect it — being in the Trash is
+        // the one case where a re-detection should *not* reclaim its ID.
+        retired.removeAll { $0.id == track.id }
+
+        if let label = track.recognizedLabel, discarded.contains(where: { $0.label == label }) { return }
+        discarded.append(DiscardedObject(
+            id: track.id,
+            label: track.recognizedLabel,
+            zone: track.currentZone,
+            discardedAtFrame: frameIndex
+        ))
     }
 
     // MARK: - Identity memory
@@ -113,6 +135,39 @@ public final class ObjectTracker: @unchecked Sendable {
     /// wasn't following anything, it was renaming everything. Re-detecting
     /// a card we can *name* should reclaim the number it already had.
     private var retired: [RetiredIdentity] = []
+
+    /// A card that reached a discard zone and is no longer tracked.
+    public struct DiscardedObject: Sendable, Equatable, Identifiable {
+        public let id: TrackedObjectID
+        /// Recognizer label, e.g. `"Noxian Drummer"`. `nil` if the card
+        /// reached the Trash without ever being identified.
+        public let label: String?
+        public let zone: Zone
+        public let discardedAtFrame: Int
+    }
+
+    /// Cards that have reached a discard zone this session, oldest first.
+    public private(set) var discarded: [DiscardedObject] = []
+
+    /// Zones where an object stops being tracked entirely.
+    ///
+    /// A card in the Trash is out of play: it will sit in that pile for the
+    /// rest of the game, and every poll spent following it is work that
+    /// buys nothing. Dropping the track also stops the pile from consuming
+    /// tracking IDs.
+    ///
+    /// Detections *inside* a discard zone never create a track at all —
+    /// without that rule the pile would mint a fresh ID every poll, which
+    /// is worse than tracking it.
+    public let discardZones: Set<Zone>
+
+    /// Consecutive polls a card must hold a discard zone before its track
+    /// is dropped, so a card passing *over* the Trash on its way somewhere
+    /// else isn't retired mid-flight.
+    public let discardConfirmationFrames: Int
+
+    /// Tracks currently accumulating time in a discard zone.
+    private var discardStreaks: [TrackedObjectID: Int] = [:]
 
     /// How long a retired identity stays claimable, in polls. Long enough
     /// to survive a hand resting on the table or a card lifted to be read,
@@ -305,13 +360,31 @@ public final class ObjectTracker: @unchecked Sendable {
                 nextID += 1
                 return fresh
             }()
+            let zone = zoneMapper.zone(for: detection.center)
+
+            // A card detected inside a discard zone is never tracked. The
+            // Trash pile would otherwise mint a fresh ID every single poll,
+            // which costs more than tracking it would.
+            if discardZones.contains(zone) {
+                discard(
+                    TrackedObject(
+                        id: id, type: detection.type, center: detection.center,
+                        boundingBox: detection.boundingBox, rotation: detection.rotation,
+                        previousZone: zone, currentZone: zone, confidence: detection.confidence,
+                        isVisible: true, lastSeenFrame: frameIndex,
+                        recognizedLabel: detection.recognizedLabel
+                    ),
+                    atFrame: frameIndex
+                )
+                continue
+            }
+
             // A brand-new track was, by definition, seen this frame. Without
             // this the occlusion sweep below — which walks every track *not*
             // in `matchedTrackIDs` — immediately marked each new object
             // invisible on its own first frame, so a card was drawn dimmed
             // the moment it appeared and never counted as seen.
             matchedTrackIDs.insert(id)
-            let zone = zoneMapper.zone(for: detection.center)
             tracked[id] = TrackedObject(
                 id: id,
                 type: detection.type,
@@ -327,6 +400,21 @@ public final class ObjectTracker: @unchecked Sendable {
                 recognizedLabel: detection.recognizedLabel
             )
             appearedIDs.append(id)
+        }
+
+        // Cards that have settled in a discard zone stop being tracked.
+        // Confirmed over several polls so a card carried *across* the Trash
+        // on its way somewhere else isn't retired mid-flight.
+        for (id, track) in tracked where matchedTrackIDs.contains(id) {
+            guard discardZones.contains(track.currentZone) else {
+                discardStreaks[id] = nil
+                continue
+            }
+            let streak = (discardStreaks[id] ?? 0) + 1
+            discardStreaks[id] = streak
+            if streak >= discardConfirmationFrames {
+                discard(track, atFrame: frameIndex)
+            }
         }
 
         // Unmatched existing tracks: still-occluded, or finally dropped.
