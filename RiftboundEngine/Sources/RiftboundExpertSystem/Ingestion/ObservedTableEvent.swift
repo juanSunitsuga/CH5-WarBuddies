@@ -16,7 +16,14 @@
 public struct ObservedTableEvent: Sendable {
     public enum Kind: Sendable, Equatable {
         case cardAppeared(region: TableRegion)
-        case cardMoved(from: TableRegion, to: TableRegion)
+        /// `wasExhausted`: the moved object's stance (592/593 — landscape
+        /// vs. printed portrait) at the moment of this move, straight off
+        /// the bounding box, same source `cardOrientationChanged`'s
+        /// `nowExhausted` uses. Carried here (not just on
+        /// `cardOrientationChanged`) because a Rune moving to the Rune
+        /// Deck while still Exhausted is itself the fact worth reporting —
+        /// see `GameAction.recycleRune`.
+        case cardMoved(from: TableRegion, to: TableRegion, wasExhausted: Bool)
         case cardOrientationChanged(region: TableRegion, nowExhausted: Bool)
         case cardRemoved(region: TableRegion)  // e.g. physically discarded/trashed
     }

@@ -21,8 +21,8 @@ public enum GameActionApplier {
             applyDraw(count: count, to: &state, player: player)
         case .channel(let count, _):
             applyChannel(count: count, to: &state, player: player)
-        case .recycleRune(let count):
-            applyRecycleRune(count: count, to: &state, player: player)
+        case .recycleRune(let domain, let wasExhausted):
+            applyRecycleRune(domain: domain, wasExhausted: wasExhausted, to: &state, player: player)
         default:
             // TODO: remaining GameAction cases — add here once
             // LegalityValidator gains real logic for them (see
@@ -42,7 +42,10 @@ public enum GameActionApplier {
     /// driven by this pipeline instead of only unit-tested in isolation.
     ///   - 558: remove the card from the Hand.
     ///   - 561: pay its Energy cost from the Rune Pool (already confirmed
-    ///     payable by `LegalityValidator.validatePlay`).
+    ///     payable by `LegalityValidator.validatePlay`), and its Power cost
+    ///     by consuming matching entries from `RunePool.power` (also
+    ///     pre-confirmed available/eligible by the validator — see its
+    ///     doc comment for what "matching" means).
     ///   - 563.1.c: a Unit enters the Board exhausted (`Unit.init`'s
     ///     default) at the chosen Location.
     ///   - 563.1.d: Gear always enters at the player's Base, Ready,
@@ -63,6 +66,7 @@ public enum GameActionApplier {
               let index = zones.hand.firstIndex(where: { $0.id == cardID }) else { return }
         let card = zones.hand.remove(at: index)
         zones.runePool.energy = max(0, zones.runePool.energy - card.cost.energy)
+        zones.runePool.power = consumingPower(card.cost.powerCost, eligibleDomains: card.cost.eligibleDomains, from: zones.runePool.power)
 
         switch card.type {
         case .unit(let isChampion):
@@ -167,7 +171,10 @@ public enum GameActionApplier {
     /// touches the aggregate `RunePool.energy` plus the cumulative
     /// `totalRunesChanneled` tally `GameState` keeps for the pace check —
     /// it does not remove cards from `zones.runeDeck` one-for-one, since
-    /// there's no per-Rune identity here to remove.
+    /// there's no per-Rune identity here to remove. Deliberately NOT
+    /// domain-typed, unlike `applyRecycleRune` — Energy is paid by
+    /// exhausting Runes regardless of Domain (130.2), so which Domain got
+    /// Channeled doesn't matter for anything Energy touches.
     private static func applyChannel(count: Int, to state: inout GameState, player: PlayerID) {
         guard var zones = state.zones[player] else { return }
         zones.runePool.energy += count
@@ -179,16 +186,60 @@ public enum GameActionApplier {
         }
     }
 
-    /// Rule 130.3: Recycle Rune(s) to pay a Power cost. Mirrors
-    /// `applyChannel` — aggregate-only, records the count against
-    /// `totalRunesRecycled` so `totalRunesChanneled - totalRunesRecycled`
-    /// stays the correct "should still be visible in the Rune Area" figure
-    /// for the vision layer's live count to reconcile against.
-    private static func applyRecycleRune(count: Int, to state: inout GameState, player: PlayerID) {
-        state.totalRunesRecycled[player, default: 0] += count
+    /// Rule 130.3: Recycle one Rune of `domain` to pay a Power cost — adds
+    /// it to the spendable `RunePool.power` pool (which `applyPlay`
+    /// consumes from and `LegalityValidator.validatePlay` checks against)
+    /// and separately records the recycle against the cumulative
+    /// `totalRunesRecycled` tally, so `totalRunesChanneled -
+    /// totalRunesRecycled` stays the correct "should still be visible in
+    /// the Rune Area" figure for the vision layer's live count to
+    /// reconcile against. These two effects are independent — the pool
+    /// entry gets consumed by a later Play, but the recycle still
+    /// happened, so the cumulative tally does not reverse.
+    ///
+    /// `wasExhausted` is threaded through (not branched on) purely so this
+    /// signature — and the `pendingLimitedActions` equality lookup below —
+    /// match the exact action `LegalityValidator.validateRecycleRune`
+    /// already confirmed legal. It has no separate effect here: per this
+    /// enum's own doc comment, callers only reach `apply` after validation
+    /// already rejected `wasExhausted == true`.
+    private static func applyRecycleRune(domain: Domain, wasExhausted: Bool, to state: inout GameState, player: PlayerID) {
+        guard var zones = state.zones[player] else { return }
+        zones.runePool.power.append(.domain(domain))
+        state.zones[player] = zones
+        state.totalRunesRecycled[player, default: 0] += 1
 
-        if let index = state.pendingLimitedActions[player]?.firstIndex(of: .recycleRune(count: count)) {
+        if let index = state.pendingLimitedActions[player]?.firstIndex(of: .recycleRune(domain: domain, wasExhausted: wasExhausted)) {
             state.pendingLimitedActions[player]?.remove(at: index)
         }
+    }
+
+    /// Removes `count` entries from `pool` that are eligible to pay a cost
+    /// restricted to `eligibleDomains` — a `.universal` entry always
+    /// matches (156.2.b); a `.domain(d)` entry matches iff `d` is in
+    /// `eligibleDomains`. Non-matching entries are left untouched
+    /// regardless of position. If `pool` has fewer matching entries than
+    /// `count` (shouldn't happen — `LegalityValidator` confirms
+    /// availability first), removes as many as exist and stops; it does
+    /// not go negative or touch non-matching entries to make up the
+    /// shortfall.
+    private static func consumingPower(_ count: Int, eligibleDomains: [Domain], from pool: [PowerType]) -> [PowerType] {
+        guard count > 0 else { return pool }
+        var remaining = count
+        var result: [PowerType] = []
+        result.reserveCapacity(pool.count)
+        for entry in pool {
+            let isEligible: Bool
+            switch entry {
+            case .universal: isEligible = true
+            case .domain(let d): isEligible = eligibleDomains.contains(d)
+            }
+            if remaining > 0, isEligible {
+                remaining -= 1
+            } else {
+                result.append(entry)
+            }
+        }
+        return result
     }
 }

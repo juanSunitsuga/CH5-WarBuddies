@@ -71,6 +71,56 @@ struct LegalityValidatorTests {
 
         #expect(result.failureValue == .destinationOccupiedByTwoOtherControllers(battlefield.id))
     }
+
+    /// Rule 130.2/130.3: a Rune already Exhausted has already paid an
+    /// Energy cost this cycle — Recycling it too would spend one physical
+    /// Rune for both Energy and Power. Checked before authorization, so
+    /// this fails as `recycledExhaustedRune` even with no authorization
+    /// set up at all — the double-spend is the actual problem being
+    /// reported, not the missing authorization.
+    @Test("Recycling an already-Exhausted Rune is rejected (130.2/130.3)")
+    func recyclingExhaustedRuneIsRejected() {
+        let (state, playerA, _, _) = TestFixtures.makeTwoPlayerState()
+
+        let result = LegalityValidator.validate(
+            .recycleRune(domain: .fury, wasExhausted: true),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.failureValue == .recycledExhaustedRune)
+    }
+
+    /// Same Rune, but observed Ready — falls through to the normal 589.2
+    /// authorization check (and fails there, since nothing authorized it),
+    /// confirming the Exhausted check doesn't block a legitimately Ready
+    /// Recycle.
+    @Test("Recycling a Ready Rune reaches the normal 589.2 authorization check")
+    func recyclingReadyRuneReachesAuthorizationCheck() {
+        let (state, playerA, _, _) = TestFixtures.makeTwoPlayerState()
+
+        let result = LegalityValidator.validate(
+            .recycleRune(domain: .fury, wasExhausted: false),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.failureValue == .limitedActionNotAuthorized(.recycleRune(domain: .fury, wasExhausted: false)))
+    }
+
+    @Test("Recycling a Ready, authorized Rune is legal")
+    func recyclingReadyAuthorizedRuneSucceeds() {
+        var (state, playerA, _, _) = TestFixtures.makeTwoPlayerState()
+        state.authorize(.recycleRune(domain: .fury, wasExhausted: false), for: playerA)
+
+        let result = LegalityValidator.validate(
+            .recycleRune(domain: .fury, wasExhausted: false),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.isSuccess)
+    }
 }
 
 private extension Result where Success == Void, Failure == LegalityValidator.Failure {

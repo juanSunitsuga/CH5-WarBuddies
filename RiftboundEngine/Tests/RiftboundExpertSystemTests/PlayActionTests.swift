@@ -12,6 +12,8 @@ struct PlayActionTests {
         name: String = "Test Unit Card",
         type: MainDeckCardType = .unit(isChampion: false),
         energy: Int = 0,
+        powerCost: Int = 0,
+        eligibleDomains: [Domain] = [],
         might: Int? = 3
     ) -> MainDeckCard {
         MainDeckCard(
@@ -19,7 +21,7 @@ struct PlayActionTests {
             owner: owner,
             name: name,
             type: type,
-            cost: Cost(energy: energy),
+            cost: Cost(energy: energy, powerCost: powerCost, eligibleDomains: eligibleDomains),
             might: might
         )
     }
@@ -95,6 +97,112 @@ struct PlayActionTests {
         )
 
         #expect(result.failureValue == .insufficientEnergy(required: 5, available: 1))
+    }
+
+    // MARK: - Power cost (560–561/130.3)
+
+    /// A single-Domain card requiring 2 Chaos is rejected if the player
+    /// Recycled 2 Fury instead — the wrong Domain, not just the wrong
+    /// count.
+    @Test("Playing a card is rejected when the recycled Runes are the wrong Domain")
+    func rejectsWrongDomainRecycle() {
+        var (state, playerA, _, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, powerCost: 2, eligibleDomains: [.chaos])
+        state.zones[playerA]?.hand.append(card)
+        state.zones[playerA]?.runePool.power = [.domain(.fury), .domain(.fury)]
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .battlefield(battlefieldID), additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.failureValue == .insufficientPower(required: 2, available: 0))
+    }
+
+    /// Same card (2 Chaos required), but the player Recycled 1 Fury + 1
+    /// Chaos — one matching entry isn't enough even though 2 Runes total
+    /// were spent.
+    @Test("Playing a card is rejected when only some recycled Runes match the required Domain")
+    func rejectsPartiallyMatchingRecycle() {
+        var (state, playerA, _, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, powerCost: 2, eligibleDomains: [.chaos])
+        state.zones[playerA]?.hand.append(card)
+        state.zones[playerA]?.runePool.power = [.domain(.fury), .domain(.chaos)]
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .battlefield(battlefieldID), additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.failureValue == .insufficientPower(required: 2, available: 1))
+    }
+
+    /// A dual-Domain card (Tibbers-style: power 2, domains [Fury, Chaos])
+    /// accepts any combination from its listed Domains — one of each is
+    /// exactly as legal as two of a single one.
+    @Test("Playing a dual-Domain card accepts one Rune of each listed Domain")
+    func acceptsOneOfEachEligibleDomain() {
+        var (state, playerA, _, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, powerCost: 2, eligibleDomains: [.fury, .chaos])
+        state.zones[playerA]?.hand.append(card)
+        state.zones[playerA]?.runePool.power = [.domain(.fury), .domain(.chaos)]
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .battlefield(battlefieldID), additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.isSuccess)
+    }
+
+    /// A Universal Power token (156.2.b) pays for any Domain.
+    @Test("A Universal Power token satisfies any eligible Domain")
+    func universalPowerSatisfiesAnyDomain() {
+        var (state, playerA, _, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, powerCost: 1, eligibleDomains: [.mind])
+        state.zones[playerA]?.hand.append(card)
+        state.zones[playerA]?.runePool.power = [.universal]
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .battlefield(battlefieldID), additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.isSuccess)
+    }
+
+    /// `applyRecycleRune` feeds `RunePool.power` and the cumulative
+    /// `totalRunesRecycled` tally independently; a later `applyPlay`
+    /// consumes only the matching entries from the pool, leaving
+    /// non-matching ones (and the cumulative tally) untouched.
+    @Test("Recycling then playing consumes only the matching power entries")
+    func recycleThenPlayConsumesMatchingEntriesOnly() {
+        var (state, playerA, _, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, powerCost: 1, eligibleDomains: [.chaos])
+        state.zones[playerA]?.hand.append(card)
+
+        GameActionApplier.apply(.recycleRune(domain: .fury, wasExhausted: false), to: &state, proposedBy: playerA)
+        GameActionApplier.apply(.recycleRune(domain: .chaos, wasExhausted: false), to: &state, proposedBy: playerA)
+
+        #expect(state.zones[playerA]?.runePool.power == [.domain(.fury), .domain(.chaos)])
+        #expect(state.totalRunesRecycled[playerA] == 2)
+
+        GameActionApplier.apply(
+            .play(card: card.id, destination: .battlefield(battlefieldID), additionalChoices: []),
+            to: &state,
+            proposedBy: playerA
+        )
+
+        // The Chaos entry paid for the card; the unrelated Fury entry is
+        // still sitting in the pool, untouched.
+        #expect(state.zones[playerA]?.runePool.power == [.domain(.fury)])
+        // Consuming from the pool doesn't reverse the cumulative tally —
+        // it's a historical record, not a live balance.
+        #expect(state.totalRunesRecycled[playerA] == 2)
     }
 
     // MARK: - Application (563)

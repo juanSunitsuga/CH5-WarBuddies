@@ -229,7 +229,8 @@ struct FullPipelineIntegrationTests {
         let event = RiftboundExpertSystem.ObservedTableEvent(
             kind: .cardMoved(
                 from: TableRegion(owner: player, location: nil, isHandRegion: true),
-                to: TableRegion(owner: player, location: .battlefield(battlefieldID), isHandRegion: false)
+                to: TableRegion(owner: player, location: .battlefield(battlefieldID), isHandRegion: false),
+                wasExhausted: false
             ),
             card: CardIdentification(
                 cardDefinitionID: CardDefID(rawValue: "ogs-001-024"),

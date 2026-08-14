@@ -36,13 +36,23 @@ public enum GameAction: Sendable, Equatable {
     case exhaust(objects: [ObjectID])
     case ready(objects: [ObjectID])
     case recycle(cards: [ObjectID], to: RecycleDestination)
-    /// Rule 130.3: recycle Rune(s) to pay a Power cost. A count-only
-    /// sibling to `.recycle(cards:to:)`, not a replacement for it — once
-    /// Channeled, a Rune has no `ObjectID`-tracked board presence (only
-    /// `RunePool.energy`, an aggregate), so there's no card identity to
-    /// name here, only a quantity — same justification as
-    /// `.channel(count:exhausted:)` below.
-    case recycleRune(count: Int)
+    /// Rule 130.3: recycle one Rune of `domain` to pay a Power cost. A
+    /// domain-only sibling to `.recycle(cards:to:)`, not a replacement for
+    /// it — once Channeled, a Rune has no `ObjectID`-tracked board
+    /// presence (only `RunePool.power`, an aggregate), so there's no card
+    /// identity to name here, only which Domain it was. One rune per case
+    /// instance, matching `.channel(count: 1, ...)`'s existing per-observed-
+    /// event granularity — paying a multi-symbol Power cost means multiple
+    /// `.recycleRune` actions, one per physical Rune recycled, feeding the
+    /// same `RunePool.power` that `LegalityValidator` checks against.
+    ///
+    /// `wasExhausted`: the Rune's stance (592/593) at the moment it was
+    /// observed moving to the Rune Deck. A Rune already Exhausted has
+    /// already been spent to pay Energy this cycle (130.2) — recycling it
+    /// too would double-spend one physical Rune for both Energy and
+    /// Power, so `LegalityValidator` rejects this outright rather than
+    /// letting it feed the Power pool.
+    case recycleRune(domain: Domain, wasExhausted: Bool)
     case discard(cards: [ObjectID])
     case stun(units: [ObjectID])
     case reveal(cards: [ObjectID], from: RevealSource)

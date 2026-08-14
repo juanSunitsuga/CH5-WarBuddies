@@ -93,7 +93,7 @@ public actor GameEngine {
         switch event.kind {
         case .cardAppeared(let region), .cardRemoved(let region), .cardOrientationChanged(let region, _):
             return region.owner
-        case .cardMoved(let from, _):
+        case .cardMoved(let from, _, _):
             return from.owner
         }
     }
