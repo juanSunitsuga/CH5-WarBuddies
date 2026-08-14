@@ -69,15 +69,13 @@ public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
 
         let request = VNCoreMLRequest(model: visionModel)
         request.imageCropAndScaleOption = .scaleFill
+
+        // Kept so results can be mapped back: Vision reports observations
+        // relative to this region, not to the whole image.
+        var visionROI = CGRect(x: 0, y: 0, width: 1, height: 1)
         if let regionOfInterest {
-            // Same pixel-space → Vision-normalized conversion as
-            // `VisionRectangleDetector` — see its doc comment.
-            request.regionOfInterest = CGRect(
-                x: regionOfInterest.minX / width,
-                y: 1 - (regionOfInterest.minY + regionOfInterest.height) / height,
-                width: regionOfInterest.width / width,
-                height: regionOfInterest.height / height
-            ).intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+            visionROI = visionRegion(from: regionOfInterest, imageSize: CGSize(width: width, height: height))
+            request.regionOfInterest = visionROI
         }
 
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
@@ -90,12 +88,10 @@ public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
                 return nil
             }
 
-            let box = observation.boundingBox
-            let rect = CGRect(
-                x: box.origin.x * width,
-                y: (1 - box.origin.y - box.height) * height,
-                width: box.width * width,
-                height: box.height * height
+            let rect = imageRect(
+                fromNormalized: observation.boundingBox,
+                visionRegionOfInterest: visionROI,
+                imageSize: CGSize(width: width, height: height)
             )
 
             // Reject anything that isn't card-shaped regardless of
