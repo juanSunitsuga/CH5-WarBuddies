@@ -178,6 +178,10 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// the IDs churn — which is invisible unless the ID is on screen.
     public private(set) var trackedObjects: [TrackedObject] = []
 
+    /// Cards that reached the Trash and are no longer tracked — listed so
+    /// they're still visible to the user, without costing a tracking slot.
+    public var discardedObjects: [ObjectTracker.DiscardedObject] { tracker.discarded }
+
     /// How many physical objects the tracker is currently following. A
     /// count that keeps climbing while cards stay put means tracks are
     /// being abandoned and re-created rather than followed.

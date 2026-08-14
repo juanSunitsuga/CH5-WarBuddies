@@ -34,7 +34,7 @@ struct ContentView: View {
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                     } else {
-                        Text(pipeline.isRunning ? "Waiting for camera frames…" : "Press Start")
+                        Text(pipeline.isCameraRunning ? "Waiting for camera frames…" : "Opening camera…")
                             .foregroundStyle(.white.opacity(0.6))
                     }
 
@@ -95,7 +95,8 @@ struct ContentView: View {
             TurnControlBar(
                 gameState: $pipeline.gameState,
                 isAutoDetecting: $pipeline.isAutoDetectingPhase,
-                latestInstruction: pipeline.instructions.first
+                latestInstruction: pipeline.instructions.first,
+                misplacedCards: pipeline.misplacedCards
             )
         }
         .frame(minWidth: 1160, minHeight: 675)
@@ -152,12 +153,20 @@ struct ContentView: View {
                 }
             }
             ToolbarItem {
-                Button(pipeline.isRunning ? "Stop" : "Start") {
-                    pipeline.isRunning ? pipeline.stop() : pipeline.start()
+                // Starts the *pipeline*, not the camera — the feed is
+                // already live so the mat can be calibrated first.
+                Button(pipeline.isPipelineRunning ? "Stop" : "Start") {
+                    pipeline.isPipelineRunning ? pipeline.stopPipeline() : pipeline.startPipeline()
                 }
+                .disabled(!pipeline.isCameraRunning)
             }
         }
         .onAppear { pipeline.refreshAvailableCameras() }
+        // Bring the camera up as soon as the window opens, prompting for
+        // access the first time. Calibration needs a live picture, and
+        // aligning the mat after starting detection is what put cards in
+        // the wrong zones.
+        .task { await pipeline.openCamera() }
         .sheet(isPresented: Binding(
             get: { pipeline.debugReport != nil },
             set: { if !$0 { pipeline.debugReport = nil } }
@@ -175,6 +184,12 @@ struct ContentView: View {
             // CameraPipelineController.observedEvents' doc comment.
             if !pipeline.observedEvents.isEmpty {
                 Text("· \(pipeline.observedEvents.count) table event\(pipeline.observedEvents.count == 1 ? "" : "s")")
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            // The measured detection rate, not a configured one — this is
+            // what the machine actually sustains.
+            if pipeline.detectionsPerSecond > 0 {
+                Text("· \(pipeline.detectionsPerSecond, specifier: "%.0f") fps")
                     .foregroundStyle(.white.opacity(0.6))
             }
         }

@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import CoreImage
+import AVFoundation
 import RiftboundVision
 import RiftboundExpertSystem
 import RiftboundTextProcessing
@@ -102,7 +103,17 @@ final class CameraPipelineController: ObservableObject {
     @Published var detections: [Detection] = []
     @Published var frameSize: CGSize = .zero
     @Published var errorMessage: String?
-    @Published var isRunning = false
+
+    /// Whether the camera feed is live. Independent of the pipeline: the
+    /// feed comes up as soon as the app opens so the playmat overlay can be
+    /// calibrated against a real picture. Calibrating blind — pressing
+    /// Start first and only then dragging the mat into place — is what put
+    /// cards in the wrong zones.
+    @Published private(set) var isCameraRunning = false
+
+    /// Whether detection, tracking, and the rules engine are running. This
+    /// is what the Start button toggles; the camera is already up by then.
+    @Published private(set) var isPipelineRunning = false
 
     /// Every camera currently visible to AVFoundation, refreshed on demand
     /// (see `refreshAvailableCameras()`) — a nearby iPhone only appears
@@ -183,6 +194,17 @@ final class CameraPipelineController: ObservableObject {
     /// still means tracks are being abandoned and re-created.
     var liveTrackCount: Int { trackedObjects.count }
 
+    /// Cards that reached the Trash. Listed for the player, but no longer
+    /// tracked — a card in the Trash is out of play and following it costs
+    /// a tracking slot for the rest of the game.
+    @Published private(set) var discardedCards: [ObjectTracker.DiscardedObject] = []
+
+    /// Cards currently sitting somewhere their kind isn't allowed, with
+    /// where to put each one back. Confirmed over several polls, so a
+    /// single misread never asks a player to move a card that's already in
+    /// the right place.
+    @Published private(set) var misplacedCards: [MisplacedCard] = []
+
     /// Which `PipelineStage`s the user has asked to run, via the settings
     /// overlay. Independent of `PipelineStage.isWired` — a stage can be
     /// "requested" here and still do nothing if it isn't wired into
@@ -219,12 +241,49 @@ final class CameraPipelineController: ObservableObject {
     private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
     private let ciContext = CIContext()
 
-    /// Matches `feature/riftbound-scanner-prototype`'s
-    /// `DetectionCoordinator.pollInterval` (0.35s) — the CoreML/Vision
-    /// pass is the expensive step and doesn't need to run at full camera
-    /// framerate, especially now that there's no per-object tracking to
-    /// keep in sync frame-to-frame.
-    private static let detectionPollInterval: TimeInterval = 0.35
+    /// Floor on the gap between detections — about 5 Hz.
+    ///
+    /// Chasing the hardware's maximum was a mistake: cards are moved by
+    /// hand, so a few samples a second already follow every move, and the
+    /// extra polls bought nothing but a tracking log scrolling faster than
+    /// it could be read. Detection also runs on the main actor, so each
+    /// poll is UI time spent.
+    ///
+    /// This is a floor, not a target — a machine that can't sustain it
+    /// still falls back to whatever it manages, via the measurement below.
+    private static let minimumDetectionInterval: TimeInterval = 0.2
+
+    /// Detector cost, averaged over recent polls. Detection runs
+    /// synchronously on the main actor, so this is also roughly how long
+    /// the UI is blocked per poll — asking for a rate faster than this
+    /// can't be honoured and only starves the interface.
+    private var averageDetectionDuration: TimeInterval = 0
+
+    /// Measured detections per second, for display.
+    @Published private(set) var detectionsPerSecond: Double = 0
+
+    /// The interval actually used: never faster than the detector can
+    /// finish, never slower than needed.
+    ///
+    /// Fixed intervals were guesses — 0.35s was far slower than the machine
+    /// could manage, and 0.12s was picked to pair with a region-of-interest
+    /// speedup that has since been reverted. Measuring sidesteps the guess
+    /// and adapts to whatever Mac this runs on.
+    private var detectionPollInterval: TimeInterval {
+        guard averageDetectionDuration > 0 else { return Self.minimumDetectionInterval }
+        // A little headroom so detection doesn't consume the whole main
+        // actor and leave nothing for drawing.
+        return max(Self.minimumDetectionInterval, averageDetectionDuration * 1.3)
+    }
+
+    /// Exponential moving average — one slow poll (a hiccup, a thermal
+    /// blip) shouldn't halve the sample rate for the rest of the session.
+    private func recordDetectionDuration(_ duration: TimeInterval) {
+        averageDetectionDuration = averageDetectionDuration == 0
+            ? duration
+            : averageDetectionDuration * 0.8 + duration * 0.2
+        detectionsPerSecond = averageDetectionDuration > 0 ? 1 / detectionPollInterval : 0
+    }
     private var lastDetectionTimestamp: TimeInterval?
 
     // MARK: - Persistence
@@ -281,6 +340,14 @@ final class CameraPipelineController: ObservableObject {
     /// rather than living directly on this `@MainActor` type — see
     /// `ExpertSystemTranslatorAdapter.onUntranslatable`.
     private let translationNote = TranslationNoteBox()
+
+    /// Which zones each kind of card can physically occupy — a filter on
+    /// detector noise, not a rules decision. See `CardPlacementRules`.
+    private let placementRules = CardPlacementRules()
+    private let underlayResolver = UnderlayResolver()
+    private let misplacedMonitor = MisplacedCardMonitor()
+    /// Memo for `kind(forLabel:)` — see its doc comment.
+    private var cardKindByLabel: [String: CardKind] = [:]
     private var gameStateStore: GameStateStore?
 
     /// The starting calibration quad, sized so the *whole* active
@@ -341,14 +408,16 @@ final class CameraPipelineController: ObservableObject {
         selectedCameraID = iPhone.id
         errorMessage = nil
 
-        if isRunning {
+        // Switching devices is a camera concern, not a pipeline one — the
+        // feed is normally already up by the time the user picks a camera.
+        if isCameraRunning {
             do {
                 try camera.switchCamera(to: iPhone.id)
             } catch {
                 errorMessage = "Couldn't switch to iPhone camera: \(error)"
             }
         } else {
-            start()
+            Task { await openCamera() }
         }
     }
 
@@ -387,7 +456,7 @@ final class CameraPipelineController: ObservableObject {
 
     func selectCamera(id: String?) {
         selectedCameraID = id
-        guard isRunning else { return }
+        guard isCameraRunning else { return }
         // Switching while already running: fall back to whatever
         // AVFoundation calls "default" if the user picked System Default
         // explicitly, since `switchCamera` needs a concrete device.
@@ -400,16 +469,78 @@ final class CameraPipelineController: ObservableObject {
         }
     }
 
-    func start() {
-        guard !isRunning else { return }
+    // MARK: - Camera lifecycle
+
+    /// Asks for camera access and brings the feed up. Called when the app
+    /// opens, so the playmat can be aligned against a live picture before
+    /// anything is detected.
+    func openCamera() async {
+        guard !isCameraRunning else { return }
+
+        guard await Self.requestCameraAccess() else {
+            errorMessage = "Camera access denied. Grant it in System Settings › Privacy & Security › Camera, then reopen the app."
+            return
+        }
+
         do {
             try camera.start(deviceID: selectedCameraID)
         } catch {
             errorMessage = "Camera failed to start: \(error)"
             return
         }
-        isRunning = true
+        isCameraRunning = true
         errorMessage = nil
+
+        // Frames flow whenever the camera is up. `process(_:)` always
+        // refreshes the preview and only runs detection once the pipeline
+        // is started, so the feed is usable for calibration on its own.
+        //
+        // This consumer has to live here, not in `startPipeline()`: nothing
+        // reads `camera.frames()` otherwise, so the capture session runs
+        // (the OS shows the camera in use) while the window stays black
+        // until Start is pressed — which is the whole problem this split
+        // was meant to solve.
+        runLoop = Task { [weak self] in
+            guard let frames = self?.camera.frames() else { return }
+            for await frame in frames {
+                await self?.process(frame)
+            }
+        }
+    }
+
+    func closeCamera() {
+        stopPipeline()
+        camera.stop()
+        runLoop?.cancel()
+        runLoop = nil
+        isCameraRunning = false
+        backgroundImage = nil
+    }
+
+    /// The camera went away mid-session. The pipeline can't run without
+    /// frames, so it stops with it rather than sitting on stale state.
+    private func cameraLost() {
+        stopPipeline()
+        isCameraRunning = false
+    }
+
+    /// `.notDetermined` is the only case that shows the system prompt;
+    /// everything else has already been decided by the user.
+    private static func requestCameraAccess() async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: return true
+        case .notDetermined: return await AVCaptureDevice.requestAccess(for: .video)
+        default: return false
+        }
+    }
+
+    // MARK: - Pipeline lifecycle
+
+    /// Starts detection, tracking, and the rules engine against the feed
+    /// that's already running.
+    func startPipeline() {
+        guard isCameraRunning, !isPipelineRunning else { return }
+        isPipelineRunning = true
 
         // Reconnect Object Tracking + Area of Region as a second consumer
         // of the same detections `process(_:)` feeds the live overlay —
@@ -437,6 +568,9 @@ final class CameraPipelineController: ObservableObject {
         expertSystemFrameIndex = 0
         trackingEvents = []
         trackedObjects = []
+        discardedCards = []
+        misplacedCards = []
+        misplacedMonitor.reset()
 
         // Stage ③+④: a real GameState, the NLP translator, and the engine
         // that runs both against every observed event.
@@ -490,18 +624,13 @@ final class CameraPipelineController: ObservableObject {
             }
         }
 
-        runLoop = Task {
-            for await frame in camera.frames() {
-                await self.process(frame)
-            }
-        }
     }
 
-    func stop() {
-        camera.stop()
-        runLoop?.cancel()
-        runLoop = nil
-        isRunning = false
+    /// Stops detection and the engine. The camera keeps running, so the
+    /// mat stays visible and can be re-calibrated before starting again.
+    func stopPipeline() {
+        guard isPipelineRunning else { return }
+        isPipelineRunning = false
         detections = []
         lastDetectionTimestamp = nil
 
@@ -529,6 +658,40 @@ final class CameraPipelineController: ObservableObject {
         if observedEvents.count > 50 {
             observedEvents.removeFirst(observedEvents.count - 50)
         }
+    }
+
+    /// The coarse role `UnderlayResolver` needs to decide what can sit
+    /// under what: a Unit can have Gear or Runes beneath it, two Units
+    /// can't legitimately overlap. Derived from the same memoized category
+    /// as the placement rules, so both agree by construction.
+    private func stackingRole(of id: TrackedObjectID, in objects: [TrackedObject]) -> CardRole {
+        guard let label = objects.first(where: { $0.id == id })?.recognizedLabel else { return .unknown }
+        switch kind(forLabel: label) {
+        case .unit, .champion: return .unit
+        case .gear, .rune: return .attachment
+        case .unknown: return .unknown
+        case .spell, .legend, .battlefield: return .other
+        }
+    }
+
+    /// What kind of card a recognizer label names, resolved once per label.
+    ///
+    /// `CardDatabase.printing(approximatelyNamed:)` normalizes and scans the
+    /// whole catalogue, and this sits on the per-detection, per-poll path —
+    /// a card's category can't change between polls, so re-deriving it every
+    /// time was pure repetition. Cards keep their label for a whole session,
+    /// so this settles after the first sighting of each distinct card.
+    ///
+    /// A label that resolves to nothing is cached as `.unknown`, which
+    /// `CardPlacementRules` permits everywhere — an unrecognized card is
+    /// still tracked, just not constrained.
+    private func kind(forLabel label: String) -> CardKind {
+        if let cached = cardKindByLabel[label] { return cached }
+        let resolved = cardDatabase.printing(approximatelyNamed: label).map {
+            CardKind.from(type: $0.classification.type, supertype: $0.classification.supertype)
+        } ?? .unknown
+        cardKindByLabel[label] = resolved
+        return resolved
     }
 
     private func recordUnprocessed(_ event: RiftboundExpertSystem.ObservedTableEvent) {
@@ -586,11 +749,11 @@ final class CameraPipelineController: ObservableObject {
                     errorMessage = nil
                 } catch {
                     errorMessage = "Camera disconnected, and couldn't fall back automatically: \(error)"
-                    isRunning = false
+                    cameraLost()
                 }
             } else {
                 errorMessage = "Camera disconnected — no camera available."
-                isRunning = false
+                cameraLost()
             }
 
         case .interrupted(let reason):
@@ -601,7 +764,7 @@ final class CameraPipelineController: ObservableObject {
 
         case .runtimeError(let message):
             errorMessage = "Camera error: \(message)"
-            isRunning = false
+            cameraLost()
 
         case .deviceListChanged:
             // This is the fix for "iPhone won't reappear until another
@@ -627,11 +790,15 @@ final class CameraPipelineController: ObservableObject {
         backgroundImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
         frameSize = size
 
-        // Debug kill switch — see `enabledStages`'/`isStageActive`'s doc
-        // comments. Bails out after the camera picture above is already
-        // updated, so the video itself keeps playing; only detection and
-        // everything it feeds stops.
-        guard isStageActive(.detection) else {
+        // Everything above this line runs whenever the camera is up — the
+        // preview picture and the frame sizing the playmat overlay needs.
+        // Detection only begins when the user starts the pipeline, so the
+        // mat can be calibrated against a live feed first.
+        //
+        // The stage check is the debug kill switch (see `enabledStages` /
+        // `isStageActive`): the video keeps playing either way, only
+        // detection and everything downstream of it stops.
+        guard isPipelineRunning, isStageActive(.detection) else {
             detections = []
             return
         }
@@ -639,17 +806,25 @@ final class CameraPipelineController: ObservableObject {
         // Poll cadence, not per-frame — see `detectionPollInterval`'s doc
         // comment. `frame.timestamp` is the sample buffer's presentation
         // time (seconds), monotonic within a capture session.
-        if let lastDetectionTimestamp, frame.timestamp - lastDetectionTimestamp < Self.detectionPollInterval {
+        if let lastDetectionTimestamp, frame.timestamp - lastDetectionTimestamp < detectionPollInterval {
             return
         }
         lastDetectionTimestamp = frame.timestamp
 
-        // Full-frame scan, no `regionOfInterest` — matches the
-        // prototype's detector, which has no calibrated-area restriction
-        // either. `CoreMLCardDetector`'s own confidence floor and
-        // card-shape (aspect ratio) gate are what keep this from
-        // re-introducing "every square object gets identified."
-        detections = (try? detector.detect(in: frame.pixelBuffer)) ?? []
+        // Full-frame scan. Restricting Vision to a `regionOfInterest` was
+        // tried as a speedup and reverted: it depends on how Vision
+        // normalizes results relative to that region, which this project
+        // has no way to verify without the model and a camera, and getting
+        // it wrong displaces every detection. That mis-placed cards into
+        // the Trash zone, where each one was discarded and re-detected on
+        // the next poll, burning tracking IDs into four figures.
+        //
+        // Correctness over an unmeasured saving. Restore it only alongside
+        // a way to confirm the mapping against a known card position.
+        let started = CFAbsoluteTimeGetCurrent()
+        let raw = (try? detector.detect(in: frame.pixelBuffer)) ?? []
+        recordDetectionDuration(CFAbsoluteTimeGetCurrent() - started)
+        detections = raw
 
         // Second consumer of the same detections, same poll cadence — see
         // `expertSystemAdapter`'s doc comment. Gated on stage 2 so turning
@@ -674,19 +849,35 @@ final class CameraPipelineController: ObservableObject {
             if trackingEvents.count > 60 {
                 trackingEvents.removeLast(trackingEvents.count - 60)
             }
-            trackedObjects = expertSystemAdapter.trackedObjects
-
-            // Durable board state runs off these same tracked objects, not
-            // a second tracker of its own — screen and disk must agree on
-            // which physical card is which.
-            if let boardPersistence {
-                let result = boardPersistence.sync(
-                    objects: expertSystemAdapter.trackedObjects,
-                    disappearedIDs: expertSystemAdapter.lastDisappearedIDs,
-                    zoneMapper: zoneMapper
-                )
-                illegalOverlaps = result.illegalOverlaps
+            // Stacking is resolved here, once, before anything consumes
+            // the objects. The detector reports the top card of a stack;
+            // working out what's underneath is tracking's job, so the
+            // z-order and underlay links belong to the objects everything
+            // else reads — the overlay, the tracking log, and the durable
+            // store alike. Resolving inside persistence meant only the
+            // database ever knew about a stack.
+            let resolution = underlayResolver.resolve(expertSystemAdapter.trackedObjects) { [self] id in
+                stackingRole(of: id, in: expertSystemAdapter.trackedObjects)
             }
+            trackedObjects = resolution.objects
+            illegalOverlaps = resolution.illegalOverlaps
+
+            // Report placement mistakes rather than hiding them. Filtering
+            // an implausible reading out made the card vanish from the app
+            // while it sat there on the mat, so the board diverged from the
+            // engine with nothing on screen to say why.
+            misplacedCards = misplacedMonitor.update(objects: resolution.objects) { [self] label in
+                kind(forLabel: label)
+            }
+            discardedCards = expertSystemAdapter.discardedObjects
+
+            // Durable board state runs off those same resolved objects, so
+            // screen and disk agree on identity and z-order both.
+            boardPersistence?.sync(
+                objects: resolution.objects,
+                disappearedIDs: expertSystemAdapter.lastDisappearedIDs,
+                zoneMapper: zoneMapper
+            )
         }
     }
 

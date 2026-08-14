@@ -23,6 +23,7 @@ struct DetectedCardsPanel: View {
     @State private var isScoreExpanded = true
     @State private var isDetailsExpanded = true
     @State private var isTrackingExpanded = true
+    @State private var isTrashExpanded = true
     /// Collapsed by default — tracking is what's being debugged right now,
     /// and the rules-engine verdicts are downstream noise until it's right.
     @State private var isLogExpanded = false
@@ -71,6 +72,8 @@ struct DetectedCardsPanel: View {
                     detailsSection
                     Divider().overlay(.white.opacity(0.15))
                     trackingSection
+                    Divider().overlay(.white.opacity(0.15))
+                    trashSection
                     Divider().overlay(.white.opacity(0.15))
                     logSection
                 }
@@ -151,6 +154,68 @@ struct DetectedCardsPanel: View {
                 }
             }
         }
+    }
+
+    /// Cards that reached the Trash. Listed so the pile is still readable,
+    /// but explicitly *not* tracked — a card here is out of play, and
+    /// following it would spend a tracking slot for the rest of the game
+    /// and keep consuming IDs every poll.
+    private var trashSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                sectionHeader("Trash", isExpanded: $isTrashExpanded)
+                Text("\(pipeline.discardedCards.count)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+
+            if isTrashExpanded {
+                if pipeline.discardedCards.isEmpty {
+                    Text("Nothing discarded yet.")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.45))
+                } else {
+                    Text("No longer tracked.")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.4))
+                    ForEach(pipeline.discardedCards) { card in
+                        trashRow(card)
+                    }
+                }
+            }
+        }
+    }
+
+    private func trashRow(_ card: ObjectTracker.DiscardedObject) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "trash.fill")
+                .font(.caption2)
+                .foregroundStyle(.brown)
+                .frame(width: 14)
+
+            if let label = card.label,
+               let printing = pipeline.cardDatabase.printing(approximatelyNamed: label) {
+                artwork(for: printing, width: 24, height: 33)
+                Text(printing.name)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .lineLimit(1)
+            } else {
+                Text(card.label ?? "unidentified card")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Text("#\(card.id)")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.3))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 5))
     }
 
     private func trackingRow(_ entry: TrackingLogEntry) -> some View {

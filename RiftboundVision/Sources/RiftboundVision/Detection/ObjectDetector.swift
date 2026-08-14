@@ -1,6 +1,58 @@
 import Vision
 import CoreGraphics
 
+/// Converts a Vision observation's bounding box into pixel space.
+///
+/// The subtlety this exists to get right: when a request carries a
+/// `regionOfInterest`, Vision reports observations **normalized to that
+/// region**, not to the whole image. Multiplying such a box by the full
+/// image size — which is what this layer did when region-of-interest
+/// scanning was first introduced — squashes every detection toward the
+/// origin, so boxes and tracked centroids stop landing on the cards.
+///
+/// A free function purely so the arithmetic is testable without a camera
+/// or a Core ML model behind it.
+///
+/// - Parameters:
+///   - normalizedBox: Vision's box, origin bottom-left, relative to
+///     `visionRegionOfInterest`.
+///   - visionRegionOfInterest: the request's region in Vision's own
+///     normalized, origin-bottom-left space. Pass the full unit rect when
+///     no region was set.
+///   - imageSize: pixel dimensions of the source image.
+/// - Returns: a rect in pixel space, origin top-left, matching
+///   `Detection.boundingBox`'s convention.
+public func imageRect(
+    fromNormalized normalizedBox: CGRect,
+    visionRegionOfInterest: CGRect,
+    imageSize: CGSize
+) -> CGRect {
+    // Lift the ROI-relative box back into whole-image normalized space.
+    let originX = visionRegionOfInterest.minX + normalizedBox.minX * visionRegionOfInterest.width
+    let originY = visionRegionOfInterest.minY + normalizedBox.minY * visionRegionOfInterest.height
+    let width = normalizedBox.width * visionRegionOfInterest.width
+    let height = normalizedBox.height * visionRegionOfInterest.height
+
+    // Vision's origin is bottom-left; `Detection` uses top-left.
+    return CGRect(
+        x: originX * imageSize.width,
+        y: (1 - originY - height) * imageSize.height,
+        width: width * imageSize.width,
+        height: height * imageSize.height
+    )
+}
+
+/// A pixel-space rect converted into Vision's normalized,
+/// origin-bottom-left convention, clamped to the unit square.
+public func visionRegion(from pixelRect: CGRect, imageSize: CGSize) -> CGRect {
+    CGRect(
+        x: pixelRect.minX / imageSize.width,
+        y: 1 - (pixelRect.minY + pixelRect.height) / imageSize.height,
+        width: pixelRect.width / imageSize.width,
+        height: pixelRect.height / imageSize.height
+    ).intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+}
+
 /// Abstracts detection so tracking/temporal-confirmation code never needs
 /// real Vision/CoreML to be testable. Per the brief: do NOT train an
 /// action classifier yet, and don't require this to identify the exact
@@ -52,18 +104,15 @@ public struct VisionRectangleDetector: ObjectDetecting {
         request.maximumObservations = 40
         request.minimumAspectRatio = 0.3
         request.maximumAspectRatio = 1.0
+        // Vision search is restricted to this region, which is both a real
+        // speedup (less area to scan) and the mechanism that keeps clutter
+        // off the mat from ever becoming a `Detection`. Kept so results can
+        // be mapped back — Vision reports observations relative to the
+        // region, not the whole image.
+        var visionROI = CGRect(x: 0, y: 0, width: 1, height: 1)
         if let regionOfInterest {
-            // Vision search is restricted to this region, which is both a
-            // real speedup (less area to scan) and the mechanism that
-            // keeps background clutter off the mat from ever becoming a
-            // `Detection` at all. Convert pixel-space (origin top-left) →
-            // Vision's normalized, origin-bottom-left convention.
-            request.regionOfInterest = CGRect(
-                x: regionOfInterest.minX / width,
-                y: 1 - (regionOfInterest.minY + regionOfInterest.height) / height,
-                width: regionOfInterest.width / width,
-                height: regionOfInterest.height / height
-            ).intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+            visionROI = visionRegion(from: regionOfInterest, imageSize: CGSize(width: width, height: height))
+            request.regionOfInterest = visionROI
         }
 
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
@@ -73,12 +122,10 @@ public struct VisionRectangleDetector: ObjectDetecting {
             // Vision's normalized (0...1, origin bottom-left) coordinates
             // → pixel space, origin top-left, matching `TrackedObject`'s
             // camera-space convention used elsewhere in this layer.
-            let box = observation.boundingBox
-            let rect = CGRect(
-                x: box.origin.x * width,
-                y: (1 - box.origin.y - box.height) * height,
-                width: box.width * width,
-                height: box.height * height
+            let rect = imageRect(
+                fromNormalized: observation.boundingBox,
+                visionRegionOfInterest: visionROI,
+                imageSize: CGSize(width: width, height: height)
             )
             let aspectRatio = max(rect.width, rect.height) / max(min(rect.width, rect.height), 1)
             let type: ObjectType = cardAspectRatioRange.contains(aspectRatio) ? .card : .unknown
