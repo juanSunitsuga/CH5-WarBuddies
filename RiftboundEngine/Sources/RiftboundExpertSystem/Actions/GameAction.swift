@@ -36,6 +36,13 @@ public enum GameAction: Sendable, Equatable {
     case exhaust(objects: [ObjectID])
     case ready(objects: [ObjectID])
     case recycle(cards: [ObjectID], to: RecycleDestination)
+    /// Rule 130.3: recycle Rune(s) to pay a Power cost. A count-only
+    /// sibling to `.recycle(cards:to:)`, not a replacement for it — once
+    /// Channeled, a Rune has no `ObjectID`-tracked board presence (only
+    /// `RunePool.energy`, an aggregate), so there's no card identity to
+    /// name here, only a quantity — same justification as
+    /// `.channel(count:exhausted:)` below.
+    case recycleRune(count: Int)
     case discard(cards: [ObjectID])
     case stun(units: [ObjectID])
     case reveal(cards: [ObjectID], from: RevealSource)

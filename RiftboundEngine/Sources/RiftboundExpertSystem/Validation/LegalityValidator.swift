@@ -50,7 +50,7 @@ public enum LegalityValidator {
         // it (see `GameState.pendingLimitedActions`). The check is
         // identical across all of them; only *application* differs per
         // case, and only `.draw` has that built out so far.
-        case .draw, .exhaust, .ready, .recycle, .discard, .stun, .reveal,
+        case .draw, .exhaust, .ready, .recycle, .recycleRune, .discard, .stun, .reveal,
              .counter, .buff, .banish, .kill, .add, .channel, .burnOut:
             return validateLimitedAction(action, in: state, player: player)
 

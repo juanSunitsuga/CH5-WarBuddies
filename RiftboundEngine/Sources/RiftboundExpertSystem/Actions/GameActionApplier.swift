@@ -19,6 +19,10 @@ public enum GameActionApplier {
             applyStandardMove(units: units, destination: destination, to: &state, proposedBy: player)
         case .draw(let count):
             applyDraw(count: count, to: &state, player: player)
+        case .channel(let count, _):
+            applyChannel(count: count, to: &state, player: player)
+        case .recycleRune(let count):
+            applyRecycleRune(count: count, to: &state, player: player)
         default:
             // TODO: remaining GameAction cases — add here once
             // LegalityValidator gains real logic for them (see
@@ -153,6 +157,37 @@ public enum GameActionApplier {
         // Rule 589.2: this draw just fulfilled one authorization — consume
         // it so it can't be reused for a second physical draw.
         if let index = state.pendingLimitedActions[player]?.firstIndex(of: .draw(count: count)) {
+            state.pendingLimitedActions[player]?.remove(at: index)
+        }
+    }
+
+    /// Rule 154.3: Channel — move `count` Runes from the Rune Deck into
+    /// the Rune Pool as Energy. Individual Runes aren't tracked as board
+    /// objects (see `GameAction.recycleRune`'s doc comment), so this only
+    /// touches the aggregate `RunePool.energy` plus the cumulative
+    /// `totalRunesChanneled` tally `GameState` keeps for the pace check —
+    /// it does not remove cards from `zones.runeDeck` one-for-one, since
+    /// there's no per-Rune identity here to remove.
+    private static func applyChannel(count: Int, to state: inout GameState, player: PlayerID) {
+        guard var zones = state.zones[player] else { return }
+        zones.runePool.energy += count
+        state.zones[player] = zones
+        state.totalRunesChanneled[player, default: 0] += count
+
+        if let index = state.pendingLimitedActions[player]?.firstIndex(of: .channel(count: count, exhausted: false)) {
+            state.pendingLimitedActions[player]?.remove(at: index)
+        }
+    }
+
+    /// Rule 130.3: Recycle Rune(s) to pay a Power cost. Mirrors
+    /// `applyChannel` — aggregate-only, records the count against
+    /// `totalRunesRecycled` so `totalRunesChanneled - totalRunesRecycled`
+    /// stays the correct "should still be visible in the Rune Area" figure
+    /// for the vision layer's live count to reconcile against.
+    private static func applyRecycleRune(count: Int, to state: inout GameState, player: PlayerID) {
+        state.totalRunesRecycled[player, default: 0] += count
+
+        if let index = state.pendingLimitedActions[player]?.firstIndex(of: .recycleRune(count: count)) {
             state.pendingLimitedActions[player]?.remove(at: index)
         }
     }

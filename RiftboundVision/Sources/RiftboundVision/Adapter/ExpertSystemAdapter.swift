@@ -21,17 +21,17 @@ import Foundation
 ///     re-identified this frame").
 ///
 /// KNOWN GAP — do not silently paper over this: `ObservedTableEvent`'s
-/// `TableRegion` can only represent Base, Battlefield, and Hand
-/// (`Location` per rule 106 is Base/Battlefield only; Hand gets its own
-/// `isHandRegion` flag). Main Deck, Rune Deck, Trash, and Rune Area have
-/// no representation in the current Expert System ingestion types at all.
-/// That means Draw (Main Deck → Hand) and Channel Rune (Rune Deck → Rune
-/// Area) — two of the four physical signatures in the CV spec — cannot be
-/// forwarded faithfully yet. `unrepresentableZoneEvents` collects what got
-/// dropped so this isn't silently lossy; surface it to whoever owns the
-/// Expert System's `ObservedTableEvent`/`TableRegion` types so those zones
-/// get a real home there (adding cases to `TableRegion`, not inventing
-/// parallel types here).
+/// `TableRegion` can only represent Base, Battlefield, Hand, Rune Area, and
+/// Rune Deck (`Location` per rule 106 is Base/Battlefield only; Hand gets
+/// its own `isHandRegion` flag; Rune Area/Rune Deck are
+/// `TableRegion.nonLocationZone`). Main Deck and Trash still have no
+/// representation. That means Draw (Main Deck → Hand) still can't be
+/// forwarded faithfully — Channel/Recycle Rune (Rune Deck ⇄ Rune Area) now
+/// can. `unrepresentableZoneEvents` collects what got dropped so this isn't
+/// silently lossy; surface it to whoever owns the Expert System's
+/// `ObservedTableEvent`/`TableRegion` types so those zones get a real home
+/// there (adding cases to `TableRegion`, not inventing parallel types
+/// here).
 /// `@unchecked Sendable`: same single-writer contract as `ObjectTracker`/
 /// `TemporalEventDetector` (both of which it wraps) — `ingest(...)` must
 /// be called strictly in frame order by one caller.
@@ -74,11 +74,17 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// `VisionEvent`s this adapter received but could not translate,
     /// because their zone has no `TableRegion` representation yet (see
     /// the type's doc comment). Inspect this in debug/testing to see what
-    /// Draw/Channel Rune coverage is actually missing right now.
+    /// Draw coverage is actually missing right now.
     public private(set) var unrepresentableZoneEvents: [VisionEvent] = []
 
     /// Buffer behind `drainVisionTrace()`.
     private var visionTrace: [VisionEventTrace] = []
+
+    /// The full tracked-object set as of the most recent `ingest` call —
+    /// kept so `runeAreaCount(for:)` can answer a live poll between frames
+    /// without re-running the tracker. Not exposed directly; `ingest` is
+    /// the only writer, per the same single-writer contract as `tracker`.
+    private var lastTrackedObjects: [TrackedObject] = []
 
     /// Maps a detector's raw class label (e.g. `"Annie Fiery"`) onto the
     /// canonical `CardDefID` the Expert System's `GameState` is keyed by.
@@ -148,6 +154,7 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
             previousTimestamp: previousTimestamp
         )
         previousTimestamp = timestamp
+        lastTrackedObjects = trackerResult.objects
 
         let visionEvents = temporalDetector.process(trackerResult, zoneMapper: zoneMapper, timestamp: timestamp)
         for visionEvent in visionEvents {
@@ -266,10 +273,10 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     }
 
     /// Maps a coarse `Zone` (+ disambiguating battlefield slot / seat) onto
-    /// a `TableRegion`. Returns `nil` for zones `TableRegion` can't
-    /// represent yet (Main Deck, Rune Deck, Trash, Rune Area, Legend,
-    /// Champion, `.unknown`) — callers must treat `nil` as "cannot
-    /// forward," not as a legal empty region.
+    /// a `TableRegion`. Returns `nil` for zones `TableRegion` still can't
+    /// represent (Main Deck, Trash, Legend, Champion, `.unknown`) —
+    /// callers must treat `nil` as "cannot forward," not as a legal empty
+    /// region.
     private func region(for zone: Zone?, battlefieldSlot: Int?, player: Player?) -> TableRegion? {
         guard let zone else { return nil }
         // `defaultSeat` covers zones that imply no seat of their own —
@@ -285,13 +292,37 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         case .battlefield:
             guard let slot = battlefieldSlot, let battlefieldID = battlefieldCalibration[slot] else { return nil }
             return TableRegion(owner: ownerID, location: .battlefield(battlefieldID), isHandRegion: false)
-        case .mainDeck, .runeDeck, .trash, .runeArea, .legend, .champion, .unknown:
+        case .runeArea:
+            return TableRegion(owner: ownerID, location: nil, isHandRegion: false, nonLocationZone: .runeArea)
+        case .runeDeck:
+            return TableRegion(owner: ownerID, location: nil, isHandRegion: false, nonLocationZone: .runeDeck)
+        case .mainDeck, .trash, .legend, .champion, .unknown:
             // See the type's doc comment — no `Location`/`TableRegion`
             // representation exists for these yet. Legend Zone/Champion
             // Zone are Zones but not Locations per rule 106.5.b, same
             // category as Hand/Deck/Trash — they'd need the same
-            // `TableRegion` extension the other non-Location zones do.
+            // `TableRegion` extension Rune Area/Rune Deck just got.
             return nil
         }
+    }
+
+    /// Live count of Rune-typed `TrackedObject`s currently sitting in
+    /// `player`'s calibrated Rune Area, as of the most recent `ingest`
+    /// call. This is a poll, not a discrete event — deliberately not
+    /// routed through `ObservedTableEvent.Kind` (that enum models discrete
+    /// physical facts; an occupancy count is a continuous quantity, closer
+    /// in kind to "ask the tracker" than "something just happened").
+    ///
+    /// Uses `zoneMapper.boardZone(for:)` rather than `zone(for:)` because
+    /// the latter collapses straight to `Zone`, losing `BoardZone.owner` —
+    /// the only thing that disambiguates "this player's" Rune Area from
+    /// the other player's calibrated `.runeArea` instance.
+    public func runeAreaCount(for player: PlayerID) -> Int {
+        guard let seat = playerCalibration.first(where: { $0.value == player })?.key else { return 0 }
+        return lastTrackedObjects.filter { object in
+            guard object.type == .rune else { return false }
+            guard let boardZone = zoneMapper.boardZone(for: object.center) else { return false }
+            return boardZone.type == .runeArea && boardZone.owner == seat
+        }.count
     }
 }

@@ -28,12 +28,31 @@ public struct TableRegion: Sendable, Equatable {
     public let owner: PlayerID
     public let location: Location?   // nil if not yet resolved to a base/battlefield (e.g. still in hand)
     public let isHandRegion: Bool
+    /// Which non-Location zone this is, for zones rule 106.5.b excludes
+    /// from `Location` (Rune Area, Rune Deck, Main Deck, Trash, Legend,
+    /// Champion) — `nil` for Base/Battlefield (covered by `location`) and
+    /// Hand (covered by `isHandRegion`). Only `.runeArea`/`.runeDeck` are
+    /// actually produced anywhere yet (Channel/Recycle Rune); the others
+    /// are declared so the enum doesn't need to grow again for the next
+    /// one, but callers must still treat unproduced cases as unreachable.
+    public let nonLocationZone: NonLocationZone?
 
-    public init(owner: PlayerID, location: Location?, isHandRegion: Bool) {
+    public init(owner: PlayerID, location: Location?, isHandRegion: Bool, nonLocationZone: NonLocationZone? = nil) {
         self.owner = owner
         self.location = location
         self.isHandRegion = isHandRegion
+        self.nonLocationZone = nonLocationZone
     }
+}
+
+/// See `TableRegion.nonLocationZone`.
+public enum NonLocationZone: Sendable, Equatable {
+    case runeArea
+    case runeDeck
+    case mainDeck
+    case trash
+    case legend
+    case champion
 }
 
 /// Whether hands are played face-up (visible to OCR and, physically, to

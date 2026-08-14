@@ -176,17 +176,20 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
 
     /// Maps a `TableRegion` to the exact region-name strings
     /// `ActionTranslatingEngine`'s heuristics compare against
-    /// (`"Hand"`/`"Base"`/`"Battlefield"`). `TableRegion` can only
-    /// represent those three (rule 106.5.b — see `RiftboundVision
-    /// .ExpertSystemAdapter`'s own doc comment on the same gap), which
-    /// means `.channelRune` (checked via `destinationRegion == "RuneArea"`)
-    /// can never actually fire through this real path — `TableRegion` has
-    /// no Rune Area representation to produce that string from. Flagging,
-    /// not working around: fixing this means extending `TableRegion`
-    /// itself (`RiftboundExpertSystem`), not inventing a parallel region
-    /// vocabulary here.
+    /// (`"Hand"`/`"Base"`/`"Battlefield"`/`"RuneArea"`/`"RuneDeck"`).
+    /// `TableRegion` still can't represent Main Deck/Trash/Legend/Champion
+    /// (rule 106.5.b — see `RiftboundVision.ExpertSystemAdapter`'s doc
+    /// comment) — those fall through to the `nil` case below same as
+    /// before, which is a lossy default (misreports as "Hand") but no
+    /// worse than the prior behavior for regions that were unrepresentable
+    /// either way.
     private func regionName(_ region: TableRegion) -> String {
         if region.isHandRegion { return "Hand" }
+        switch region.nonLocationZone {
+        case .runeArea: return "RuneArea"
+        case .runeDeck: return "RuneDeck"
+        case .mainDeck, .trash, .legend, .champion, nil: break
+        }
         switch region.location {
         case .base: return "Base"
         case .battlefield: return "Battlefield"
@@ -222,15 +225,22 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         case .channelRune:
             // Rule 154.3/589.2: Channel Rune is a Limited Action — only
             // ever performed at a fixed turn-structure point (515.3) or by
-            // an effect, never freely proposed by a player. A Rune
-            // physically landing in the Rune Area is evidence *of* the
-            // Channel Phase's own scripted action already having
-            // authorized it (`GameState.authorize`), not a new
-            // Discretionary action to propose here. Nothing to translate —
-            // this also can never actually be reached today, since
-            // `regionName` can't produce "RuneArea" (see its doc comment).
-            onUntranslatable?("Channeling a Rune is a scripted step of the Channel Phase, not a move to propose.")
-            return nil
+            // an effect, never freely proposed by a player. Still
+            // translate it to `.channel`, though: a Rune physically
+            // landing in the Rune Area is evidence the Channel Phase's own
+            // scripted action already authorized it
+            // (`GameState.authorize`), and `LegalityValidator` is exactly
+            // what checks that evidence against the authorization ledger —
+            // an unauthorized physical Channel correctly comes back
+            // rejected, same anti-cheat mechanism as everything else here.
+            return .channel(count: 1, exhausted: false)
+
+        case .recycleRune:
+            // Rule 130.3/589.2 — same reasoning as `.channelRune` above,
+            // reversed direction. See `GameAction.recycleRune`'s doc
+            // comment for why this is a count-only sibling of `.recycle`
+            // rather than reusing it.
+            return .recycleRune(count: 1)
 
         case .rejected(let reason):
             onUntranslatable?(reason)
