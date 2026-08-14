@@ -330,6 +330,10 @@ final class CameraPipelineController: ObservableObject {
     /// rather than living directly on this `@MainActor` type — see
     /// `ExpertSystemTranslatorAdapter.onUntranslatable`.
     private let translationNote = TranslationNoteBox()
+
+    /// Which zones each kind of card can physically occupy — a filter on
+    /// detector noise, not a rules decision. See `CardPlacementRules`.
+    private let placementRules = CardPlacementRules()
     private var gameStateStore: GameStateStore?
 
     /// The starting calibration quad, sized so the *whole* active
@@ -640,6 +644,30 @@ final class CameraPipelineController: ObservableObject {
         }
     }
 
+    /// Drops readings that couldn't physically be where they were seen.
+    ///
+    /// The detector re-reads every card several times a second and
+    /// occasionally names one card as another. A Rune reported in the Base,
+    /// or a Spell on the Battlefield, is far more likely to be a misread
+    /// than a player breaking the rules — and letting it through costs a
+    /// track, then an event, then wrong game state. An unrecognized card is
+    /// always kept: refusing to track what can't be named would be worse
+    /// than tracking it loosely.
+    private func plausibleDetections(_ detections: [Detection]) -> [Detection] {
+        let mapper = zoneMapper
+        return detections.filter { detection in
+            guard let label = detection.recognizedLabel,
+                  let printing = cardDatabase.printing(approximatelyNamed: label) else {
+                return true
+            }
+            let kind = CardKind.from(
+                type: printing.classification.type,
+                supertype: printing.classification.supertype
+            )
+            return placementRules.isPlausible(kind: kind, in: mapper.zone(for: detection.center))
+        }
+    }
+
     private func recordUnprocessed(_ event: RiftboundExpertSystem.ObservedTableEvent) {
         append(InstructionLogEntry(
             unprocessed: event,
@@ -768,8 +796,9 @@ final class CameraPipelineController: ObservableObject {
         // Correctness over an unmeasured saving. Restore it only alongside
         // a way to confirm the mapping against a known card position.
         let started = CFAbsoluteTimeGetCurrent()
-        detections = (try? detector.detect(in: frame.pixelBuffer)) ?? []
+        let raw = (try? detector.detect(in: frame.pixelBuffer)) ?? []
         recordDetectionDuration(CFAbsoluteTimeGetCurrent() - started)
+        detections = plausibleDetections(raw)
 
         // Second consumer of the same detections, same poll cadence — see
         // `expertSystemAdapter`'s doc comment. Gated on stage 2 so turning

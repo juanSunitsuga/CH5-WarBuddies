@@ -114,6 +114,7 @@ public final class ObjectTracker: @unchecked Sendable {
     private func discard(_ track: TrackedObject, atFrame frameIndex: Int) {
         tracked.removeValue(forKey: track.id)
         discardStreaks[track.id] = nil
+        labelVotes[track.id] = nil
         // Don't let identity memory resurrect it — being in the Trash is
         // the one case where a re-detection should *not* reclaim its ID.
         retired.removeAll { $0.id == track.id }
@@ -225,6 +226,37 @@ public final class ObjectTracker: @unchecked Sendable {
         return id
     }
 
+    /// Cumulative recognizer confidence per label, per track.
+    ///
+    /// The detector re-runs on every poll and its top label can wobble
+    /// between neighbours — the on-screen name and percentage changed
+    /// several times a second even for a card lying perfectly still. A
+    /// track's identity shouldn't be whatever the last frame happened to
+    /// say: votes accumulate, and the label with the most evidence wins.
+    /// A momentary misread is outvoted by the history behind it, while a
+    /// genuinely different card still takes over once it has been seen
+    /// enough times.
+    private var labelVotes: [TrackedObjectID: [String: Float]] = [:]
+
+    /// Records this poll's reading and returns the label with the most
+    /// accumulated evidence.
+    private func stabilizedLabel(
+        for id: TrackedObjectID,
+        observing label: String?,
+        confidence: Float
+    ) -> String? {
+        guard let label else { return labelVotes[id]?.max(by: { $0.value < $1.value })?.key }
+        var votes = labelVotes[id] ?? [:]
+        votes[label, default: 0] += confidence
+        // Bounded so a long session can't let an early misread become
+        // unbeatable, and so a real swap eventually wins.
+        if let peak = votes.values.max(), peak > 50 {
+            for key in votes.keys { votes[key]! *= 0.5 }
+        }
+        labelVotes[id] = votes
+        return votes.max(by: { $0.value < $1.value })?.key
+    }
+
     /// How far a card may travel between two polls and still be considered
     /// the same card, expressed as a multiple of its own size.
     ///
@@ -270,12 +302,14 @@ public final class ObjectTracker: @unchecked Sendable {
         track.lastSeenFrame = frameIndex
         track.previousZone = track.currentZone
         track.currentZone = zoneMapper.zone(for: detection.center)
-        // A recognizer's label is trusted the moment it's supplied; a `nil`
-        // from a non-recognizing detector should not erase a
-        // previously-recognized label for the same physical object.
-        if let recognizedLabel = detection.recognizedLabel {
-            track.recognizedLabel = recognizedLabel
-        }
+        // Identity is the winner of accumulated votes, not this frame's
+        // reading — see `labelVotes`. A `nil` from a non-recognizing
+        // detector never erases what's already been established.
+        track.recognizedLabel = stabilizedLabel(
+            for: trackID,
+            observing: detection.recognizedLabel,
+            confidence: detection.confidence
+        ) ?? track.recognizedLabel
         tracked[trackID] = track
     }
 
@@ -450,6 +484,7 @@ public final class ObjectTracker: @unchecked Sendable {
             if frameIndex - track.lastSeenFrame > tolerance {
                 disappearedIDs.append(id)
                 tracked.removeValue(forKey: id)
+                labelVotes[id] = nil
                 retire(track, atFrame: frameIndex)
             } else {
                 var occluded = track

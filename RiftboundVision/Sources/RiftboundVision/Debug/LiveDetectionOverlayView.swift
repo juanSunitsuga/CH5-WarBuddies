@@ -61,8 +61,12 @@ public struct LiveDetectionOverlayView: View {
         // of the same object type, so it's the last resort.
         let recognizedName = detection.recognizedLabel.flatMap { cardDatabase?.printing(approximatelyNamed: $0)?.name }
         let name = recognizedName ?? detection.recognizedLabel ?? detection.type.rawValue
-        let percent = Int((detection.confidence * 100).rounded())
-        return Text("\(name) • \(percent)%")
+        // No percentage. The detector re-scores every card several times a
+        // second, so a live figure churned constantly for a card lying
+        // perfectly still — motion that reads as instability rather than
+        // information. Confidence still drives the colour, which conveys
+        // "recognized" vs "unsure" without the flicker.
+        return Text(name)
             .font(.system(size: 32, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
             .lineLimit(1)
