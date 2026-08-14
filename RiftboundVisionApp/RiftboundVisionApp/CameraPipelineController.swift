@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import CoreImage
+import AVFoundation
 import RiftboundVision
 import RiftboundExpertSystem
 import RiftboundTextProcessing
@@ -102,7 +103,17 @@ final class CameraPipelineController: ObservableObject {
     @Published var detections: [Detection] = []
     @Published var frameSize: CGSize = .zero
     @Published var errorMessage: String?
-    @Published var isRunning = false
+
+    /// Whether the camera feed is live. Independent of the pipeline: the
+    /// feed comes up as soon as the app opens so the playmat overlay can be
+    /// calibrated against a real picture. Calibrating blind — pressing
+    /// Start first and only then dragging the mat into place — is what put
+    /// cards in the wrong zones.
+    @Published private(set) var isCameraRunning = false
+
+    /// Whether detection, tracking, and the rules engine are running. This
+    /// is what the Start button toggles; the camera is already up by then.
+    @Published private(set) var isPipelineRunning = false
 
     /// Every camera currently visible to AVFoundation, refreshed on demand
     /// (see `refreshAvailableCameras()`) — a nearby iPhone only appears
@@ -352,14 +363,16 @@ final class CameraPipelineController: ObservableObject {
         selectedCameraID = iPhone.id
         errorMessage = nil
 
-        if isRunning {
+        // Switching devices is a camera concern, not a pipeline one — the
+        // feed is normally already up by the time the user picks a camera.
+        if isCameraRunning {
             do {
                 try camera.switchCamera(to: iPhone.id)
             } catch {
                 errorMessage = "Couldn't switch to iPhone camera: \(error)"
             }
         } else {
-            start()
+            Task { await openCamera() }
         }
     }
 
@@ -398,7 +411,7 @@ final class CameraPipelineController: ObservableObject {
 
     func selectCamera(id: String?) {
         selectedCameraID = id
-        guard isRunning else { return }
+        guard isCameraRunning else { return }
         // Switching while already running: fall back to whatever
         // AVFoundation calls "default" if the user picked System Default
         // explicitly, since `switchCamera` needs a concrete device.
@@ -411,16 +424,66 @@ final class CameraPipelineController: ObservableObject {
         }
     }
 
-    func start() {
-        guard !isRunning else { return }
+    // MARK: - Camera lifecycle
+
+    /// Asks for camera access and brings the feed up. Called when the app
+    /// opens, so the playmat can be aligned against a live picture before
+    /// anything is detected.
+    func openCamera() async {
+        guard !isCameraRunning else { return }
+
+        guard await Self.requestCameraAccess() else {
+            errorMessage = "Camera access denied. Grant it in System Settings › Privacy & Security › Camera, then reopen the app."
+            return
+        }
+
         do {
             try camera.start(deviceID: selectedCameraID)
         } catch {
             errorMessage = "Camera failed to start: \(error)"
             return
         }
-        isRunning = true
+        isCameraRunning = true
         errorMessage = nil
+
+        // Frames flow whenever the camera is up. `process(_:)` always
+        // refreshes the preview and only runs detection once the pipeline
+        // is started, so the feed is usable for calibration on its own.
+    }
+
+    func closeCamera() {
+        stopPipeline()
+        camera.stop()
+        runLoop?.cancel()
+        runLoop = nil
+        isCameraRunning = false
+        backgroundImage = nil
+    }
+
+    /// The camera went away mid-session. The pipeline can't run without
+    /// frames, so it stops with it rather than sitting on stale state.
+    private func cameraLost() {
+        stopPipeline()
+        isCameraRunning = false
+    }
+
+    /// `.notDetermined` is the only case that shows the system prompt;
+    /// everything else has already been decided by the user.
+    private static func requestCameraAccess() async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: return true
+        case .notDetermined: return await AVCaptureDevice.requestAccess(for: .video)
+        default: return false
+        }
+    }
+
+    // MARK: - Pipeline lifecycle
+
+    /// Starts detection, tracking, and the rules engine against the feed
+    /// that's already running.
+    func startPipeline() {
+        guard isCameraRunning, !isPipelineRunning else { return }
+        isPipelineRunning = true
 
         // Reconnect Object Tracking + Area of Region as a second consumer
         // of the same detections `process(_:)` feeds the live overlay —
@@ -509,11 +572,11 @@ final class CameraPipelineController: ObservableObject {
         }
     }
 
-    func stop() {
-        camera.stop()
-        runLoop?.cancel()
-        runLoop = nil
-        isRunning = false
+    /// Stops detection and the engine. The camera keeps running, so the
+    /// mat stays visible and can be re-calibrated before starting again.
+    func stopPipeline() {
+        guard isPipelineRunning else { return }
+        isPipelineRunning = false
         detections = []
         lastDetectionTimestamp = nil
 
@@ -598,11 +661,11 @@ final class CameraPipelineController: ObservableObject {
                     errorMessage = nil
                 } catch {
                     errorMessage = "Camera disconnected, and couldn't fall back automatically: \(error)"
-                    isRunning = false
+                    cameraLost()
                 }
             } else {
                 errorMessage = "Camera disconnected — no camera available."
-                isRunning = false
+                cameraLost()
             }
 
         case .interrupted(let reason):
@@ -613,7 +676,7 @@ final class CameraPipelineController: ObservableObject {
 
         case .runtimeError(let message):
             errorMessage = "Camera error: \(message)"
-            isRunning = false
+            cameraLost()
 
         case .deviceListChanged:
             // This is the fix for "iPhone won't reappear until another
@@ -639,11 +702,15 @@ final class CameraPipelineController: ObservableObject {
         backgroundImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
         frameSize = size
 
-        // Debug kill switch — see `enabledStages`'/`isStageActive`'s doc
-        // comments. Bails out after the camera picture above is already
-        // updated, so the video itself keeps playing; only detection and
-        // everything it feeds stops.
-        guard isStageActive(.detection) else {
+        // Everything above this line runs whenever the camera is up — the
+        // preview picture and the frame sizing the playmat overlay needs.
+        // Detection only begins when the user starts the pipeline, so the
+        // mat can be calibrated against a live feed first.
+        //
+        // The stage check is the debug kill switch (see `enabledStages` /
+        // `isStageActive`): the video keeps playing either way, only
+        // detection and everything downstream of it stops.
+        guard isPipelineRunning, isStageActive(.detection) else {
             detections = []
             return
         }
