@@ -235,18 +235,45 @@ final class CameraPipelineController: ObservableObject {
     private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
     private let ciContext = CIContext()
 
-    /// How often the detector runs. Tracking can only react as fast as
-    /// this, since a card's position is only ever learned from a detection
-    /// — at the old 0.35s (≈3 Hz) a card could cross half the mat between
-    /// two samples, which is what made fast moves look untracked.
+    /// Floor on the gap between detections. Not a target rate: the real
+    /// rate is whatever the model can sustain, measured below.
     ///
-    /// Affordable at ~8 Hz because detection is now restricted to the
-    /// calibrated mat (see `regionOfInterest` at the call site): the model
-    /// sees a fraction of the frame it used to. If a slower Mac can't keep
-    /// up, frames are skipped rather than queued — the check below is a
-    /// "has enough time passed" gate, not a backlog — so this degrades
-    /// into a lower sample rate instead of falling behind.
-    private static let detectionPollInterval: TimeInterval = 0.12
+    /// There is no point sampling faster than the camera delivers (~30 Hz)
+    /// or faster than a hand can move a card, so this caps the ceiling and
+    /// the measurement decides the rest.
+    private static let minimumDetectionInterval: TimeInterval = 0.03
+
+    /// Detector cost, averaged over recent polls. Detection runs
+    /// synchronously on the main actor, so this is also roughly how long
+    /// the UI is blocked per poll — asking for a rate faster than this
+    /// can't be honoured and only starves the interface.
+    private var averageDetectionDuration: TimeInterval = 0
+
+    /// Measured detections per second, for display.
+    @Published private(set) var detectionsPerSecond: Double = 0
+
+    /// The interval actually used: never faster than the detector can
+    /// finish, never slower than needed.
+    ///
+    /// Fixed intervals were guesses — 0.35s was far slower than the machine
+    /// could manage, and 0.12s was picked to pair with a region-of-interest
+    /// speedup that has since been reverted. Measuring sidesteps the guess
+    /// and adapts to whatever Mac this runs on.
+    private var detectionPollInterval: TimeInterval {
+        guard averageDetectionDuration > 0 else { return Self.minimumDetectionInterval }
+        // A little headroom so detection doesn't consume the whole main
+        // actor and leave nothing for drawing.
+        return max(Self.minimumDetectionInterval, averageDetectionDuration * 1.3)
+    }
+
+    /// Exponential moving average — one slow poll (a hiccup, a thermal
+    /// blip) shouldn't halve the sample rate for the rest of the session.
+    private func recordDetectionDuration(_ duration: TimeInterval) {
+        averageDetectionDuration = averageDetectionDuration == 0
+            ? duration
+            : averageDetectionDuration * 0.8 + duration * 0.2
+        detectionsPerSecond = averageDetectionDuration > 0 ? 1 / detectionPollInterval : 0
+    }
     private var lastDetectionTimestamp: TimeInterval?
 
     // MARK: - Persistence
@@ -725,20 +752,24 @@ final class CameraPipelineController: ObservableObject {
         // Poll cadence, not per-frame — see `detectionPollInterval`'s doc
         // comment. `frame.timestamp` is the sample buffer's presentation
         // time (seconds), monotonic within a capture session.
-        if let lastDetectionTimestamp, frame.timestamp - lastDetectionTimestamp < Self.detectionPollInterval {
+        if let lastDetectionTimestamp, frame.timestamp - lastDetectionTimestamp < detectionPollInterval {
             return
         }
         lastDetectionTimestamp = frame.timestamp
 
-        // Scan only the calibrated mat. Two wins at once: the model gets a
-        // much smaller image, which is what pays for the faster poll above,
-        // and clutter off the mat — a keyboard, a hand, a phone — can't
-        // become a `Detection` at all rather than relying on the confidence
-        // and card-shape gates to reject it afterwards.
-        detections = (try? detector.detect(
-            in: frame.pixelBuffer,
-            regionOfInterest: calibration.detectionRegion()
-        )) ?? []
+        // Full-frame scan. Restricting Vision to a `regionOfInterest` was
+        // tried as a speedup and reverted: it depends on how Vision
+        // normalizes results relative to that region, which this project
+        // has no way to verify without the model and a camera, and getting
+        // it wrong displaces every detection. That mis-placed cards into
+        // the Trash zone, where each one was discarded and re-detected on
+        // the next poll, burning tracking IDs into four figures.
+        //
+        // Correctness over an unmeasured saving. Restore it only alongside
+        // a way to confirm the mapping against a known card position.
+        let started = CFAbsoluteTimeGetCurrent()
+        detections = (try? detector.detect(in: frame.pixelBuffer)) ?? []
+        recordDetectionDuration(CFAbsoluteTimeGetCurrent() - started)
 
         // Second consumer of the same detections, same poll cadence — see
         // `expertSystemAdapter`'s doc comment. Gated on stage 2 so turning

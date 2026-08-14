@@ -75,9 +75,14 @@ public final class ObjectTracker: @unchecked Sendable {
     /// `CameraPipelineController.process(_:)`'s Trash handling) rather
     /// than haunting `tracked` forever.
     public let settledOcclusionToleranceFrames: Int
-    /// Maximum center-to-center distance (same units as `Detection.center`)
-    /// for a detection to be considered "the same object" as an existing
-    /// track. Tune against your calibrated table's pixel/point scale.
+    /// Fallback maximum center-to-center distance, in pixels, used only
+    /// when a detection carries no usable size. See
+    /// `matchRadius(for:)` — the real gate scales with the card.
+    ///
+    /// A fixed pixel budget can't be right at two resolutions at once: 60pt
+    /// is generous on a 720p frame and less than half a card on 4K, where
+    /// it rejects matches a human would call obvious and forces a new
+    /// track instead.
     public let matchDistanceThreshold: CGFloat
 
     public init(
@@ -94,6 +99,14 @@ public final class ObjectTracker: @unchecked Sendable {
         self.identityMemoryFrames = identityMemoryFrames
         self.discardZones = discardZones
         self.discardConfirmationFrames = discardConfirmationFrames
+    }
+
+    /// Records a discard for a detection that was never tracked, so noting
+    /// it costs no `TrackedObjectID`.
+    private func noteDiscarded(label: String?, zone: Zone, atFrame frameIndex: Int) {
+        guard let label else { return }
+        guard !discarded.contains(where: { $0.label == label }) else { return }
+        discarded.append(DiscardedObject(id: 0, label: label, zone: zone, discardedAtFrame: frameIndex))
     }
 
     /// Records a card as discarded, keyed by identity so the same card
@@ -212,6 +225,24 @@ public final class ObjectTracker: @unchecked Sendable {
         return id
     }
 
+    /// How far a card may travel between two polls and still be considered
+    /// the same card, expressed as a multiple of its own size.
+    ///
+    /// Scaling with the card rather than using a fixed pixel budget makes
+    /// this resolution-independent: a card is about the same fraction of a
+    /// frame whatever the camera, so "moved less than about one card
+    /// width" means the same thing on 720p and on 4K.
+    private func matchRadius(for detection: Detection) -> CGFloat {
+        let size = max(detection.boundingBox.width, detection.boundingBox.height)
+        guard size > 0 else { return matchDistanceThreshold }
+        return max(matchDistanceThreshold, size * matchRadiusInCardLengths)
+    }
+
+    /// How many card-lengths of travel to tolerate between polls. Slightly
+    /// over one, so a card nudged a little further than its own length
+    /// still matches, while two cards a clear gap apart never do.
+    private let matchRadiusInCardLengths: CGFloat = 1.2
+
     /// Folds a matched detection into an existing track, whichever pass
     /// matched it. Shared so identity re-association can't drift out of
     /// step with distance matching — notably `previousZone`/`currentZone`,
@@ -281,7 +312,7 @@ public final class ObjectTracker: @unchecked Sendable {
                 let toLastSeen = hypot(detection.center.x - existing.center.x, detection.center.y - existing.center.y)
                 let toPredicted = hypot(detection.center.x - predicted.x, detection.center.y - predicted.y)
                 let distance = min(toLastSeen, toPredicted)
-                guard distance <= matchDistanceThreshold else { continue }
+                guard distance <= matchRadius(for: detection) else { continue }
                 candidatePairs.append((distance, existingID, index))
             }
         }
@@ -355,29 +386,24 @@ public final class ObjectTracker: @unchecked Sendable {
         // Unmatched detections are either a card coming back after its
         // track was retired, or something genuinely new.
         for (_, detection) in remainingDetections {
+            let zone = zoneMapper.zone(for: detection.center)
+
+            // A card detected inside a discard zone is never tracked, and
+            // — decided *before* an ID is allocated — never consumes one
+            // either. Allocating first meant the Trash burned a fresh ID on
+            // every detection on every poll: at ~8 Hz that reached four
+            // figures within a minute, and a mis-calibrated mat that put
+            // ordinary cards in the Trash zone made every card do it.
+            if discardZones.contains(zone) {
+                noteDiscarded(label: detection.recognizedLabel, zone: zone, atFrame: frameIndex)
+                continue
+            }
+
             let id = reclaimedID(for: detection, atFrame: frameIndex) ?? {
                 let fresh = nextID
                 nextID += 1
                 return fresh
             }()
-            let zone = zoneMapper.zone(for: detection.center)
-
-            // A card detected inside a discard zone is never tracked. The
-            // Trash pile would otherwise mint a fresh ID every single poll,
-            // which costs more than tracking it would.
-            if discardZones.contains(zone) {
-                discard(
-                    TrackedObject(
-                        id: id, type: detection.type, center: detection.center,
-                        boundingBox: detection.boundingBox, rotation: detection.rotation,
-                        previousZone: zone, currentZone: zone, confidence: detection.confidence,
-                        isVisible: true, lastSeenFrame: frameIndex,
-                        recognizedLabel: detection.recognizedLabel
-                    ),
-                    atFrame: frameIndex
-                )
-                continue
-            }
 
             // A brand-new track was, by definition, seen this frame. Without
             // this the occlusion sweep below — which walks every track *not*

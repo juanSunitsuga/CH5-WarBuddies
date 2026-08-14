@@ -185,6 +185,12 @@ struct ContentView: View {
                 Text("· \(pipeline.observedEvents.count) table event\(pipeline.observedEvents.count == 1 ? "" : "s")")
                     .foregroundStyle(.white.opacity(0.6))
             }
+            // The measured detection rate, not a configured one — this is
+            // what the machine actually sustains.
+            if pipeline.detectionsPerSecond > 0 {
+                Text("· \(pipeline.detectionsPerSecond, specifier: "%.0f") fps")
+                    .foregroundStyle(.white.opacity(0.6))
+            }
         }
         .font(.system(size: 12, weight: .semibold, design: .rounded))
         .foregroundStyle(.white.opacity(0.9))
