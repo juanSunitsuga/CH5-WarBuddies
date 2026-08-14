@@ -334,6 +334,9 @@ final class CameraPipelineController: ObservableObject {
     /// Which zones each kind of card can physically occupy — a filter on
     /// detector noise, not a rules decision. See `CardPlacementRules`.
     private let placementRules = CardPlacementRules()
+    private let underlayResolver = UnderlayResolver()
+    /// Memo for `kind(forLabel:)` — see its doc comment.
+    private var cardKindByLabel: [String: CardKind] = [:]
     private var gameStateStore: GameStateStore?
 
     /// The starting calibration quad, sized so the *whole* active
@@ -656,16 +659,43 @@ final class CameraPipelineController: ObservableObject {
     private func plausibleDetections(_ detections: [Detection]) -> [Detection] {
         let mapper = zoneMapper
         return detections.filter { detection in
-            guard let label = detection.recognizedLabel,
-                  let printing = cardDatabase.printing(approximatelyNamed: label) else {
-                return true
-            }
-            let kind = CardKind.from(
-                type: printing.classification.type,
-                supertype: printing.classification.supertype
-            )
-            return placementRules.isPlausible(kind: kind, in: mapper.zone(for: detection.center))
+            guard let label = detection.recognizedLabel else { return true }
+            return placementRules.isPlausible(kind: kind(forLabel: label), in: mapper.zone(for: detection.center))
         }
+    }
+
+    /// The coarse role `UnderlayResolver` needs to decide what can sit
+    /// under what: a Unit can have Gear or Runes beneath it, two Units
+    /// can't legitimately overlap. Derived from the same memoized category
+    /// as the placement rules, so both agree by construction.
+    private func stackingRole(of id: TrackedObjectID, in objects: [TrackedObject]) -> CardRole {
+        guard let label = objects.first(where: { $0.id == id })?.recognizedLabel else { return .unknown }
+        switch kind(forLabel: label) {
+        case .unit, .champion: return .unit
+        case .gear, .rune: return .attachment
+        case .unknown: return .unknown
+        case .spell, .legend, .battlefield: return .other
+        }
+    }
+
+    /// What kind of card a recognizer label names, resolved once per label.
+    ///
+    /// `CardDatabase.printing(approximatelyNamed:)` normalizes and scans the
+    /// whole catalogue, and this sits on the per-detection, per-poll path —
+    /// a card's category can't change between polls, so re-deriving it every
+    /// time was pure repetition. Cards keep their label for a whole session,
+    /// so this settles after the first sighting of each distinct card.
+    ///
+    /// A label that resolves to nothing is cached as `.unknown`, which
+    /// `CardPlacementRules` permits everywhere — an unrecognized card is
+    /// still tracked, just not constrained.
+    private func kind(forLabel label: String) -> CardKind {
+        if let cached = cardKindByLabel[label] { return cached }
+        let resolved = cardDatabase.printing(approximatelyNamed: label).map {
+            CardKind.from(type: $0.classification.type, supertype: $0.classification.supertype)
+        } ?? .unknown
+        cardKindByLabel[label] = resolved
+        return resolved
     }
 
     private func recordUnprocessed(_ event: RiftboundExpertSystem.ObservedTableEvent) {
@@ -823,20 +853,27 @@ final class CameraPipelineController: ObservableObject {
             if trackingEvents.count > 60 {
                 trackingEvents.removeLast(trackingEvents.count - 60)
             }
-            trackedObjects = expertSystemAdapter.trackedObjects
+            // Stacking is resolved here, once, before anything consumes
+            // the objects. The detector reports the top card of a stack;
+            // working out what's underneath is tracking's job, so the
+            // z-order and underlay links belong to the objects everything
+            // else reads — the overlay, the tracking log, and the durable
+            // store alike. Resolving inside persistence meant only the
+            // database ever knew about a stack.
+            let resolution = underlayResolver.resolve(expertSystemAdapter.trackedObjects) { [self] id in
+                stackingRole(of: id, in: expertSystemAdapter.trackedObjects)
+            }
+            trackedObjects = resolution.objects
+            illegalOverlaps = resolution.illegalOverlaps
             discardedCards = expertSystemAdapter.discardedObjects
 
-            // Durable board state runs off these same tracked objects, not
-            // a second tracker of its own — screen and disk must agree on
-            // which physical card is which.
-            if let boardPersistence {
-                let result = boardPersistence.sync(
-                    objects: expertSystemAdapter.trackedObjects,
-                    disappearedIDs: expertSystemAdapter.lastDisappearedIDs,
-                    zoneMapper: zoneMapper
-                )
-                illegalOverlaps = result.illegalOverlaps
-            }
+            // Durable board state runs off those same resolved objects, so
+            // screen and disk agree on identity and z-order both.
+            boardPersistence?.sync(
+                objects: resolution.objects,
+                disappearedIDs: expertSystemAdapter.lastDisappearedIDs,
+                zoneMapper: zoneMapper
+            )
         }
     }
 

@@ -21,7 +21,6 @@ import RiftboundVision
 final class BoardStatePersistence {
     private let context: ModelContext
     private let cardDatabase: CardDatabase
-    private let underlayResolver = UnderlayResolver()
 
     /// Rows already known this session, so the steady state is a dictionary
     /// hit rather than a fetch per card per poll.
@@ -37,39 +36,29 @@ final class BoardStatePersistence {
         self.cardDatabase = cardDatabase
     }
 
-    /// Result of one poll: whatever the underlay pass flagged as physically
-    /// impossible stacking, for the caller to surface.
-    struct SyncResult {
-        let illegalOverlaps: [IllegalOverlap]
-    }
-
     /// Mirrors this poll's cards into the store.
     ///
     /// - Parameters:
-    ///   - objects: the tracker's current objects — the *same* ones the
-    ///     overlay draws, so screen and disk agree on identity.
+    ///   - objects: the tracker's current objects, stacking already
+    ///     resolved by the caller — the *same* ones the overlay draws, so
+    ///     screen and disk agree on both identity and z-order. Resolving
+    ///     here as well would mean doing it twice per poll and letting the
+    ///     two answers drift.
     ///   - disappearedIDs: tracks dropped this poll; their bookkeeping is
     ///     released, though the row is left as last-known state. Only
     ///     settling in the Trash deletes a row.
     ///   - zoneMapper: built from the live calibration by the caller.
-    @discardableResult
     func sync(
         objects: [TrackedObject],
         disappearedIDs: [TrackedObjectID],
         zoneMapper: ZoneMapper
-    ) -> SyncResult {
-        // The tracker knows geometry; card *roles* come from what the
-        // detector recognized, resolved against the card database here.
-        let resolution = underlayResolver.resolve(objects) { [self] id in
-            role(for: id, in: objects)
-        }
-
+    ) {
         for id in disappearedIDs {
             trashPollCounts[id] = nil
             persistedCards[id] = nil
         }
 
-        for object in resolution.objects where object.type == .card {
+        for object in objects where object.type == .card {
             let zone = zoneMapper.zone(for: object.center)
 
             if zone == .trash {
@@ -84,10 +73,9 @@ final class BoardStatePersistence {
                 trashPollCounts[object.id] = nil
             }
 
-            upsert(object, in: resolution.objects, zone: zone)
+            upsert(object, in: objects, zone: zone)
         }
 
-        return SyncResult(illegalOverlaps: resolution.illegalOverlaps)
     }
 
     /// Forgets this session's caches. The rows stay on disk — they're
@@ -98,18 +86,6 @@ final class BoardStatePersistence {
     }
 
     // MARK: - Card identity
-
-    /// The coarse stacking role `UnderlayResolver` needs, via the
-    /// recognizer's class label. `.unknown` while nothing has recognized the
-    /// card yet, which the resolver treats as "never link, never flag."
-    private func role(for id: TrackedObjectID, in objects: [TrackedObject]) -> CardRole {
-        guard let printing = printing(for: id, in: objects) else { return .unknown }
-        switch printing.classification.type {
-        case "Unit": return .unit
-        case "Gear", "Rune": return .attachment
-        default: return .other
-        }
-    }
 
     private func printing(for id: TrackedObjectID, in objects: [TrackedObject]) -> CardPrinting? {
         guard let label = objects.first(where: { $0.id == id })?.recognizedLabel else { return nil }
