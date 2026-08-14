@@ -43,6 +43,13 @@ enum PipelineStage: Int, CaseIterable, Identifiable {
 /// an event it declined to turn into an action. The translator runs inside
 /// `GameEngine.process` off the main actor, while the UI reads on it, so
 /// the value can't simply live on `CameraPipelineController`.
+/// Carries a value across a concurrency boundary Swift can't verify.
+/// Used only where the single-writer, in-order contract makes the crossing
+/// safe in fact — see `CameraPipelineController.detect(in:)`.
+struct UncheckedBox<Value>: @unchecked Sendable {
+    let value: Value
+}
+
 final class TranslationNoteBox: @unchecked Sendable {
     private let lock = NSLock()
     private var value: String?
@@ -193,6 +200,16 @@ final class CameraPipelineController: ObservableObject {
     /// the right place.
     @Published private(set) var misplacedCards: [MisplacedCard] = []
 
+    /// True when most tracked cards are falling outside every calibrated
+    /// zone.
+    ///
+    /// This is the silent failure that looks like a broken app: an
+    /// uncalibrated mat puts every card in `.unknown`, the adapter has no
+    /// region to forward, and the pipeline produces nothing at all — while
+    /// the screen happily shows cards being detected. Without saying so,
+    /// the only symptom is that nothing ever happens.
+    @Published private(set) var needsCalibration = false
+
     /// Which `PipelineStage`s the user has asked to run, via the settings
     /// overlay. Independent of `PipelineStage.isWired` — a stage can be
     /// "requested" here and still do nothing if it isn't wired into
@@ -329,9 +346,6 @@ final class CameraPipelineController: ObservableObject {
     /// `ExpertSystemTranslatorAdapter.onUntranslatable`.
     private let translationNote = TranslationNoteBox()
 
-    /// Which zones each kind of card can physically occupy — a filter on
-    /// detector noise, not a rules decision. See `CardPlacementRules`.
-    private let placementRules = CardPlacementRules()
     private let underlayResolver = UnderlayResolver()
     private let misplacedMonitor = MisplacedCardMonitor()
     /// Memo for `kind(forLabel:)` — see its doc comment.
@@ -556,6 +570,7 @@ final class CameraPipelineController: ObservableObject {
         expertSystemFrameIndex = 0
         trackedObjects = []
         misplacedCards = []
+        needsCalibration = false
         misplacedMonitor.reset()
 
         // Stage ③+④: a real GameState, the NLP translator, and the engine
@@ -596,17 +611,21 @@ final class CameraPipelineController: ObservableObject {
         // be consumed once (each call replaces the stored continuation),
         // so the engine is driven per-event from here rather than via
         // `engine.run()`, which would try to claim that same stream.
+        // This `Task` inherits the main actor from its enclosing context,
+        // so the bookkeeping calls below run without suspending — only
+        // `engine.process` actually crosses into another actor, and it's
+        // the sole `await` here for exactly that reason.
         expertSystemEventLoop = Task {
             for await event in adapter.events() {
-                await self.recordObservedEvent(event)
-                guard await self.isStageActive(.nlpTranslation) else {
+                self.recordObservedEvent(event)
+                guard self.isStageActive(.nlpTranslation) else {
                     // Still log it, otherwise switching stage ③ off looks
                     // identical to the camera seeing nothing at all.
-                    await self.recordUnprocessed(event)
+                    self.recordUnprocessed(event)
                     continue
                 }
                 let instruction = await engine.process(event)
-                await self.recordInstruction(instruction, for: event)
+                self.recordInstruction(instruction, for: event)
             }
         }
 
@@ -658,6 +677,23 @@ final class CameraPipelineController: ObservableObject {
         case .unknown: return .unknown
         case .spell, .legend, .battlefield: return .other
         }
+    }
+
+    /// Runs the detector on a background executor and hands the results
+    /// back on the main actor.
+    ///
+    /// `CVPixelBuffer` and the detector are both reference-like values that
+    /// Swift can't prove `Sendable`, so this crossing is asserted rather
+    /// than checked. It's sound in practice for the reason the tracker's
+    /// own contract states: one caller, one frame at a time, in order —
+    /// `process(_:)` awaits this before starting the next poll, so no two
+    /// detections are ever in flight over the same buffer.
+    private func detect(in pixelBuffer: CVPixelBuffer) async -> [Detection] {
+        let box = UncheckedBox(value: (detector, pixelBuffer))
+        return await Task.detached(priority: .userInitiated) {
+            let (detector, buffer) = box.value
+            return (try? detector.detect(in: buffer)) ?? []
+        }.value
     }
 
     /// What kind of card a recognizer label names, resolved once per label.
@@ -807,8 +843,14 @@ final class CameraPipelineController: ObservableObject {
         //
         // Correctness over an unmeasured saving. Restore it only alongside
         // a way to confirm the mapping against a known card position.
+        // Inference runs off the main actor. This whole type is
+        // `@MainActor`, so a synchronous `detect` here blocked the UI for
+        // the duration of every poll — at a ~5 Hz cadence and ~100ms per
+        // pass that's half the main thread spent inside Core ML, which
+        // shows up as a stuttering preview and sluggish controls even
+        // though the pipeline itself is keeping up.
         let started = CFAbsoluteTimeGetCurrent()
-        let raw = (try? detector.detect(in: frame.pixelBuffer)) ?? []
+        let raw = await detect(in: frame.pixelBuffer)
         recordDetectionDuration(CFAbsoluteTimeGetCurrent() - started)
         detections = raw
 
@@ -852,6 +894,14 @@ final class CameraPipelineController: ObservableObject {
             misplacedCards = misplacedMonitor.update(objects: resolution.objects) { [self] label in
                 kind(forLabel: label)
             }
+
+            // Needs a couple of cards before it means anything — one card
+            // held off-mat while being read is normal, half the table
+            // sitting outside every zone is a calibration that doesn't
+            // match the camera.
+            let cards = resolution.objects.filter { $0.type == .card }
+            let offMat = cards.filter { $0.currentZone == .unknown }
+            needsCalibration = cards.count >= 2 && offMat.count * 2 >= cards.count
 
             // Durable board state runs off those same resolved objects, so
             // screen and disk agree on identity and z-order both.

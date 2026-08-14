@@ -105,8 +105,9 @@ struct ContentView: View {
             TurnControlBar(
                 gameState: $pipeline.gameState,
                 isAutoDetecting: $pipeline.isAutoDetectingPhase,
-                latestInstruction: pipeline.instructions.first,
-                misplacedCards: pipeline.misplacedCards
+                instructions: pipeline.instructions,
+                misplacedCards: pipeline.misplacedCards,
+                needsCalibration: pipeline.needsCalibration
             )
         }
         .frame(minWidth: 1160, minHeight: 675)
@@ -177,6 +178,10 @@ struct ContentView: View {
         // aligning the mat after starting detection is what put cards in
         // the wrong zones.
         .task { await pipeline.openCamera() }
+        // Release the camera when the window goes away. Without this the
+        // capture session — and the OS camera indicator — stayed live for
+        // the rest of the process's life.
+        .onDisappear { pipeline.closeCamera() }
         .sheet(isPresented: Binding(
             get: { pipeline.debugReport != nil },
             set: { if !$0 { pipeline.debugReport = nil } }
