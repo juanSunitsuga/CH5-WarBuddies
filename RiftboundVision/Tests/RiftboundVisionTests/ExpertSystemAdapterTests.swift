@@ -65,7 +65,7 @@ struct ExpertSystemAdapterTests {
     /// Draw (Main Deck → Hand) can't be forwarded — it should be dropped
     /// into `unrepresentableZoneEvents`, not silently invented as a wrong
     /// `TableRegion`.
-    @Test("A Draw signature (Main Deck to Hand) is not forwarded, and is recorded as unrepresentable")
+    @Test("A Draw signature (Main Deck to Hand) is forwarded to the Expert System")
     func mainDeckToHandIsNotForwardable() async {
         let playerA = PlayerID()
         let zoneMapper = ZoneMapper(zones: [
@@ -93,8 +93,16 @@ struct ExpertSystemAdapterTests {
         var received: [ObservedTableEvent] = []
         for await event in stream { received.append(event) }
 
-        #expect(received.isEmpty)
-        #expect(adapter.unrepresentableZoneEvents.contains { $0.previousZone == .mainDeck && $0.currentZone == .player1Hand })
+        // This assertion used to be the inverse: the Draw signature was
+        // dropped because `TableRegion` had no way to say "Main Deck", so
+        // the move never reached the Expert System at all. Both zones are
+        // representable now, so the move is forwarded and Draw is finally
+        // reachable from the table.
+        #expect(adapter.unrepresentableZoneEvents.isEmpty)
+        #expect(received.contains { event in
+            guard case .cardMoved(let from, let to) = event.kind else { return false }
+            return from.zone == .mainDeck && to.isHandRegion
+        }, "A card moving Main Deck → Hand is the physical signature of a Draw.")
     }
 
     /// `identify(objectID:as:)` requires knowing a `TrackedObjectID` in
