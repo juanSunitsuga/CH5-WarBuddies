@@ -131,6 +131,22 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
             return await translate(card: card, from: nil, to: region, state: state, player: player)
 
         case .cardMoved(let from, let to):
+            // Two moves are recognisable from the transition alone, without
+            // asking the card-text layer what the card does.
+            if from.zone == .mainDeck, to.isHandRegion {
+                // Rule 591: Draw. A Limited Action (589.2) — legal only
+                // when something has already authorized it, which the
+                // validator checks. Proposing it is right; deciding whether
+                // it was allowed is the engine's job, not this layer's.
+                return .draw(count: 1)
+            }
+            if from.zone == .runeDeck, to.zone == .runeArea {
+                // Rule 515.3/154.3: Channel Rune, also a Limited Action.
+                // Reachable at last now that `.runeArea` can be named —
+                // previously this branch could never be entered.
+                onUntranslatable?("Channelling a Rune is a scripted step of the Channel Phase, not a move to propose.")
+                return nil
+            }
             return await translate(card: card, from: from, to: to, state: state, player: player)
         }
     }
@@ -174,23 +190,25 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         return gameAction(for: candidate, destination: to, state: state, player: player)
     }
 
-    /// Maps a `TableRegion` to the exact region-name strings
-    /// `ActionTranslatingEngine`'s heuristics compare against
-    /// (`"Hand"`/`"Base"`/`"Battlefield"`). `TableRegion` can only
-    /// represent those three (rule 106.5.b — see `RiftboundVision
-    /// .ExpertSystemAdapter`'s own doc comment on the same gap), which
-    /// means `.channelRune` (checked via `destinationRegion == "RuneArea"`)
-    /// can never actually fire through this real path — `TableRegion` has
-    /// no Rune Area representation to produce that string from. Flagging,
-    /// not working around: fixing this means extending `TableRegion`
-    /// itself (`RiftboundExpertSystem`), not inventing a parallel region
-    /// vocabulary here.
+    /// Maps a `TableRegion` onto the region names `ActionTranslatingEngine`
+    /// compares against.
+    ///
+    /// Every zone is nameable now. Previously only Hand, Base and
+    /// Battlefield existed, so `"RuneArea"` could never be produced and the
+    /// `.channelRune` branch was unreachable no matter what a player did on
+    /// the table.
     private func regionName(_ region: TableRegion) -> String {
-        if region.isHandRegion { return "Hand" }
-        switch region.location {
+        switch region.zone {
+        case .hand: return "Hand"
         case .base: return "Base"
         case .battlefield: return "Battlefield"
-        case nil: return "Hand"
+        case .mainDeck: return "MainDeck"
+        case .runeDeck: return "RuneDeck"
+        case .runeArea: return "RuneArea"
+        case .trash: return "Trash"
+        case .banishment: return "Banishment"
+        case .legendZone: return "Legend"
+        case .championZone: return "Champion"
         }
     }
 

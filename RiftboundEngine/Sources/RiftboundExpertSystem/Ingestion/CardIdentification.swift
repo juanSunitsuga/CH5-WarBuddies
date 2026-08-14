@@ -24,15 +24,68 @@ public struct CardIdentification: Sendable {
 /// vision layer, not here. The Ingestion layer is responsible for mapping
 /// raw camera coordinates to one of these before anything reaches the
 /// engine; the engine should never see a coordinate.
+/// Every physical region of the table a card can be observed in.
+///
+/// Rule 106 draws a line this enum deliberately does not: only Base and
+/// Battlefield are *Locations*; Hand, Trash, the decks, Banishment, the
+/// Legend and Champion zones are Zones but not Locations (106.5.b). That
+/// distinction still matters to the rules, and `TableRegion.location`
+/// preserves it — but the vision layer has to be able to *say* "this card
+/// is in the Trash" before the rules can decide it doesn't matter. Only
+/// naming Locations meant six of the mat's regions had no representation
+/// at all, so a card entering them was dropped at the boundary and Draw
+/// and Channel Rune were unreachable however well tracking worked.
+public enum TableZone: Sendable, Equatable, Hashable {
+    case hand
+    case base
+    case battlefield(BattlefieldID)
+    case mainDeck
+    case runeDeck
+    case runeArea
+    case trash
+    case banishment
+    case legendZone
+    case championZone
+}
+
 public struct TableRegion: Sendable, Equatable {
     public let owner: PlayerID
-    public let location: Location?   // nil if not yet resolved to a base/battlefield (e.g. still in hand)
-    public let isHandRegion: Bool
+    public let zone: TableZone
 
+    public init(owner: PlayerID, zone: TableZone) {
+        self.owner = owner
+        self.zone = zone
+    }
+
+    /// Rule 106: Base and Battlefield are the only Locations. Everything
+    /// else is a Zone a card can sit in but not a place a Unit can Move to,
+    /// so this is `nil` there by design rather than by omission.
+    public var location: Location? {
+        switch zone {
+        case .base: return .base(owner)
+        case .battlefield(let battlefieldID): return .battlefield(battlefieldID)
+        default: return nil
+        }
+    }
+
+    public var isHandRegion: Bool {
+        if case .hand = zone { return true }
+        return false
+    }
+
+    /// Convenience for the Location-shaped call sites that predate
+    /// `TableZone`, so they read the same as before.
     public init(owner: PlayerID, location: Location?, isHandRegion: Bool) {
         self.owner = owner
-        self.location = location
-        self.isHandRegion = isHandRegion
+        if isHandRegion {
+            self.zone = .hand
+        } else {
+            switch location {
+            case .base: self.zone = .base
+            case .battlefield(let id): self.zone = .battlefield(id)
+            case nil: self.zone = .hand
+            }
+        }
     }
 }
 

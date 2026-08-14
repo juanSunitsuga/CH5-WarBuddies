@@ -281,20 +281,30 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         // new track would otherwise carry no seat and be dropped.
         guard let seat = player ?? defaultSeat, let ownerID = playerCalibration[seat] else { return nil }
 
+        // Every calibrated zone now has a `TableZone`, so nothing is
+        // dropped for want of a representation. Only `.unknown` — a card
+        // between regions or off the mat — has nothing to say.
         switch zone {
         case .player1Hand, .player2Hand:
-            return TableRegion(owner: ownerID, location: nil, isHandRegion: true)
+            return TableRegion(owner: ownerID, zone: .hand)
         case .base:
-            return TableRegion(owner: ownerID, location: .base(ownerID), isHandRegion: false)
+            return TableRegion(owner: ownerID, zone: .base)
         case .battlefield:
             guard let slot = battlefieldSlot, let battlefieldID = battlefieldCalibration[slot] else { return nil }
-            return TableRegion(owner: ownerID, location: .battlefield(battlefieldID), isHandRegion: false)
-        case .mainDeck, .runeDeck, .trash, .runeArea, .legend, .champion, .unknown:
-            // See the type's doc comment — no `Location`/`TableRegion`
-            // representation exists for these yet. Legend Zone/Champion
-            // Zone are Zones but not Locations per rule 106.5.b, same
-            // category as Hand/Deck/Trash — they'd need the same
-            // `TableRegion` extension the other non-Location zones do.
+            return TableRegion(owner: ownerID, zone: .battlefield(battlefieldID))
+        case .mainDeck:
+            return TableRegion(owner: ownerID, zone: .mainDeck)
+        case .runeDeck:
+            return TableRegion(owner: ownerID, zone: .runeDeck)
+        case .runeArea:
+            return TableRegion(owner: ownerID, zone: .runeArea)
+        case .trash:
+            return TableRegion(owner: ownerID, zone: .trash)
+        case .legend:
+            return TableRegion(owner: ownerID, zone: .legendZone)
+        case .champion:
+            return TableRegion(owner: ownerID, zone: .championZone)
+        case .unknown:
             return nil
         }
     }
