@@ -13,7 +13,7 @@ public enum GameActionApplier {
     /// performs no validation of its own.
     public static func apply(_ action: GameAction, to state: inout GameState, proposedBy player: PlayerID) {
         switch action {
-        case .play(let card, let destination, let additionalChoices):
+        case .play(let card, let destination, let additionalChoices, _):
             applyPlay(card: card, destination: destination, additionalChoices: additionalChoices, to: &state, proposedBy: player)
         case .standardMove(let units, let destination):
             applyStandardMove(units: units, destination: destination, to: &state, proposedBy: player)
@@ -21,8 +21,8 @@ public enum GameActionApplier {
             applyDraw(count: count, to: &state, player: player)
         case .channel(let count, _):
             applyChannel(count: count, to: &state, player: player)
-        case .recycleRune(let domain, let wasExhausted):
-            applyRecycleRune(domain: domain, wasExhausted: wasExhausted, to: &state, player: player)
+        case .recycleRune(let domain):
+            applyRecycleRune(domain: domain, to: &state, player: player)
         default:
             // TODO: remaining GameAction cases — add here once
             // LegalityValidator gains real logic for them (see
@@ -196,20 +196,13 @@ public enum GameActionApplier {
     /// reconcile against. These two effects are independent — the pool
     /// entry gets consumed by a later Play, but the recycle still
     /// happened, so the cumulative tally does not reverse.
-    ///
-    /// `wasExhausted` is threaded through (not branched on) purely so this
-    /// signature — and the `pendingLimitedActions` equality lookup below —
-    /// match the exact action `LegalityValidator.validateRecycleRune`
-    /// already confirmed legal. It has no separate effect here: per this
-    /// enum's own doc comment, callers only reach `apply` after validation
-    /// already rejected `wasExhausted == true`.
-    private static func applyRecycleRune(domain: Domain, wasExhausted: Bool, to state: inout GameState, player: PlayerID) {
+    private static func applyRecycleRune(domain: Domain, to state: inout GameState, player: PlayerID) {
         guard var zones = state.zones[player] else { return }
         zones.runePool.power.append(.domain(domain))
         state.zones[player] = zones
         state.totalRunesRecycled[player, default: 0] += 1
 
-        if let index = state.pendingLimitedActions[player]?.firstIndex(of: .recycleRune(domain: domain, wasExhausted: wasExhausted)) {
+        if let index = state.pendingLimitedActions[player]?.firstIndex(of: .recycleRune(domain: domain)) {
             state.pendingLimitedActions[player]?.remove(at: index)
         }
     }

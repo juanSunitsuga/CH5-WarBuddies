@@ -51,7 +51,7 @@ struct ExpertSystemAdapterTests {
         for await event in stream { received.append(event) }
 
         let moved = received.compactMap { event -> (TableRegion, TableRegion)? in
-            if case .cardMoved(let from, let to, _) = event.kind { return (from, to) }
+            if case .cardMoved(let from, let to) = event.kind { return (from, to) }
             return nil
         }
         #expect(moved.count == 1)

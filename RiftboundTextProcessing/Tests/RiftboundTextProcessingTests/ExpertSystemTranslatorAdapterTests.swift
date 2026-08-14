@@ -112,7 +112,7 @@ struct ExpertSystemTranslatorAdapterTests {
         let card = CardIdentification(cardDefinitionID: definitionID, physicalRegion: Fixture.baseRegion(owner: player), confidence: 1)
 
         let event = RiftboundExpertSystem.ObservedTableEvent(
-            kind: .cardMoved(from: Fixture.handRegion(owner: player), to: Fixture.baseRegion(owner: player), wasExhausted: false),
+            kind: .cardMoved(from: Fixture.handRegion(owner: player), to: Fixture.baseRegion(owner: player)),
             card: card,
             observedAt: 0
         )
@@ -130,7 +130,7 @@ struct ExpertSystemTranslatorAdapterTests {
         let card = CardIdentification(cardDefinitionID: definitionID, physicalRegion: Fixture.baseRegion(owner: player), confidence: 1)
 
         let event = RiftboundExpertSystem.ObservedTableEvent(
-            kind: .cardMoved(from: Fixture.handRegion(owner: player), to: Fixture.baseRegion(owner: player), wasExhausted: false),
+            kind: .cardMoved(from: Fixture.handRegion(owner: player), to: Fixture.baseRegion(owner: player)),
             card: card,
             observedAt: 0
         )

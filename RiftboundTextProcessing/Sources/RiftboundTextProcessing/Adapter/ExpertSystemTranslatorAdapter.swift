@@ -136,15 +136,10 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
                 onUntranslatable?("Came into view in the hand — nothing was played.")
                 return nil
             }
-            // No prior `.cardMoved` observed this Rune's rotation, so
-            // there's no stance evidence to report — `false` here isn't a
-            // claim "it was Ready," just the honest absence of a signal.
-            // A Rune reappearing already-Exhausted directly in the Rune
-            // Deck (skipping a `.cardMoved`) is an untested edge case.
-            return await translate(card: card, from: nil, to: region, wasExhausted: false, state: state, player: player)
+            return await translate(card: card, from: nil, to: region, state: state, player: player)
 
-        case .cardMoved(let from, let to, let wasExhausted):
-            return await translate(card: card, from: from, to: to, wasExhausted: wasExhausted, state: state, player: player)
+        case .cardMoved(let from, let to):
+            return await translate(card: card, from: from, to: to, state: state, player: player)
         }
     }
 
@@ -162,7 +157,6 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         card: CardIdentification,
         from: TableRegion?,
         to: TableRegion,
-        wasExhausted: Bool,
         state: GameState,
         player: PlayerID
     ) async -> GameAction? {
@@ -185,7 +179,7 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         )
 
         let candidate = await engine.inferAction(event: internalEvent)
-        return gameAction(for: candidate, context: context, destination: to, wasExhausted: wasExhausted, state: state, player: player)
+        return gameAction(for: candidate, context: context, destination: to, state: state, player: player)
     }
 
     /// Maps a `TableRegion` to the exact region-name strings
@@ -226,7 +220,6 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         for candidate: CandidateGameAction,
         context: CardContext?,
         destination: TableRegion,
-        wasExhausted: Bool,
         state: GameState,
         player: PlayerID
     ) -> GameAction? {
@@ -255,15 +248,12 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
             // Rule 130.3/589.2 — same reasoning as `.channelRune` above,
             // reversed direction. See `GameAction.recycleRune`'s doc
             // comment for why this is a Domain-only sibling of `.recycle`
-            // rather than reusing it, and for why `wasExhausted` rides
-            // along here rather than being decided at this layer —
-            // reporting what was observed is this translator's job;
-            // rejecting a double-spend is `LegalityValidator`'s.
+            // rather than reusing it.
             guard let domain = context?.domains.first else {
                 onUntranslatable?("Recycled \(cardName), but its Domain isn't known here, so the Power payment can't be resolved.")
                 return nil
             }
-            return .recycleRune(domain: domain, wasExhausted: wasExhausted)
+            return .recycleRune(domain: domain)
 
         case .rejected(let reason):
             onUntranslatable?(reason)

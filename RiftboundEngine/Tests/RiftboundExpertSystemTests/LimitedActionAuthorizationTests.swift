@@ -70,8 +70,7 @@ struct LimitedActionAuthorizationTests {
         let event = ObservedTableEvent(
             kind: .cardMoved(
                 from: TableRegion(owner: playerA, location: nil, isHandRegion: false),
-                to: TableRegion(owner: playerA, location: nil, isHandRegion: true),
-                wasExhausted: false
+                to: TableRegion(owner: playerA, location: nil, isHandRegion: true)
             ),
             card: nil,
             observedAt: 0

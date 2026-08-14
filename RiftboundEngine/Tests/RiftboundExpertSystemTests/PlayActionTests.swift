@@ -99,6 +99,83 @@ struct PlayActionTests {
         #expect(result.failureValue == .insufficientEnergy(required: 5, available: 1))
     }
 
+    // MARK: - Observed exhausted-Rune count (130.2)
+
+    /// Rule 130.2: Energy is paid by Exhausting Runes, so a Unit costing 3
+    /// Energy should correspond to exactly 3 Runes physically Exhausted.
+    /// Observing only 2 is rejected even though the abstract `RunePool`
+    /// has the Energy to cover it — the physical count is what's actually
+    /// wrong here, not the pool balance.
+    @Test("Playing a card is rejected when the observed exhausted-Rune count is short")
+    func rejectsShortExhaustedRuneCount() {
+        var (state, playerA, _, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, energy: 3)
+        state.zones[playerA]?.hand.append(card)
+        state.zones[playerA]?.runePool.energy = 3
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .battlefield(battlefieldID), additionalChoices: [], observedExhaustedRuneCount: 2),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.failureValue == .exhaustedRuneCountMismatch(required: 3, observed: 2))
+    }
+
+    /// Same shortfall check, but for observing *too many* Exhausted Runes
+    /// — 130.2 asks for exactly the cost, not "at least."
+    @Test("Playing a card is rejected when the observed exhausted-Rune count is excessive")
+    func rejectsExcessiveExhaustedRuneCount() {
+        var (state, playerA, _, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, energy: 3)
+        state.zones[playerA]?.hand.append(card)
+        state.zones[playerA]?.runePool.energy = 3
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .battlefield(battlefieldID), additionalChoices: [], observedExhaustedRuneCount: 4),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.failureValue == .exhaustedRuneCountMismatch(required: 3, observed: 4))
+    }
+
+    /// A matching observed count is legal.
+    @Test("Playing a card is legal when the observed exhausted-Rune count matches its cost")
+    func acceptsMatchingExhaustedRuneCount() {
+        var (state, playerA, _, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, energy: 3)
+        state.zones[playerA]?.hand.append(card)
+        state.zones[playerA]?.runePool.energy = 3
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .battlefield(battlefieldID), additionalChoices: [], observedExhaustedRuneCount: 3),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.isSuccess)
+    }
+
+    /// `nil` (no observation available) skips the check entirely — this is
+    /// what every translator without live vision access proposes, and it
+    /// must not be treated as "observed zero."
+    @Test("Playing a card with no observed exhausted-Rune count skips the check")
+    func nilObservedExhaustedRuneCountSkipsCheck() {
+        var (state, playerA, _, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, energy: 3)
+        state.zones[playerA]?.hand.append(card)
+        state.zones[playerA]?.runePool.energy = 3
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .battlefield(battlefieldID), additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.isSuccess)
+    }
+
     // MARK: - Power cost (560–561/130.3)
 
     /// A single-Domain card requiring 2 Chaos is rejected if the player
@@ -185,8 +262,8 @@ struct PlayActionTests {
         let card = Self.handCard(owner: playerA, powerCost: 1, eligibleDomains: [.chaos])
         state.zones[playerA]?.hand.append(card)
 
-        GameActionApplier.apply(.recycleRune(domain: .fury, wasExhausted: false), to: &state, proposedBy: playerA)
-        GameActionApplier.apply(.recycleRune(domain: .chaos, wasExhausted: false), to: &state, proposedBy: playerA)
+        GameActionApplier.apply(.recycleRune(domain: .fury), to: &state, proposedBy: playerA)
+        GameActionApplier.apply(.recycleRune(domain: .chaos), to: &state, proposedBy: playerA)
 
         #expect(state.zones[playerA]?.runePool.power == [.domain(.fury), .domain(.chaos)])
         #expect(state.totalRunesRecycled[playerA] == 2)

@@ -36,11 +36,14 @@ public enum LegalityValidator {
         /// match — non-matching entries in the pool don't count toward it
         /// even though they're real, spendable Power for some other card.
         case insufficientPower(required: Int, available: Int)
-        /// Rule 130.2/130.3: the Rune being Recycled was already Exhausted
-        /// when observed — it already paid an Energy cost this cycle, so
-        /// Recycling it too would spend one physical Rune for both Energy
-        /// and Power. See `GameAction.recycleRune`'s doc comment.
-        case recycledExhaustedRune
+        /// Rule 130.2: how many Runes were physically Exhausted at the
+        /// moment this Play was observed doesn't match the card's Energy
+        /// cost — Energy is paid by Exhausting Runes, so playing a card
+        /// costing `required` should correspond to exactly that many
+        /// Runes going from Ready to Exhausted. Only checked when the
+        /// proposer actually supplied `GameAction.play`'s
+        /// `observedExhaustedRuneCount` — see that field's doc comment.
+        case exhaustedRuneCountMismatch(required: Int, observed: Int)
         /// Rule 589.2: this Limited Action was proposed without any rule or
         /// effect having called for it — nothing in
         /// `GameState.pendingLimitedActions` matches. The classic case:
@@ -52,21 +55,18 @@ public enum LegalityValidator {
 
     public static func validate(_ action: GameAction, in state: GameState, proposedBy player: PlayerID) -> Result<Void, Failure> {
         switch action {
-        case .play(let card, let destination, let additionalChoices):
-            return validatePlay(card: card, destination: destination, additionalChoices: additionalChoices, in: state, player: player)
+        case .play(let card, let destination, let additionalChoices, let observedExhaustedRuneCount):
+            return validatePlay(card: card, destination: destination, additionalChoices: additionalChoices, observedExhaustedRuneCount: observedExhaustedRuneCount, in: state, player: player)
 
         case .standardMove(let unitIDs, let destination):
             return validateStandardMove(unitIDs, destination: destination, in: state, player: player)
-
-        case .recycleRune(_, let wasExhausted):
-            return validateRecycleRune(action, wasExhausted: wasExhausted, in: state, player: player)
 
         // Rule 589.2: Limited Actions are never player-initiated at will —
         // every one of them is legal only if something already authorized
         // it (see `GameState.pendingLimitedActions`). The check is
         // identical across all of them; only *application* differs per
         // case, and only `.draw` has that built out so far.
-        case .draw, .exhaust, .ready, .recycle, .discard, .stun, .reveal,
+        case .draw, .exhaust, .ready, .recycle, .recycleRune, .discard, .stun, .reveal,
              .counter, .buff, .banish, .kill, .add, .channel, .burnOut:
             return validateLimitedAction(action, in: state, player: player)
 
@@ -93,10 +93,16 @@ public enum LegalityValidator {
     ///     matched against `Cost.eligibleDomains` (any combination of
     ///     those Domains, summing to `Cost.powerCost` — see the type's
     ///     own doc comment for why this isn't positional).
+    ///   - 130.2: when `observedExhaustedRuneCount` is supplied, it must
+    ///     equal the card's Energy cost exactly — the physical
+    ///     corroboration that Energy really was paid by Exhausting that
+    ///     many Runes, not just an abstract pool balance. Skipped entirely
+    ///     when `nil` (no observation to check against).
     private static func validatePlay(
         card cardID: ObjectID,
         destination: PlayDestination,
         additionalChoices: [ObjectID],
+        observedExhaustedRuneCount: Int?,
         in state: GameState,
         player: PlayerID
     ) -> Result<Void, LegalityValidator.Failure> {
@@ -156,6 +162,10 @@ public enum LegalityValidator {
             }
         }
 
+        if let observedExhaustedRuneCount, observedExhaustedRuneCount != energyCost {
+            return .failure(.exhaustedRuneCountMismatch(required: energyCost, observed: observedExhaustedRuneCount))
+        }
+
         return .success(())
     }
 
@@ -170,27 +180,6 @@ public enum LegalityValidator {
             return .failure(.limitedActionNotAuthorized(action))
         }
         return .success(())
-    }
-
-    /// Rule 130.3/589.2: everything `validateLimitedAction` already checks
-    /// (589.2 authorization) for `.recycleRune`, plus the one thing that's
-    /// specific to it: the Rune must have been Ready, not already
-    /// Exhausted, at the moment it was observed moving to the Rune Deck
-    /// (130.2/130.3 — see `Failure.recycledExhaustedRune`'s doc comment for
-    /// why an Exhausted Rune can't also be Recycled). Checked before
-    /// authorization so a double-spend attempt is reported as exactly
-    /// that, not as "nothing called for this," which would be true but
-    /// miss the actual problem.
-    private static func validateRecycleRune(
-        _ action: GameAction,
-        wasExhausted: Bool,
-        in state: GameState,
-        player: PlayerID
-    ) -> Result<Void, LegalityValidator.Failure> {
-        guard !wasExhausted else {
-            return .failure(.recycledExhaustedRune)
-        }
-        return validateLimitedAction(action, in: state, player: player)
     }
 
     /// Rule 140: Standard Move.

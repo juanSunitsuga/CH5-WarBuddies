@@ -96,8 +96,8 @@ struct InstructionLogEntry: Identifiable {
             return "\(card): appeared in \(name(region))"
         case .cardRemoved(let region):
             return "\(card): left \(name(region))"
-        case .cardMoved(let from, let to, let wasExhausted):
-            return "\(card): \(name(from)) → \(name(to))\(wasExhausted ? " (still exhausted)" : "")"
+        case .cardMoved(let from, let to):
+            return "\(card): \(name(from)) → \(name(to))"
         case .cardOrientationChanged(let region, let nowExhausted):
             return "\(card): \(nowExhausted ? "exhausted" : "readied") in \(name(region))"
         }
@@ -119,7 +119,7 @@ struct InstructionLogEntry: Identifiable {
 
     private static func describe(_ action: GameAction, card: String) -> String {
         switch action {
-        case .play(_, let destination, _):
+        case .play(_, let destination, _, _):
             switch destination {
             case .base: return "Played \(card) to your Base."
             case .battlefield: return "Played \(card) to the Battlefield."
@@ -135,11 +135,7 @@ struct InstructionLogEntry: Identifiable {
             return "Drew \(count) card\(count == 1 ? "" : "s")."
         case .channel(let count, _):
             return "Channeled \(count) rune\(count == 1 ? "" : "s")."
-        case .recycleRune(let domain, _):
-            // `wasExhausted` isn't shown here — an accepted `.recycleRune`
-            // already passed `LegalityValidator.validateRecycleRune`, which
-            // means it was Ready, so it's always false by the time this
-            // description runs.
+        case .recycleRune(let domain):
             return "Recycled a \(domain.rawValue.capitalized) rune."
         case .exhaust:
             return "Exhausted \(card)."
@@ -180,8 +176,8 @@ struct InstructionLogEntry: Identifiable {
             return "\(card) costs \(required) energy and you have \(available)."
         case .insufficientPower(let required, let available):
             return "\(card) needs \(required) power from a matching Domain and you have \(available) recycled that qualify."
-        case .recycledExhaustedRune:
-            return "That rune is already exhausted — recycle a ready rune instead."
+        case .exhaustedRuneCountMismatch(let required, let observed):
+            return "\(card) needs \(required) rune\(required == 1 ? "" : "s") exhausted to pay for it, but \(observed) \(observed == 1 ? "is" : "are") exhausted."
         case .limitedActionNotAuthorized:
             return "Nothing has called for that action yet — it can't be taken freely."
         case .notImplemented:

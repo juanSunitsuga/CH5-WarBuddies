@@ -253,13 +253,7 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
                   let to = region(for: event.currentZone, battlefieldSlot: event.battlefieldSlot, player: event.player) else {
                 return nil
             }
-            // Bounding-box stance, not `event.currentRotation` directly —
-            // see `CardStance`'s own doc comment on why the box survives a
-            // rotation's bbox re-initialization more reliably than raw
-            // rotation does. `lastTrackedObjects` is this same `ingest`
-            // call's tracker output, so the lookup reflects this exact move.
-            let wasExhausted = lastTrackedObjects.first { $0.id == event.objectID }?.stance == .exhausted
-            return ObservedTableEvent(kind: .cardMoved(from: from, to: to, wasExhausted: wasExhausted), card: card(at: to), observedAt: event.timestamp)
+            return ObservedTableEvent(kind: .cardMoved(from: from, to: to), card: card(at: to), observedAt: event.timestamp)
 
         case .objectRotated:
             guard let region = region(for: event.currentZone, battlefieldSlot: event.battlefieldSlot, player: event.player) else {

@@ -29,8 +29,7 @@ struct GameEngineTests {
         let event = ObservedTableEvent(
             kind: .cardMoved(
                 from: TableRegion(owner: playerA, location: .base(playerA), isHandRegion: false),
-                to: TableRegion(owner: playerA, location: .battlefield(battlefieldID), isHandRegion: false),
-                wasExhausted: false
+                to: TableRegion(owner: playerA, location: .battlefield(battlefieldID), isHandRegion: false)
             ),
             card: nil,
             observedAt: 0
