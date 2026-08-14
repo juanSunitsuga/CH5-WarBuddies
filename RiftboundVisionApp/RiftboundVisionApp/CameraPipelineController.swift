@@ -178,11 +178,6 @@ final class CameraPipelineController: ObservableObject {
     /// would read from.
     @Published private(set) var observedEvents: [RiftboundExpertSystem.ObservedTableEvent] = []
 
-    /// Raw vision-layer events (track identity, zone transitions), captured
-    /// *before* translation into `ObservedTableEvent` drops anything. This
-    /// is the log to read when tracking itself is suspect — the translated
-    /// stream can't show a card entering the Rune Area or Trash at all.
-    @Published private(set) var trackingEvents: [TrackingLogEntry] = []
 
     /// The tracker's own view of the table — stable IDs and centroids,
     /// as opposed to `detections`, which is a fresh identity-free array
@@ -190,14 +185,7 @@ final class CameraPipelineController: ObservableObject {
     /// identical whether tracking is holding or not.
     @Published private(set) var trackedObjects: [TrackedObject] = []
 
-    /// Objects the tracker is currently following. Rising while cards sit
-    /// still means tracks are being abandoned and re-created.
-    var liveTrackCount: Int { trackedObjects.count }
 
-    /// Cards that reached the Trash. Listed for the player, but no longer
-    /// tracked — a card in the Trash is out of play and following it costs
-    /// a tracking slot for the rest of the game.
-    @Published private(set) var discardedCards: [ObjectTracker.DiscardedObject] = []
 
     /// Cards currently sitting somewhere their kind isn't allowed, with
     /// where to put each one back. Confirmed over several polls, so a
@@ -566,9 +554,7 @@ final class CameraPipelineController: ObservableObject {
         )
         expertSystemAdapter = adapter
         expertSystemFrameIndex = 0
-        trackingEvents = []
         trackedObjects = []
-        discardedCards = []
         misplacedCards = []
         misplacedMonitor.reset()
 
@@ -840,15 +826,12 @@ final class CameraPipelineController: ObservableObject {
             expertSystemFrameIndex += 1
             expertSystemAdapter.ingest(detections: detections, frameIndex: expertSystemFrameIndex, timestamp: frame.timestamp)
 
-            // Raw vision-layer events, before translation drops anything.
-            // `init?` returns nil for event types this log doesn't show.
-            for trace in expertSystemAdapter.drainVisionTrace() {
-                guard let entry = TrackingLogEntry(trace: trace) else { continue }
-                trackingEvents.insert(entry, at: 0)
-            }
-            if trackingEvents.count > 60 {
-                trackingEvents.removeLast(trackingEvents.count - 60)
-            }
+            // The vision-layer trace is still produced by the adapter and
+            // still drainable — it's the tap to reach for when tracking
+            // next needs debugging — but nothing renders it now that the
+            // tracking log is gone, so it's drained and dropped rather than
+            // accumulating behind a view that no longer exists.
+            _ = expertSystemAdapter.drainVisionTrace()
             // Stacking is resolved here, once, before anything consumes
             // the objects. The detector reports the top card of a stack;
             // working out what's underneath is tracking's job, so the
@@ -869,7 +852,6 @@ final class CameraPipelineController: ObservableObject {
             misplacedCards = misplacedMonitor.update(objects: resolution.objects) { [self] label in
                 kind(forLabel: label)
             }
-            discardedCards = expertSystemAdapter.discardedObjects
 
             // Durable board state runs off those same resolved objects, so
             // screen and disk agree on identity and z-order both.

@@ -28,11 +28,11 @@ struct TurnControlBar: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
                         Text("Put \(misplaced.label) back in the \(Self.name(misplaced.suggestedZone)).")
-                            .font(.callout.bold())
+                            .font(.title3.bold())
                             .foregroundStyle(.white)
                     }
                     Text(Self.reason(for: misplaced) + (misplacedCards.count > 1 ? "  ·  \(misplacedCards.count - 1) more misplaced." : ""))
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.white.opacity(0.75))
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let latestInstruction {
@@ -40,19 +40,19 @@ struct TurnControlBar: View {
                         Image(systemName: latestInstruction.verdict.iconName)
                             .foregroundStyle(latestInstruction.verdict.tint)
                         Text(latestInstruction.headline)
-                            .font(.callout.bold())
+                            .font(.title3.bold())
                             .foregroundStyle(.white)
                     }
                     Text(latestInstruction.detail ?? gameState.phase.instruction)
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.white.opacity(0.7))
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("Next Step")
-                        .font(.caption)
+                        .font(.callout)
                         .foregroundStyle(.white.opacity(0.6))
                     Text(gameState.phase.instruction)
-                        .font(.callout)
+                        .font(.title3)
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -80,7 +80,7 @@ struct TurnControlBar: View {
             .disabled(isAutoDetecting)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, 18)
         .background(Color(red: 0.11, green: 0.23, blue: 0.33))
     }
 

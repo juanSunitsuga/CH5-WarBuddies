@@ -12,6 +12,10 @@ import RiftboundVision
 struct ContentView: View {
     @StateObject private var pipeline: CameraPipelineController
     @State private var isShowingPipelineSettings = false
+    /// The card being inspected. Lives here rather than in the panel so the
+    /// camera view and the sidebar agree on what's selected — tapping a box
+    /// is what usually sets it.
+    @State private var selectedCard: CardPrinting?
 
     /// `modelContext` is optional so SwiftUI previews (and the no-arg
     /// `ContentView()` used in `#Preview`) still work without a container —
@@ -53,11 +57,17 @@ struct ContentView: View {
                         .scaleEffect(scale)
                         .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
 
-                    LiveDetectionOverlayView(detections: pipeline.detections, cardDatabase: pipeline.cardDatabase)
+                    // Interactive: tapping a card's box selects it, which
+                    // is how the sidebar is driven now.
+                    LiveDetectionOverlayView(
+                        detections: pipeline.detections,
+                        cardDatabase: pipeline.cardDatabase,
+                        selectedPrintingID: selectedCard?.id,
+                        onSelect: { selectedCard = $0 }
+                    )
                         .frame(width: pipeline.frameSize.width, height: pipeline.frameSize.height)
                         .scaleEffect(scale)
                         .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-                        .allowsHitTesting(false)
 
                     // Above the detection boxes: the tracker's centroids
                     // and their stable IDs. This is the layer that shows
@@ -89,7 +99,7 @@ struct ContentView: View {
                 }
             }
 
-            DetectedCardsPanel(pipeline: pipeline)
+            DetectedCardsPanel(pipeline: pipeline, selection: $selectedCard)
             }
 
             TurnControlBar(
