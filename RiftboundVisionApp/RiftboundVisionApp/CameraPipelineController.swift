@@ -199,6 +199,12 @@ final class CameraPipelineController: ObservableObject {
     /// a tracking slot for the rest of the game.
     @Published private(set) var discardedCards: [ObjectTracker.DiscardedObject] = []
 
+    /// Cards currently sitting somewhere their kind isn't allowed, with
+    /// where to put each one back. Confirmed over several polls, so a
+    /// single misread never asks a player to move a card that's already in
+    /// the right place.
+    @Published private(set) var misplacedCards: [MisplacedCard] = []
+
     /// Which `PipelineStage`s the user has asked to run, via the settings
     /// overlay. Independent of `PipelineStage.isWired` — a stage can be
     /// "requested" here and still do nothing if it isn't wired into
@@ -235,13 +241,17 @@ final class CameraPipelineController: ObservableObject {
     private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
     private let ciContext = CIContext()
 
-    /// Floor on the gap between detections. Not a target rate: the real
-    /// rate is whatever the model can sustain, measured below.
+    /// Floor on the gap between detections — about 5 Hz.
     ///
-    /// There is no point sampling faster than the camera delivers (~30 Hz)
-    /// or faster than a hand can move a card, so this caps the ceiling and
-    /// the measurement decides the rest.
-    private static let minimumDetectionInterval: TimeInterval = 0.03
+    /// Chasing the hardware's maximum was a mistake: cards are moved by
+    /// hand, so a few samples a second already follow every move, and the
+    /// extra polls bought nothing but a tracking log scrolling faster than
+    /// it could be read. Detection also runs on the main actor, so each
+    /// poll is UI time spent.
+    ///
+    /// This is a floor, not a target — a machine that can't sustain it
+    /// still falls back to whatever it manages, via the measurement below.
+    private static let minimumDetectionInterval: TimeInterval = 0.2
 
     /// Detector cost, averaged over recent polls. Detection runs
     /// synchronously on the main actor, so this is also roughly how long
@@ -335,6 +345,7 @@ final class CameraPipelineController: ObservableObject {
     /// detector noise, not a rules decision. See `CardPlacementRules`.
     private let placementRules = CardPlacementRules()
     private let underlayResolver = UnderlayResolver()
+    private let misplacedMonitor = MisplacedCardMonitor()
     /// Memo for `kind(forLabel:)` — see its doc comment.
     private var cardKindByLabel: [String: CardKind] = [:]
     private var gameStateStore: GameStateStore?
@@ -558,6 +569,8 @@ final class CameraPipelineController: ObservableObject {
         trackingEvents = []
         trackedObjects = []
         discardedCards = []
+        misplacedCards = []
+        misplacedMonitor.reset()
 
         // Stage ③+④: a real GameState, the NLP translator, and the engine
         // that runs both against every observed event.
@@ -644,23 +657,6 @@ final class CameraPipelineController: ObservableObject {
         observedEvents.append(event)
         if observedEvents.count > 50 {
             observedEvents.removeFirst(observedEvents.count - 50)
-        }
-    }
-
-    /// Drops readings that couldn't physically be where they were seen.
-    ///
-    /// The detector re-reads every card several times a second and
-    /// occasionally names one card as another. A Rune reported in the Base,
-    /// or a Spell on the Battlefield, is far more likely to be a misread
-    /// than a player breaking the rules — and letting it through costs a
-    /// track, then an event, then wrong game state. An unrecognized card is
-    /// always kept: refusing to track what can't be named would be worse
-    /// than tracking it loosely.
-    private func plausibleDetections(_ detections: [Detection]) -> [Detection] {
-        let mapper = zoneMapper
-        return detections.filter { detection in
-            guard let label = detection.recognizedLabel else { return true }
-            return placementRules.isPlausible(kind: kind(forLabel: label), in: mapper.zone(for: detection.center))
         }
     }
 
@@ -828,7 +824,7 @@ final class CameraPipelineController: ObservableObject {
         let started = CFAbsoluteTimeGetCurrent()
         let raw = (try? detector.detect(in: frame.pixelBuffer)) ?? []
         recordDetectionDuration(CFAbsoluteTimeGetCurrent() - started)
-        detections = plausibleDetections(raw)
+        detections = raw
 
         // Second consumer of the same detections, same poll cadence — see
         // `expertSystemAdapter`'s doc comment. Gated on stage 2 so turning
@@ -865,6 +861,14 @@ final class CameraPipelineController: ObservableObject {
             }
             trackedObjects = resolution.objects
             illegalOverlaps = resolution.illegalOverlaps
+
+            // Report placement mistakes rather than hiding them. Filtering
+            // an implausible reading out made the card vanish from the app
+            // while it sat there on the mat, so the board diverged from the
+            // engine with nothing on screen to say why.
+            misplacedCards = misplacedMonitor.update(objects: resolution.objects) { [self] label in
+                kind(forLabel: label)
+            }
             discardedCards = expertSystemAdapter.discardedObjects
 
             // Durable board state runs off those same resolved objects, so

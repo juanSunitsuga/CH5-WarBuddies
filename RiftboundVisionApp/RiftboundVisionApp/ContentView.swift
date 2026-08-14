@@ -95,7 +95,8 @@ struct ContentView: View {
             TurnControlBar(
                 gameState: $pipeline.gameState,
                 isAutoDetecting: $pipeline.isAutoDetectingPhase,
-                latestInstruction: pipeline.instructions.first
+                latestInstruction: pipeline.instructions.first,
+                misplacedCards: pipeline.misplacedCards
             )
         }
         .frame(minWidth: 1160, minHeight: 675)
