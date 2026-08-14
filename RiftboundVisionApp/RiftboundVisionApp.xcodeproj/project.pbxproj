@@ -31,6 +31,7 @@
 		690BCB3309B5473291FEE083 /* PipelineSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED891118FA894EA18345F333 /* PipelineSettingsView.swift */; };
 		BED27183FF894312832F24D9 /* TrackingLogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9CCDD764F424FE69DE25C3F /* TrackingLogEntry.swift */; };
 		C3AA581B11C8447994662CBF /* BoardStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */; };
+		71EB87BDA66944C493D04B22 /* best-2.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = C80542A83A3C4765A9F7868D /* best-2.mlpackage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -57,6 +58,7 @@
 		ED891118FA894EA18345F333 /* PipelineSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineSettingsView.swift; sourceTree = "<group>"; };
 		F9CCDD764F424FE69DE25C3F /* TrackingLogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingLogEntry.swift; sourceTree = "<group>"; };
 		7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardStatePersistence.swift; sourceTree = "<group>"; };
+		C80542A83A3C4765A9F7868D /* best-2.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best-2.mlpackage; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -143,6 +145,7 @@
 			isa = PBXGroup;
 			children = (
 				DBF6C0B24D384E309B541FB3 /* best.mlpackage */,
+				C80542A83A3C4765A9F7868D /* best-2.mlpackage */,
 			);
 			path = CardDetectionModel;
 			sourceTree = "<group>";
@@ -223,6 +226,7 @@
 				1DE850A028A146EF8CD2965A /* garen.json in Resources */,
 				17EEFEABA0B94E61BA799EE9 /* master_yi.json in Resources */,
 				C65BD2D963D14E48BD280043 /* best.mlpackage in Resources */,
+				71EB87BDA66944C493D04B22 /* best-2.mlpackage in Resources */,
 				CCCC6491D5C14229AAC7452C /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

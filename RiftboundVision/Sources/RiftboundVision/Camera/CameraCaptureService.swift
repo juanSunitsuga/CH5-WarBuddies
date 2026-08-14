@@ -331,6 +331,23 @@ public final class AVFoundationCameraCapture: NSObject, CameraCapturing, @unchec
         guard session.canAddOutput(output) else { throw CameraError.cannotConfigureSession }
         session.addOutput(output)
         isOutputAttached = true
+        pinVideoMirroringOff()
+    }
+
+    /// The model was trained exclusively on un-mirrored images — training
+    /// sets `fliplr: 0.0` specifically because a physical card is never
+    /// mirrored on the table, and the offline augmentation never flips
+    /// either. None of this app's device types is a front-facing "selfie"
+    /// camera, so AVFoundation's automatic mirroring shouldn't engage
+    /// anyway — but that's an inferred default, not a guarantee, and a
+    /// silently mirrored feed is a failure the model has no tolerance for:
+    /// every card's art and text would read backwards. Pinned off rather
+    /// than left to a heuristic that could change.
+    private func pinVideoMirroringOff() {
+        guard let connection = output.connection(with: .video),
+              connection.isVideoMirroringSupported else { return }
+        connection.automaticallyAdjustsVideoMirroring = false
+        connection.isVideoMirrored = false
     }
 
     private func resolveDevice(_ deviceID: String?) throws -> AVCaptureDevice {

@@ -28,6 +28,15 @@ import CoreGraphics
 public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
     private let visionModel: VNCoreMLModel
     public var minimumConfidence: VNConfidence
+    /// Class labels the model can emit that aren't real cards.
+    ///
+    /// The v3 model adds a "Token" class whose entire purpose is to absorb
+    /// hard negatives — objects that used to be confidently misread as one
+    /// of the 38 real cards. Letting those through would defeat the point:
+    /// a Token would be tracked, given an ID, and reported as a card the
+    /// catalogue can't identify. Dropping them here keeps that knowledge
+    /// with the model that produced it.
+    public var nonCardLabels: Set<String>
     /// `max(width, height) / min(width, height)` of an accepted detection
     /// — every Riftbound card (including Rune cards; they're the same
     /// physical card stock) ships at roughly 2.5"×3.5", a ~1.4 long/short
@@ -57,9 +66,15 @@ public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
     ///     classes; requiring 0.75 cuts most of that out before the shape
     ///     check below even runs.
     ///   - cardAspectRatioRange: see this property's own doc comment.
-    public init(model: MLModel, minimumConfidence: VNConfidence = 0.75, cardAspectRatioRange: ClosedRange<CGFloat> = 1.2...1.8) throws {
+    public init(
+        model: MLModel,
+        minimumConfidence: VNConfidence = 0.75,
+        cardAspectRatioRange: ClosedRange<CGFloat> = 1.2...1.8,
+        nonCardLabels: Set<String> = ["Token"]
+    ) throws {
         self.visionModel = try VNCoreMLModel(for: model)
         self.minimumConfidence = minimumConfidence
+        self.nonCardLabels = nonCardLabels
         self.cardAspectRatioRange = cardAspectRatioRange
     }
 
@@ -68,7 +83,14 @@ public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
         let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
 
         let request = VNCoreMLRequest(model: visionModel)
-        request.imageCropAndScaleOption = .scaleFill
+        // Must match how training images were prepared, or every card is
+        // fed to the model warped in a way it never trained on. Both the v2
+        // and v3 Roboflow exports say "Resize to 640x640 (Fit (black
+        // edges))" — letterboxed, aspect ratio preserved. `.scaleFill`
+        // stretches non-uniformly to fill the square input, which is the
+        // wrong one; `.scaleFit` preserves aspect ratio and matches the
+        // letterbox the model actually saw.
+        request.imageCropAndScaleOption = .scaleFit
 
         // Kept so results can be mapped back: Vision reports observations
         // relative to this region, not to the whole image.
@@ -87,6 +109,9 @@ public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
             guard let topLabel = observation.labels.first, topLabel.confidence >= minimumConfidence else {
                 return nil
             }
+            // A hard-negative class is a statement that this *isn't* a
+            // card — the most useful thing the model can say about clutter.
+            guard !nonCardLabels.contains(topLabel.identifier) else { return nil }
 
             let rect = imageRect(
                 fromNormalized: observation.boundingBox,
