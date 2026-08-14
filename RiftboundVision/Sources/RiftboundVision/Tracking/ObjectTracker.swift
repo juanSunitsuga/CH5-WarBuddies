@@ -80,10 +80,81 @@ public final class ObjectTracker: @unchecked Sendable {
     /// track. Tune against your calibrated table's pixel/point scale.
     public let matchDistanceThreshold: CGFloat
 
-    public init(occlusionToleranceFrames: Int = 15, settledOcclusionToleranceFrames: Int = 300, matchDistanceThreshold: CGFloat = 60) {
+    public init(
+        occlusionToleranceFrames: Int = 15,
+        settledOcclusionToleranceFrames: Int = 300,
+        matchDistanceThreshold: CGFloat = 60,
+        identityMemoryFrames: Int = 1_800
+    ) {
         self.occlusionToleranceFrames = occlusionToleranceFrames
         self.settledOcclusionToleranceFrames = settledOcclusionToleranceFrames
         self.matchDistanceThreshold = matchDistanceThreshold
+        self.identityMemoryFrames = identityMemoryFrames
+    }
+
+    // MARK: - Identity memory
+
+    /// A track that timed out, remembered by the card it was recognized as.
+    private struct RetiredIdentity {
+        let id: TrackedObjectID
+        let label: String
+        let type: ObjectType
+        let center: CGPoint
+        let retiredAtFrame: Int
+    }
+
+    /// Cards whose tracks timed out but whose identity is still worth
+    /// keeping.
+    ///
+    /// Without this, a dropped track erased its identity permanently: a
+    /// card the recognizer names with 94% confidence, occluded by a hand
+    /// for longer than the tolerance, came back as a brand-new number. On a
+    /// nine-card table that produced IDs in the forties — the tracker
+    /// wasn't following anything, it was renaming everything. Re-detecting
+    /// a card we can *name* should reclaim the number it already had.
+    private var retired: [RetiredIdentity] = []
+
+    /// How long a retired identity stays claimable, in polls. Long enough
+    /// to survive a hand resting on the table or a card lifted to be read,
+    /// bounded so a card genuinely removed from play eventually stops
+    /// haunting the store.
+    public let identityMemoryFrames: Int
+
+    private func retire(_ track: TrackedObject, atFrame frameIndex: Int) {
+        // Only identities worth reclaiming: an unrecognized blob has
+        // nothing to match a future detection against.
+        guard let label = track.recognizedLabel else { return }
+        retired.removeAll { $0.id == track.id }
+        retired.append(RetiredIdentity(
+            id: track.id,
+            label: label,
+            type: track.type,
+            center: track.center,
+            retiredAtFrame: frameIndex
+        ))
+    }
+
+    /// The ID a reappearing detection should reclaim, if it's recognizably
+    /// a card that recently timed out.
+    ///
+    /// Among several retired copies of the same card the nearest wins, so
+    /// two identical Runes can't trade numbers. Never returns an ID that is
+    /// currently live.
+    private func reclaimedID(for detection: Detection, atFrame frameIndex: Int) -> TrackedObjectID? {
+        retired.removeAll { frameIndex - $0.retiredAtFrame > identityMemoryFrames }
+
+        guard let label = detection.recognizedLabel else { return nil }
+        let candidates = retired.enumerated().filter { _, entry in
+            entry.label == label && entry.type == detection.type && tracked[entry.id] == nil
+        }
+        guard let best = candidates.min(by: { lhs, rhs in
+            hypot(detection.center.x - lhs.element.center.x, detection.center.y - lhs.element.center.y)
+                < hypot(detection.center.x - rhs.element.center.x, detection.center.y - rhs.element.center.y)
+        }) else { return nil }
+
+        let id = best.element.id
+        retired.remove(at: best.offset)
+        return id
     }
 
     /// Folds a matched detection into an existing track, whichever pass
@@ -134,11 +205,27 @@ public final class ObjectTracker: @unchecked Sendable {
         // first — good enough for a handful of tabletop objects; revisit
         // with a real assignment algorithm (e.g. Hungarian) only if
         // testing shows greedy matching misassigns under real occlusion.
+        //
+        // Distance is measured to whichever anchor is closer: where the
+        // track was last seen, or where its velocity says it should be by
+        // now. Velocity was computed and stored but never actually used to
+        // match, so a card mid-slide was always compared against a stale
+        // position and could outrun the threshold in a single poll. Taking
+        // the better of the two keeps prediction from hurting the opposite
+        // case, where a moving card stops dead and the prediction
+        // overshoots.
+        let elapsed = previousTimestamp.map { timestamp - $0 } ?? 0
         var candidatePairs: [(distance: CGFloat, trackID: TrackedObjectID, detectionIndex: Int)] = []
         for (existingID, existing) in tracked {
+            let predicted = CGPoint(
+                x: existing.center.x + existing.velocity.dx * elapsed,
+                y: existing.center.y + existing.velocity.dy * elapsed
+            )
             for (index, detection) in remainingDetections {
                 guard detection.type == existing.type else { continue }
-                let distance = hypot(detection.center.x - existing.center.x, detection.center.y - existing.center.y)
+                let toLastSeen = hypot(detection.center.x - existing.center.x, detection.center.y - existing.center.y)
+                let toPredicted = hypot(detection.center.x - predicted.x, detection.center.y - predicted.y)
+                let distance = min(toLastSeen, toPredicted)
                 guard distance <= matchDistanceThreshold else { continue }
                 candidatePairs.append((distance, existingID, index))
             }
@@ -210,10 +297,20 @@ public final class ObjectTracker: @unchecked Sendable {
             remainingDetections.removeAll { identityClaimed.contains($0.offset) }
         }
 
-        // Unmatched detections are new objects.
+        // Unmatched detections are either a card coming back after its
+        // track was retired, or something genuinely new.
         for (_, detection) in remainingDetections {
-            let id = nextID
-            nextID += 1
+            let id = reclaimedID(for: detection, atFrame: frameIndex) ?? {
+                let fresh = nextID
+                nextID += 1
+                return fresh
+            }()
+            // A brand-new track was, by definition, seen this frame. Without
+            // this the occlusion sweep below — which walks every track *not*
+            // in `matchedTrackIDs` — immediately marked each new object
+            // invisible on its own first frame, so a card was drawn dimmed
+            // the moment it appeared and never counted as seen.
+            matchedTrackIDs.insert(id)
             let zone = zoneMapper.zone(for: detection.center)
             tracked[id] = TrackedObject(
                 id: id,
@@ -239,6 +336,7 @@ public final class ObjectTracker: @unchecked Sendable {
             if frameIndex - track.lastSeenFrame > tolerance {
                 disappearedIDs.append(id)
                 tracked.removeValue(forKey: id)
+                retire(track, atFrame: frameIndex)
             } else {
                 var occluded = track
                 occluded.isVisible = false
