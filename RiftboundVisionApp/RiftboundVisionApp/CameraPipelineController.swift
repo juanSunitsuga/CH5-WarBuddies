@@ -449,6 +449,18 @@ final class CameraPipelineController: ObservableObject {
         // Frames flow whenever the camera is up. `process(_:)` always
         // refreshes the preview and only runs detection once the pipeline
         // is started, so the feed is usable for calibration on its own.
+        //
+        // This consumer has to live here, not in `startPipeline()`: nothing
+        // reads `camera.frames()` otherwise, so the capture session runs
+        // (the OS shows the camera in use) while the window stays black
+        // until Start is pressed — which is the whole problem this split
+        // was meant to solve.
+        runLoop = Task { [weak self] in
+            guard let frames = self?.camera.frames() else { return }
+            for await frame in frames {
+                await self?.process(frame)
+            }
+        }
     }
 
     func closeCamera() {
@@ -565,11 +577,6 @@ final class CameraPipelineController: ObservableObject {
             }
         }
 
-        runLoop = Task {
-            for await frame in camera.frames() {
-                await self.process(frame)
-            }
-        }
     }
 
     /// Stops detection and the engine. The camera keeps running, so the
