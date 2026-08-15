@@ -124,7 +124,7 @@ struct InstructionLogEntry: Identifiable {
 
     private static func describe(_ action: GameAction, card: String) -> String {
         switch action {
-        case .play(_, let destination, _):
+        case .play(_, let destination, _, _):
             switch destination {
             case .base: return "Played \(card) to your Base."
             case .battlefield: return "Played \(card) to the Battlefield."
@@ -140,6 +140,8 @@ struct InstructionLogEntry: Identifiable {
             return "Drew \(count) card\(count == 1 ? "" : "s")."
         case .channel(let count, _):
             return "Channeled \(count) rune\(count == 1 ? "" : "s")."
+        case .recycleRune(let domain):
+            return "Recycled a \(domain.rawValue.capitalized) rune."
         case .exhaust:
             return "Exhausted \(card)."
         case .ready:
@@ -177,6 +179,17 @@ struct InstructionLogEntry: Identifiable {
             return "\(card) can't be played there."
         case .insufficientEnergy(let required, let available):
             return "\(card) costs \(required) energy and you have \(available)."
+        case .insufficientPower(let required, let available):
+            // `available` counts only pool entries of a Domain this card
+            // accepts, so "you have 0" can be true with a full pool — say
+            // "matching" rather than leaving the player counting runes.
+            return "\(card) needs \(required) matching power and your pool has \(available). Recycle runes of a domain it accepts."
+        case .exhaustedRuneCountMismatch(let required, let observed):
+            return "\(card) costs \(required) energy, but \(observed) rune\(observed == 1 ? " was" : "s were") exhausted. Exhaust exactly \(required)."
+        case .reactionRequired:
+            return "Something is already resolving — only a Reaction can be played into it."
+        case .actionOrReactionRequired:
+            return "A showdown is open — only an Action or Reaction can start the chain."
         case .limitedActionNotAuthorized:
             return "Nothing has called for that action yet — it can't be taken freely."
         case .notImplemented:

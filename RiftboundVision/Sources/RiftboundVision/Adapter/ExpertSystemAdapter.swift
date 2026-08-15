@@ -21,17 +21,10 @@ import Foundation
 ///     re-identified this frame").
 ///
 /// KNOWN GAP — do not silently paper over this: `ObservedTableEvent`'s
-/// `TableRegion` can only represent Base, Battlefield, and Hand
-/// (`Location` per rule 106 is Base/Battlefield only; Hand gets its own
-/// `isHandRegion` flag). Main Deck, Rune Deck, Trash, and Rune Area have
-/// no representation in the current Expert System ingestion types at all.
-/// That means Draw (Main Deck → Hand) and Channel Rune (Rune Deck → Rune
-/// Area) — two of the four physical signatures in the CV spec — cannot be
-/// forwarded faithfully yet. `unrepresentableZoneEvents` collects what got
-/// dropped so this isn't silently lossy; surface it to whoever owns the
-/// Expert System's `ObservedTableEvent`/`TableRegion` types so those zones
-/// get a real home there (adding cases to `TableRegion`, not inventing
-/// parallel types here).
+/// every calibrated region now has a `TableZone`, so no event is dropped
+/// for want of a representation — only `.unknown` (a card between regions
+/// or off the mat) has nothing to say. `unrepresentableZoneEvents` still
+/// collects those, so the loss stays visible rather than silent.
 /// `@unchecked Sendable`: same single-writer contract as `ObjectTracker`/
 /// `TemporalEventDetector` (both of which it wraps) — `ingest(...)` must
 /// be called strictly in frame order by one caller.
@@ -74,11 +67,17 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// `VisionEvent`s this adapter received but could not translate,
     /// because their zone has no `TableRegion` representation yet (see
     /// the type's doc comment). Inspect this in debug/testing to see what
-    /// Draw/Channel Rune coverage is actually missing right now.
+    /// Draw coverage is actually missing right now.
     public private(set) var unrepresentableZoneEvents: [VisionEvent] = []
 
     /// Buffer behind `drainVisionTrace()`.
     private var visionTrace: [VisionEventTrace] = []
+
+    /// The full tracked-object set as of the most recent `ingest` call —
+    /// kept so `runeAreaCount(for:)` can answer a live poll between frames
+    /// without re-running the tracker. Not exposed directly; `ingest` is
+    /// the only writer, per the same single-writer contract as `tracker`.
+    private var lastTrackedObjects: [TrackedObject] = []
 
     /// Maps a detector's raw class label (e.g. `"Annie Fiery"`) onto the
     /// canonical `CardDefID` the Expert System's `GameState` is keyed by.
@@ -91,6 +90,13 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// `CardDatabase`-backed resolver.
     private let resolveLabel: @Sendable (String) -> CardDefID?
 
+    /// Maps a resolved `CardDefID` onto that printing's Domain — the
+    /// second hop `runeCounts(for:)` needs, since `TrackedObject` itself
+    /// carries no Domain, only a coarse `ObjectType`. Defaults to `nil`
+    /// (unknown) rather than guessing; the app injects a real
+    /// `CardDatabase`-backed resolver, same pattern as `resolveLabel`.
+    private let resolveDomain: @Sendable (CardDefID) -> Domain?
+
     public init(
         zoneMapper: ZoneMapper,
         playerCalibration: [Player: PlayerID],
@@ -98,6 +104,7 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         tracker: ObjectTracker = ObjectTracker(),
         temporalDetector: TemporalEventDetector = TemporalEventDetector(),
         resolveLabel: @escaping @Sendable (String) -> CardDefID? = { CardDefID(rawValue: $0) },
+        resolveDomain: @escaping @Sendable (CardDefID) -> Domain? = { _ in nil },
         defaultSeat: Player? = nil
     ) {
         self.zoneMapper = zoneMapper
@@ -106,6 +113,7 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         self.tracker = tracker
         self.temporalDetector = temporalDetector
         self.resolveLabel = resolveLabel
+        self.resolveDomain = resolveDomain
         self.defaultSeat = defaultSeat
     }
 
@@ -148,6 +156,7 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
             previousTimestamp: previousTimestamp
         )
         previousTimestamp = timestamp
+        lastTrackedObjects = trackerResult.objects
 
         let visionEvents = temporalDetector.process(trackerResult, zoneMapper: zoneMapper, timestamp: timestamp)
         for visionEvent in visionEvents {
@@ -270,10 +279,10 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     }
 
     /// Maps a coarse `Zone` (+ disambiguating battlefield slot / seat) onto
-    /// a `TableRegion`. Returns `nil` for zones `TableRegion` can't
-    /// represent yet (Main Deck, Rune Deck, Trash, Rune Area, Legend,
-    /// Champion, `.unknown`) — callers must treat `nil` as "cannot
-    /// forward," not as a legal empty region.
+    /// a `TableRegion`. Returns `nil` for zones `TableRegion` still can't
+    /// represent (Main Deck, Trash, Legend, Champion, `.unknown`) —
+    /// callers must treat `nil` as "cannot forward," not as a legal empty
+    /// region.
     private func region(for zone: Zone?, battlefieldSlot: Int?, player: Player?) -> TableRegion? {
         guard let zone else { return nil }
         // `defaultSeat` covers zones that imply no seat of their own —
@@ -306,6 +315,68 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
             return TableRegion(owner: ownerID, zone: .championZone)
         case .unknown:
             return nil
+        }
+    }
+
+    /// Live per-Domain count of Rune-typed `TrackedObject`s currently
+    /// sitting in `player`'s calibrated Rune Area, as of the most recent
+    /// `ingest` call. This is a poll, not a discrete event — deliberately
+    /// not routed through `ObservedTableEvent.Kind` (that enum models
+    /// discrete physical facts; an occupancy count is a continuous
+    /// quantity, closer in kind to "ask the tracker" than "something just
+    /// happened").
+    ///
+    /// Uses `zoneMapper.boardZone(for:)` rather than `zone(for:)` because
+    /// the latter collapses straight to `Zone`, losing `BoardZone.owner` —
+    /// the only thing that disambiguates "this player's" Rune Area from
+    /// the other player's calibrated `.runeArea` instance.
+    ///
+    /// `TrackedObject` itself carries no Domain — only the coarse
+    /// `ObjectType.rune` — so each candidate is resolved to a `CardDefID`
+    /// first (same `cardIdentity[id] ?? recognizedLabel.flatMap(resolveLabel)`
+    /// chain `card(at:)` already uses) and then to a `Domain` via
+    /// `resolveDomain`. A Rune whose identity or Domain can't be resolved
+    /// this frame is dropped from the count rather than guessed into a
+    /// bucket — same "flag, don't guess" treatment as the rest of this
+    /// adapter. Total occupancy is `.values.reduce(0, +)` on the result.
+    public func runeCounts(for player: PlayerID) -> [Domain: Int] {
+        var counts: [Domain: Int] = [:]
+        for object in runesInArea(for: player) {
+            let definitionID = cardIdentity[object.id] ?? object.recognizedLabel.flatMap(resolveLabel)
+            guard let definitionID, let domain = resolveDomain(definitionID) else { continue }
+
+            counts[domain, default: 0] += 1
+        }
+        return counts
+    }
+
+    /// Live count of Rune-typed `TrackedObject`s currently sitting in
+    /// `player`'s calibrated Rune Area whose bounding box currently reads
+    /// as `.exhausted` (rules 592/593 — rotated 90°, i.e. landscape rather
+    /// than the printed portrait). Meant to be cross-checked against
+    /// however much Energy the Expert System believes was paid (130.2:
+    /// Energy is paid by exhausting Runes) when a card is Played — the
+    /// same reverse-inference role `runeCounts(for:)` plays for Power.
+    /// Domain-agnostic on purpose: which Runes got exhausted doesn't
+    /// matter for Energy, only how many (unlike Power/Recycle, which is
+    /// Domain-specific — see `runeCounts(for:)`).
+    public func exhaustedRuneCount(for player: PlayerID) -> Int {
+        runesInArea(for: player).filter { $0.stance == .exhausted }.count
+    }
+
+    /// Shared "which Rune-typed `TrackedObject`s currently sit in
+    /// `player`'s calibrated Rune Area" filter behind both `runeCounts(for:)`
+    /// and `exhaustedRuneCount(for:)`. Uses `zoneMapper.boardZone(for:)`
+    /// rather than `zone(for:)` because the latter collapses straight to
+    /// `Zone`, losing `BoardZone.owner` — the only thing that
+    /// disambiguates "this player's" Rune Area from the other player's
+    /// calibrated `.runeArea` instance.
+    private func runesInArea(for player: PlayerID) -> [TrackedObject] {
+        guard let seat = playerCalibration.first(where: { $0.value == player })?.key else { return [] }
+        return lastTrackedObjects.filter { object in
+            guard object.type == .rune else { return false }
+            guard let boardZone = zoneMapper.boardZone(for: object.center) else { return false }
+            return boardZone.type == .runeArea && boardZone.owner == seat
         }
     }
 }
