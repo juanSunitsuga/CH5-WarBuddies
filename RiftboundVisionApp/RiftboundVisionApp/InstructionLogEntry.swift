@@ -86,10 +86,9 @@ struct InstructionLogEntry: Identifiable {
         }
     }
 
-    /// Renders the raw observation. `TableRegion` can only express Hand,
-    /// Base, and Battlefield (rule 106.5.b), so a card entering the Rune
-    /// Area or Trash never reaches this at all — if a physical move
-    /// produces no log row, that gap is the first place to look.
+    /// Renders the raw observation. Every calibrated region now has a
+    /// `TableZone`, so a card entering the Rune Area or Trash reaches this
+    /// too; only a card off the mat entirely produces no row.
     static func summarize(_ event: ObservedTableEvent, card: String) -> String {
         switch event.kind {
         case .cardAppeared(let region):
@@ -104,17 +103,26 @@ struct InstructionLogEntry: Identifiable {
     }
 
     private static func name(_ region: TableRegion) -> String {
-        if region.isHandRegion { return "Hand" }
-        switch region.location {
+        // Switch on `zone`, not `location`: `location` is nil for every
+        // zone rule 106.5.b excludes, so reading it here rendered the Trash,
+        // both decks and the Rune Area all as "unknown zone".
+        switch region.zone {
+        case .hand: return "Hand"
         case .base: return "Base"
         case .battlefield: return "Battlefield"
-        case nil: return "unknown zone"
+        case .mainDeck: return "Main Deck"
+        case .runeDeck: return "Rune Deck"
+        case .runeArea: return "Rune Area"
+        case .trash: return "Trash"
+        case .banishment: return "Banishment"
+        case .legendZone: return "Legend"
+        case .championZone: return "Champion"
         }
     }
 
     private static func describe(_ action: GameAction, card: String) -> String {
         switch action {
-        case .play(_, let destination, _):
+        case .play(_, let destination, _, _):
             switch destination {
             case .base: return "Played \(card) to your Base."
             case .battlefield: return "Played \(card) to the Battlefield."
@@ -130,6 +138,8 @@ struct InstructionLogEntry: Identifiable {
             return "Drew \(count) card\(count == 1 ? "" : "s")."
         case .channel(let count, _):
             return "Channeled \(count) rune\(count == 1 ? "" : "s")."
+        case .recycleRune(let domain):
+            return "Recycled a \(domain.rawValue.capitalized) rune."
         case .exhaust:
             return "Exhausted \(card)."
         case .ready:
@@ -142,6 +152,8 @@ struct InstructionLogEntry: Identifiable {
             return "\(card) was banished."
         case .endTurn:
             return "Turn ended."
+        case .pass:
+            return "Passed."
         default:
             return "Action accepted."
         }
@@ -167,6 +179,14 @@ struct InstructionLogEntry: Identifiable {
             return "\(card) can't be played there."
         case .insufficientEnergy(let required, let available):
             return "\(card) costs \(required) energy and you have \(available)."
+        case .insufficientPower(let required, let available):
+            return "\(card) needs \(required) power from a matching Domain and you have \(available) recycled that qualify."
+        case .exhaustedRuneCountMismatch(let required, let observed):
+            return "\(card) needs \(required) rune\(required == 1 ? "" : "s") exhausted to pay for it, but \(observed) \(observed == 1 ? "is" : "are") exhausted."
+        case .reactionRequired:
+            return "\(card) can't respond right now — only Reaction cards can, while something else is already happening."
+        case .actionOrReactionRequired:
+            return "\(card) can't be played to open this Showdown — it needs the Action or Reaction keyword."
         case .limitedActionNotAuthorized:
             return "Nothing has called for that action yet — it can't be taken freely."
         case .notImplemented:

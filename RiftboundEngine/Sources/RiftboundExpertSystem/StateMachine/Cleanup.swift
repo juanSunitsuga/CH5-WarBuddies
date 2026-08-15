@@ -100,8 +100,60 @@ public enum Cleanup {
     }
 
     /// 526: in a Neutral Open state, if Combat is Pending at one or more
-    /// Battlefields, the Turn Player picks one and Combat begins there.
+    /// Battlefields, the Turn Player picks one and Combat begins there —
+    /// the counterpart to 525, for when the Battlefield *does* already
+    /// have an opposing Unit present (`combatPending == true`, set by
+    /// `markPendingCombats` just above). Scoped to opening the Showdown
+    /// only, same level 525 stops at — the internal Combat Step sequence
+    /// (624–628: establishing Attacker/Defender roles on the Units
+    /// themselves, Assault/Shield, damage) is a separate, not-yet-modeled
+    /// piece (`CombatStep` has no home in `GameState` yet); flagging
+    /// rather than half-building it here.
+    ///
+    /// - 181.3.a/625.1.a.1: the player who most recently applied Contested
+    ///   status to this Battlefield (`contestedBy`) is the Attacker — same
+    ///   signal 525 already uses for Focus, since 549 grants Focus to that
+    ///   same player. If `contestedBy` is missing or stale (doesn't match
+    ///   either of the two controllers now present — e.g. Combat became
+    ///   Pending some other way than a fresh Move/Play), there's no
+    ///   reliable Attacker signal to act on, so this is skipped rather
+    ///   than guessed at.
+    /// - 550.2: unlike 525's standalone Showdown, only the two combatants
+    ///   are Relevant Players here — a Combat Showdown does not open to
+    ///   the whole table.
+    /// - Team modes (Skirmish/War, 646–647) can have more than two
+    ///   controllers at a Battlefield; `combatPending` only requires 2+,
+    ///   but choosing a single Attacker/Defender pair from 3+ is a real
+    ///   rules question this doesn't attempt — skipped when there isn't
+    ///   exactly two.
     private static func beginCombatIfPending(_ state: inout GameState) {
-        // TODO — only fires if `state.turnState == .neutralOpen`.
+        guard case .neutralOpen = state.turnState else { return }
+
+        // Same placeholder as 525: the choice among multiple simultaneously
+        // Combat-Pending Battlefields is a genuine player decision this
+        // engine doesn't yet have a way to solicit mid-Cleanup.
+        guard let battlefieldID = state.battlefields.keys.first(where: {
+            state.battlefieldControl[$0]?.combatPending == true
+        }) else { return }
+
+        let controllersPresent = Set(
+            state.units.values
+                .filter { $0.location == .battlefield(battlefieldID) }
+                .map(\.controller)
+        )
+        guard controllersPresent.count == 2 else { return }
+
+        guard let attacker = state.battlefieldControl[battlefieldID]?.contestedBy,
+              controllersPresent.contains(attacker),
+              let defender = controllersPresent.first(where: { $0 != attacker }) else {
+            return
+        }
+
+        let showdown = Showdown(
+            origin: .combat(attacker: attacker, defender: defender, battlefield: battlefieldID),
+            focusPlayer: attacker,           // 549
+            relevantPlayers: [attacker, defender]  // 550.2
+        )
+        state.turnState = .showdownOpen(showdown)
     }
 }

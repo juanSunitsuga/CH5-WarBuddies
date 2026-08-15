@@ -13,12 +13,18 @@ public enum GameActionApplier {
     /// performs no validation of its own.
     public static func apply(_ action: GameAction, to state: inout GameState, proposedBy player: PlayerID) {
         switch action {
-        case .play(let card, let destination, let additionalChoices):
+        case .play(let card, let destination, let additionalChoices, _):
             applyPlay(card: card, destination: destination, additionalChoices: additionalChoices, to: &state, proposedBy: player)
         case .standardMove(let units, let destination):
             applyStandardMove(units: units, destination: destination, to: &state, proposedBy: player)
         case .draw(let count):
             applyDraw(count: count, to: &state, player: player)
+        case .channel(let count, _):
+            applyChannel(count: count, to: &state, player: player)
+        case .recycleRune(let domain):
+            applyRecycleRune(domain: domain, to: &state, player: player)
+        case .pass:
+            applyPass(to: &state, player: player)
         default:
             // TODO: remaining GameAction cases — add here once
             // LegalityValidator gains real logic for them (see
@@ -28,26 +34,34 @@ public enum GameActionApplier {
         }
     }
 
-    /// Rule 558/560–561/563: Playing a Card, simplified to resolve
-    /// immediately rather than passing through the Chain's open/close cycle
-    /// and Reaction pass-around (563.2.a) — CLAUDE.md point 5 flags the
-    /// Chain as load-bearing for real Reaction/Legion timing, but a live
-    /// single-mat demo with `LegalityValidator` restricted to Neutral Open
-    /// has no second player to pass priority to yet, so there's no
-    /// observable difference today. Revisit once the Chain is actually
-    /// driven by this pipeline instead of only unit-tested in isolation.
+    /// Rule 558/560–561/563: Playing a Card.
     ///   - 558: remove the card from the Hand.
     ///   - 561: pay its Energy cost from the Rune Pool (already confirmed
-    ///     payable by `LegalityValidator.validatePlay`).
+    ///     payable by `LegalityValidator.validatePlay`), and its Power cost
+    ///     by consuming matching entries from `RunePool.power` (also
+    ///     pre-confirmed available/eligible by the validator — see its
+    ///     doc comment for what "matching" means).
     ///   - 563.1.c: a Unit enters the Board exhausted (`Unit.init`'s
-    ///     default) at the chosen Location.
+    ///     default) at the chosen Location, immediately — Units have no
+    ///     `ChainItem` shape (see `ChainItem`'s cases), so they resolve
+    ///     the moment they're Played regardless of `TurnState`, same as
+    ///     always. Whether that's ever actually reachable outside Neutral
+    ///     Open (a Unit carrying `Keyword.action`/`.reaction`) is an edge
+    ///     case `LegalityValidator.validatePlay`'s keyword check doesn't
+    ///     rule out but this Applier doesn't specially handle either —
+    ///     flagged, not solved, here.
     ///   - 563.1.d: Gear always enters at the player's Base, Ready,
     ///     regardless of `destination` (144.2 — `LegalityValidator` already
     ///     rejects a Battlefield destination for Gear before this runs).
-    ///   - 556.2/563.2.b: a Spell has no board form. Ability resolution
-    ///     isn't implemented yet (`parseAbility` always returns `[]`), so
-    ///     this moves it straight to the Trash rather than executing an
-    ///     effect that doesn't exist — flagged, not guessed at.
+    ///     Same immediate-resolution note as Units above.
+    ///   - 556.2/563.2.b/534: a Spell has no board form and does not
+    ///     resolve immediately — `ChainResolver.push` puts it on the Chain
+    ///     (opening one if none exists), so Reactions get a real window
+    ///     against it (509.1.a) before anything happens. See `.pass`'s
+    ///     handling in `apply` for what actually happens once it resolves
+    ///     — today, still just "goes to the Trash," since Ability
+    ///     execution doesn't exist yet (architecture.md item 7); the
+    ///     difference from before is *when* that happens, not *what*.
     private static func applyPlay(
         card cardID: ObjectID,
         destination: PlayDestination,
@@ -59,6 +73,7 @@ public enum GameActionApplier {
               let index = zones.hand.firstIndex(where: { $0.id == cardID }) else { return }
         let card = zones.hand.remove(at: index)
         zones.runePool.energy = max(0, zones.runePool.energy - card.cost.energy)
+        zones.runePool.power = consumingPower(card.cost.powerCost, eligibleDomains: card.cost.eligibleDomains, from: zones.runePool.power)
 
         switch card.type {
         case .unit(let isChampion):
@@ -92,10 +107,40 @@ public enum GameActionApplier {
             state.gear[gear.id] = gear
 
         case .spell:
-            zones.trash.append(card)
+            break  // handled below, after `zones` (Hand/cost) is committed.
         }
 
         state.zones[player] = zones
+
+        if case .spell = card.type {
+            ChainResolver.push(.spell(card, targets: additionalChoices), proposedBy: player, to: &state)
+        }
+    }
+
+    /// Rule 540.4/553.4: Pass — resolves through `ChainResolver`, and if
+    /// that pass-around just completed (every Relevant Player passed),
+    /// applies whatever the top item's terminal effect is.
+    private static func applyPass(to state: inout GameState, player: PlayerID) {
+        guard let resolvedItem = ChainResolver.pass(by: player, in: &state) else { return }
+        applyResolvedChainItem(resolvedItem, to: &state)
+    }
+
+    /// Rule 563.2.b: what happens when a Chain item actually resolves.
+    /// Ability/Triggered effect execution doesn't exist yet
+    /// (architecture.md item 7 — `EffectInstruction` is defined but
+    /// nothing runs it), so the only case with real behavior is a Spell:
+    /// it goes to its owner's Trash — the same terminal state `applyPlay`
+    /// used to assign immediately, before the Chain existed to delay it
+    /// through. Ability items are flagged rather than silently dropped.
+    private static func applyResolvedChainItem(_ item: ChainItem, to state: inout GameState) {
+        switch item {
+        case .spell(let card, _):
+            guard var zones = state.zones[card.owner] else { return }
+            zones.trash.append(card)
+            state.zones[card.owner] = zones
+        case .activatedAbility, .triggeredAbility:
+            break  // TODO: needs the Effects pipeline (architecture.md item 7).
+        }
     }
 
     /// Rule 140: Standard Move.
@@ -155,5 +200,76 @@ public enum GameActionApplier {
         if let index = state.pendingLimitedActions[player]?.firstIndex(of: .draw(count: count)) {
             state.pendingLimitedActions[player]?.remove(at: index)
         }
+    }
+
+    /// Rule 154.3: Channel — move `count` Runes from the Rune Deck into
+    /// the Rune Pool as Energy. Individual Runes aren't tracked as board
+    /// objects (see `GameAction.recycleRune`'s doc comment), so this only
+    /// touches the aggregate `RunePool.energy` plus the cumulative
+    /// `totalRunesChanneled` tally `GameState` keeps for the pace check —
+    /// it does not remove cards from `zones.runeDeck` one-for-one, since
+    /// there's no per-Rune identity here to remove. Deliberately NOT
+    /// domain-typed, unlike `applyRecycleRune` — Energy is paid by
+    /// exhausting Runes regardless of Domain (130.2), so which Domain got
+    /// Channeled doesn't matter for anything Energy touches.
+    private static func applyChannel(count: Int, to state: inout GameState, player: PlayerID) {
+        guard var zones = state.zones[player] else { return }
+        zones.runePool.energy += count
+        state.zones[player] = zones
+        state.totalRunesChanneled[player, default: 0] += count
+
+        if let index = state.pendingLimitedActions[player]?.firstIndex(of: .channel(count: count, exhausted: false)) {
+            state.pendingLimitedActions[player]?.remove(at: index)
+        }
+    }
+
+    /// Rule 130.3: Recycle one Rune of `domain` to pay a Power cost — adds
+    /// it to the spendable `RunePool.power` pool (which `applyPlay`
+    /// consumes from and `LegalityValidator.validatePlay` checks against)
+    /// and separately records the recycle against the cumulative
+    /// `totalRunesRecycled` tally, so `totalRunesChanneled -
+    /// totalRunesRecycled` stays the correct "should still be visible in
+    /// the Rune Area" figure for the vision layer's live count to
+    /// reconcile against. These two effects are independent — the pool
+    /// entry gets consumed by a later Play, but the recycle still
+    /// happened, so the cumulative tally does not reverse.
+    private static func applyRecycleRune(domain: Domain, to state: inout GameState, player: PlayerID) {
+        guard var zones = state.zones[player] else { return }
+        zones.runePool.power.append(.domain(domain))
+        state.zones[player] = zones
+        state.totalRunesRecycled[player, default: 0] += 1
+
+        if let index = state.pendingLimitedActions[player]?.firstIndex(of: .recycleRune(domain: domain)) {
+            state.pendingLimitedActions[player]?.remove(at: index)
+        }
+    }
+
+    /// Removes `count` entries from `pool` that are eligible to pay a cost
+    /// restricted to `eligibleDomains` — a `.universal` entry always
+    /// matches (156.2.b); a `.domain(d)` entry matches iff `d` is in
+    /// `eligibleDomains`. Non-matching entries are left untouched
+    /// regardless of position. If `pool` has fewer matching entries than
+    /// `count` (shouldn't happen — `LegalityValidator` confirms
+    /// availability first), removes as many as exist and stops; it does
+    /// not go negative or touch non-matching entries to make up the
+    /// shortfall.
+    private static func consumingPower(_ count: Int, eligibleDomains: [Domain], from pool: [PowerType]) -> [PowerType] {
+        guard count > 0 else { return pool }
+        var remaining = count
+        var result: [PowerType] = []
+        result.reserveCapacity(pool.count)
+        for entry in pool {
+            let isEligible: Bool
+            switch entry {
+            case .universal: isEligible = true
+            case .domain(let d): isEligible = eligibleDomains.contains(d)
+            }
+            if remaining > 0, isEligible {
+                remaining -= 1
+            } else {
+                result.append(entry)
+            }
+        }
+        return result
     }
 }

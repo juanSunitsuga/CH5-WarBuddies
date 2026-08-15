@@ -52,7 +52,11 @@ enum GameSessionBuilder {
                 owner: localPlayerID,
                 name: printing.name,
                 type: type,
-                cost: Cost(energy: printing.attributes.energy ?? 0),
+                cost: Cost(
+                    energy: printing.attributes.energy ?? 0,
+                    powerCost: printing.attributes.power ?? 0,
+                    eligibleDomains: printing.classification.domain.compactMap(domain(named:))
+                ),
                 might: printing.attributes.might
             )
         }
@@ -76,11 +80,13 @@ enum GameSessionBuilder {
         )
 
         // Rule 560–561: Plays are rejected outright without Energy to pay
-        // with, and nothing in this pipeline can see Runes being channeled
-        // (the Rune Area has no `TableRegion` representation — see
-        // `ExpertSystemAdapter`'s KNOWN GAP). Seeding a generous pool keeps
-        // cost from silently blocking every Play until Channel is
-        // observable; it is not a rules-accurate starting state.
+        // with, and nothing in this app drives a live turn structure yet
+        // to actually Channel some in (architecture.md blocker (c) — no
+        // live `GameEngine` construction here yet, even though Channel
+        // Rune is observable end-to-end as of `ExpertSystemAdapter`'s
+        // `.runeArea`/`.runeDeck` support). Seeding a generous pool keeps
+        // cost from silently blocking every Play until that's wired; it
+        // is not a rules-accurate starting state.
         state.zones[localPlayerID]?.runePool.energy = 99
 
         return Session(
@@ -88,6 +94,17 @@ enum GameSessionBuilder {
             localPlayerID: localPlayerID,
             battlefieldSlotIDs: battlefieldSlotIDs
         )
+    }
+
+    /// Maps the bundled JSON's `classification.domain` strings (e.g.
+    /// `"Fury"`) onto `RiftboundExpertSystem.Domain` (`.fury`) —
+    /// case-insensitive since the JSON is Title Case and `Domain`'s raw
+    /// values are lowercase. `nil` for anything that doesn't match one of
+    /// the six Domains (133) rather than a guessed default — a printing
+    /// with an unrecognized Domain string is a data problem worth
+    /// surfacing, not silently dropping into "domainless."
+    private static func domain(named raw: String) -> Domain? {
+        Domain(rawValue: raw.lowercased())
     }
 
     /// Only Main Deck card types map onto `MainDeckCard` — Runes, Legends,

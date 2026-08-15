@@ -62,6 +62,9 @@ public enum CandidateGameAction: Equatable, Sendable {
     case playUnit(cardID: String, cardName: String, energyCost: Int, targetZone: String, mechanics: String)
     case castSpell(cardID: String, cardName: String, energyCost: Int, mechanics: String)
     case channelRune(cardID: String, cardName: String)
+    /// Rule 130.3: a Rune observed moving back to the Rune Deck — paying a
+    /// Power cost, the reverse physical direction of `channelRune`.
+    case recycleRune(cardID: String, cardName: String)
     case rejected(reason: String)
 }
 
@@ -224,10 +227,13 @@ public final class ActionTranslatingEngine: @unchecked Sendable {
             )
 
         case "Rune":
-            if event.destinationRegion == "RuneArea" {
+            switch event.destinationRegion {
+            case "RuneArea":
                 return .channelRune(cardID: event.cardID, cardName: cardName)
-            } else {
-                return .rejected(reason: "Runes must be played in the Rune Placement Area.")
+            case "RuneDeck":
+                return .recycleRune(cardID: event.cardID, cardName: cardName)
+            default:
+                return .rejected(reason: "Runes must be Channeled to the Rune Area or Recycled back to the Rune Deck.")
             }
 
         case "Battlefield", "Legend":

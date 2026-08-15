@@ -23,3 +23,30 @@ public enum EndOfTurnStep: Sendable, Equatable {
     // 517.4: if further damage/eeffects were generated, loop back to
     // .expiration — model this as a controller-level loop, not a case.
 }
+
+/// Rule 515.3's "+ any extra, e.g. first-turn rule" made concrete: the
+/// player who does NOT go first Channels 3 Runes on their own first turn
+/// instead of 2, to offset never getting the first player's opening
+/// tempo. A pure function rather than something read off live state,
+/// since turn-count tracking itself is still a manual, human-driven input
+/// (see `RiftboundVision.ManualGameState`) — this only answers "given that
+/// many completed turns for this player, what's the expected cumulative
+/// total," ready for whichever pace/anomaly check ends up calling it.
+public enum RuneChannelPace {
+    /// - Parameters:
+    ///   - player: whose cumulative total to compute.
+    ///   - turnOrder: rule 115.1's Turn Order — `turnOrder[1]`, if present,
+    ///     is the player who goes second.
+    ///   - completedTurns: how many of `player`'s own turns have finished
+    ///     their Channel step (not a global/shared turn counter).
+    public static func expectedRunesChanneled(
+        for player: PlayerID,
+        turnOrder: [PlayerID],
+        completedTurns: Int
+    ) -> Int {
+        guard completedTurns > 0 else { return 0 }
+        let goesSecond = turnOrder.count > 1 && turnOrder[1] == player
+        let firstTurnBonus = goesSecond ? 1 : 0
+        return completedTurns * 2 + firstTurnBonus
+    }
+}

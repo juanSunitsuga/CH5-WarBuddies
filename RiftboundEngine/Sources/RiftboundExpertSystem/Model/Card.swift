@@ -9,14 +9,22 @@ public protocol Card: Sendable {
 public struct Cost: Codable, Sendable, Equatable {
     /// Energy cost — numeral, paid by exhausting Runes (130.2).
     public var energy: Int
-    /// Power cost — Domain symbols, paid by recycling Runes (130.3).
-    /// One entry per required symbol; duplicates mean multiple of that
-    /// Domain are required.
-    public var power: [Domain]
+    /// Power cost — total number of Power symbols required (130.3), paid
+    /// by recycling this many Runes.
+    public var powerCost: Int
+    /// Which Domain(s) a recycled Rune may come from to pay `powerCost`.
+    /// Any combination of Runes drawn from this list, summing to
+    /// `powerCost`, is legal — this is NOT one entry per required symbol.
+    /// Confirmed against the source data: multi-domain cards (e.g. Tibbers:
+    /// power 2, domains [Fury, Chaos]; Decisive Strike: power 1, domains
+    /// [Body, Order]) don't map domain-list length to symbol count 1:1, so
+    /// a positional reading would be a guess, not a fact read off the card.
+    public var eligibleDomains: [Domain]
 
-    public init(energy: Int = 0, power: [Domain] = []) {
+    public init(energy: Int = 0, powerCost: Int = 0, eligibleDomains: [Domain] = []) {
         self.energy = energy
-        self.power = power
+        self.powerCost = powerCost
+        self.eligibleDomains = eligibleDomains
     }
 }
 

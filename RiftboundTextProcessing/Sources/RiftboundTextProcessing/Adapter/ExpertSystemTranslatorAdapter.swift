@@ -66,11 +66,19 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         public let databaseID: String?
         public let name: String?
         public let printedText: String?
+        /// Rule 133: this printing's Domain(s), e.g. `[.fury]` for a Fury
+        /// Rune, `[.fury, .chaos]` for a dual-Domain Unit. Needed to
+        /// resolve `.recycleRune` into a real `GameAction.recycleRune`
+        /// (which Domain the recycled Rune actually was) — empty for
+        /// callers that don't have it, same "flag rather than guess"
+        /// treatment as a missing `printedText`.
+        public let domains: [Domain]
 
-        public init(databaseID: String? = nil, name: String?, printedText: String?) {
+        public init(databaseID: String? = nil, name: String?, printedText: String?, domains: [Domain] = []) {
             self.databaseID = databaseID
             self.name = name
             self.printedText = printedText
+            self.domains = domains
         }
     }
 
@@ -187,7 +195,7 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         )
 
         let candidate = await engine.inferAction(event: internalEvent)
-        return gameAction(for: candidate, destination: to, state: state, player: player)
+        return gameAction(for: candidate, context: context, destination: to, state: state, player: player)
     }
 
     /// Maps a `TableRegion` onto the region names `ActionTranslatingEngine`
@@ -225,6 +233,7 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
     /// doesn't care *which* physical copy).
     private func gameAction(
         for candidate: CandidateGameAction,
+        context: CardContext?,
         destination: TableRegion,
         state: GameState,
         player: PlayerID
@@ -240,15 +249,26 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         case .channelRune:
             // Rule 154.3/589.2: Channel Rune is a Limited Action — only
             // ever performed at a fixed turn-structure point (515.3) or by
-            // an effect, never freely proposed by a player. A Rune
-            // physically landing in the Rune Area is evidence *of* the
-            // Channel Phase's own scripted action already having
-            // authorized it (`GameState.authorize`), not a new
-            // Discretionary action to propose here. Nothing to translate —
-            // this also can never actually be reached today, since
-            // `regionName` can't produce "RuneArea" (see its doc comment).
-            onUntranslatable?("Channeling a Rune is a scripted step of the Channel Phase, not a move to propose.")
-            return nil
+            // an effect, never freely proposed by a player. Still
+            // translate it to `.channel`, though: a Rune physically
+            // landing in the Rune Area is evidence the Channel Phase's own
+            // scripted action already authorized it
+            // (`GameState.authorize`), and `LegalityValidator` is exactly
+            // what checks that evidence against the authorization ledger —
+            // an unauthorized physical Channel correctly comes back
+            // rejected, same anti-cheat mechanism as everything else here.
+            return .channel(count: 1, exhausted: false)
+
+        case .recycleRune(_, let cardName):
+            // Rule 130.3/589.2 — same reasoning as `.channelRune` above,
+            // reversed direction. See `GameAction.recycleRune`'s doc
+            // comment for why this is a Domain-only sibling of `.recycle`
+            // rather than reusing it.
+            guard let domain = context?.domains.first else {
+                onUntranslatable?("Recycled \(cardName), but its Domain isn't known here, so the Power payment can't be resolved.")
+                return nil
+            }
+            return .recycleRune(domain: domain)
 
         case .rejected(let reason):
             onUntranslatable?(reason)

@@ -3,6 +3,36 @@ import Testing
 
 struct LegalityValidatorTests {
 
+    /// 540.4/553.4: unlike `.play`, Pass isn't keyword-gated — anyone with
+    /// Priority may always decline to act, in any `TurnState`, including
+    /// Neutral Open where there's no Chain to pass on at all.
+    @Test("Pass is legal for whoever has Priority, even with no Chain to pass on")
+    func passLegalWithPriority() {
+        let (state, playerA, _, _) = TestFixtures.makeTwoPlayerState()
+
+        let result = LegalityValidator.validate(.pass, in: state, proposedBy: playerA)
+
+        #expect(result.isSuccess)
+    }
+
+    /// Priority while Neutral Closed belongs to the Chain's `activePlayer`
+    /// specifically (512.2.c) — a different player can't Pass on their
+    /// behalf.
+    @Test("Pass is rejected from a player without Priority")
+    func passRejectedWithoutPriority() {
+        var (state, playerA, playerB, _) = TestFixtures.makeTwoPlayerState()
+        let card = MainDeckCard(definitionID: CardDefID(rawValue: "spell"), owner: playerA, name: "Test Spell", type: .spell)
+        state.turnState = .neutralClosed(Chain(
+            firstItem: .spell(card, targets: []),
+            activePlayer: playerA,
+            relevantPlayers: [playerA, playerB]
+        ))
+
+        let result = LegalityValidator.validate(.pass, in: state, proposedBy: playerB)
+
+        #expect(result.failureValue == .notPlayersPriority)
+    }
+
     @Test("Standard Move is legal for a readied unit moving to an empty battlefield")
     func legalMoveToEmptyBattlefield() {
         var (state, playerA, _, battlefieldID) = TestFixtures.makeTwoPlayerState()

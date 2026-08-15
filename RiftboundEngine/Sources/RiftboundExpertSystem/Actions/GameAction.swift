@@ -13,7 +13,19 @@ public enum GameAction: Sendable, Equatable {
     // subject to Priority, timing state, and costs.
 
     /// Rule 595: play a card from hand (or another zone, per an effect).
-    case play(card: ObjectID, destination: PlayDestination, additionalChoices: [ObjectID])
+    ///
+    /// `observedExhaustedRuneCount`: how many Runes were physically
+    /// Exhausted in the player's Rune Area at the moment this Play was
+    /// observed, when the proposer has that data — `nil` when it doesn't
+    /// (e.g. a manually-constructed action, or a translator with no live
+    /// vision access), in which case `LegalityValidator` skips the check
+    /// entirely rather than treating "unobserved" as "zero." Rule 130.2:
+    /// Energy is paid by Exhausting Runes, so this is the physical
+    /// corroboration for `Cost.energy` — same reverse-inference role
+    /// `RunePool.power`'s Domain check plays for `Cost.powerCost`, just
+    /// not yet backed by a real pool the way Power is (see
+    /// `LegalityValidator.Failure.exhaustedRuneCountMismatch`).
+    case play(card: ObjectID, destination: PlayDestination, additionalChoices: [ObjectID], observedExhaustedRuneCount: Int? = nil)
     /// Rule 140, 596.3: a Unit's Standard Move — exhaust to move to/from
     /// a Battlefield, or Battlefield-to-Battlefield if Ganking (722).
     case standardMove(units: [ObjectID], destination: Location)
@@ -36,6 +48,20 @@ public enum GameAction: Sendable, Equatable {
     case exhaust(objects: [ObjectID])
     case ready(objects: [ObjectID])
     case recycle(cards: [ObjectID], to: RecycleDestination)
+    /// Rule 130.3: recycle one Rune of `domain` to pay a Power cost. A
+    /// domain-only sibling to `.recycle(cards:to:)`, not a replacement for
+    /// it — once Channeled, a Rune has no `ObjectID`-tracked board
+    /// presence (only `RunePool.power`, an aggregate), so there's no card
+    /// identity to name here, only which Domain it was. One rune per case
+    /// instance, matching `.channel(count: 1, ...)`'s existing per-observed-
+    /// event granularity — paying a multi-symbol Power cost means multiple
+    /// `.recycleRune` actions, one per physical Rune recycled, feeding the
+    /// same `RunePool.power` that `LegalityValidator` checks against. A
+    /// Rune's stance at the moment of Recycling doesn't matter — an
+    /// Exhausted Rune is just as Recyclable as a Ready one (only an
+    /// unspent Rune is required to still exist at all, which "it's
+    /// physically in the Rune Area" already establishes).
+    case recycleRune(domain: Domain)
     case discard(cards: [ObjectID])
     case stun(units: [ObjectID])
     case reveal(cards: [ObjectID], from: RevealSource)

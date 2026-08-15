@@ -57,6 +57,20 @@ public struct GameState: Sendable {
     public var zones: [PlayerID: PlayerZones]
     public var scores: [PlayerID: Int]
 
+    /// Rule 154.3: cumulative Runes ever Channeled by each player, across
+    /// the whole game — unlike `RunePool.energy`, this never empties
+    /// (515.4.d/160/517.2.c), so it's the right quantity for a pace check
+    /// ("2 Runes/turn, so 6 by turn 3"), not the pool itself. Populated by
+    /// `GameActionApplier`'s `.channel` handling.
+    public var totalRunesChanneled: [PlayerID: Int] = [:]
+    /// Rule 130.3: cumulative Runes ever Recycled to pay a Power cost.
+    /// `totalRunesChanneled - totalRunesRecycled` is the count of Runes
+    /// that should still physically be visible in a player's Rune Area —
+    /// the quantity to reconcile against the vision layer's live count,
+    /// not `totalRunesChanneled` alone (recycling removes a Rune from view
+    /// without un-channeling it historically).
+    public var totalRunesRecycled: [PlayerID: Int] = [:]
+
     /// Rule 589.2: a Limited Action "is only ever performed when a rule or
     /// effect explicitly calls for it" — never chosen freely by a player.
     /// This is that authorization ledger: a Chain item resolving to, say,
