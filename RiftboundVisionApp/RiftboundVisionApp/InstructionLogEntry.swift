@@ -149,6 +149,8 @@ struct InstructionLogEntry: Identifiable {
             return "\(card) was banished."
         case .endTurn:
             return "Turn ended."
+        case .pass:
+            return "Passed."
         default:
             return "Action accepted."
         }
@@ -178,6 +180,10 @@ struct InstructionLogEntry: Identifiable {
             return "\(card) needs \(required) power from a matching Domain and you have \(available) recycled that qualify."
         case .exhaustedRuneCountMismatch(let required, let observed):
             return "\(card) needs \(required) rune\(required == 1 ? "" : "s") exhausted to pay for it, but \(observed) \(observed == 1 ? "is" : "are") exhausted."
+        case .reactionRequired:
+            return "\(card) can't respond right now — only Reaction cards can, while something else is already happening."
+        case .actionOrReactionRequired:
+            return "\(card) can't be played to open this Showdown — it needs the Action or Reaction keyword."
         case .limitedActionNotAuthorized:
             return "Nothing has called for that action yet — it can't be taken freely."
         case .notImplemented:

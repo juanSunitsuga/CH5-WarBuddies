@@ -44,6 +44,18 @@ public enum LegalityValidator {
         /// proposer actually supplied `GameAction.play`'s
         /// `observedExhaustedRuneCount` — see that field's doc comment.
         case exhaustedRuneCountMismatch(required: Int, observed: Int)
+        /// Rule 509.1.a: the turn is Closed (`.neutralClosed`/`.showdownClosed`
+        /// — a Chain currently exists) and this card carries no
+        /// `Keyword.reaction` (725) — only Reaction-tagged cards/abilities
+        /// may respond to an existing window. (Whether `player` is even
+        /// allowed to act right now at all is a separate check —
+        /// `Failure.notPlayersPriority`, from `TurnState.playerWithPriority`.)
+        case reactionRequired
+        /// Rule 508.1.a: a Showdown is in progress with no Chain yet
+        /// (`.showdownOpen`) and this card carries neither `Keyword.action`
+        /// (718) nor `Keyword.reaction` (725) — only Action- or
+        /// Reaction-tagged cards/abilities may open the Showdown's Chain.
+        case actionOrReactionRequired
         /// Rule 589.2: this Limited Action was proposed without any rule or
         /// effect having called for it — nothing in
         /// `GameState.pendingLimitedActions` matches. The classic case:
@@ -61,6 +73,9 @@ public enum LegalityValidator {
         case .standardMove(let unitIDs, let destination):
             return validateStandardMove(unitIDs, destination: destination, in: state, player: player)
 
+        case .pass:
+            return validatePass(in: state, player: player)
+
         // Rule 589.2: Limited Actions are never player-initiated at will —
         // every one of them is legal only if something already authorized
         // it (see `GameState.pendingLimitedActions`). The check is
@@ -76,13 +91,23 @@ public enum LegalityValidator {
     }
 
     /// Rule 555–561: Playing a Card (the legality-relevant substeps only —
-    /// 562's "would this create an illegal state" and the Chain/Reaction
-    /// machinery of 558/563.2.a aren't modeled here, see `applyPlay`'s doc
-    /// comment for why).
-    ///   - 516.2.b: Playing is a Discretionary Action — only legal with
-    ///     Priority. Restricted to Neutral Open here, same simplification
-    ///     `validateStandardMove` makes (Showdown/Focus-based Play isn't
-    ///     modeled yet).
+    /// 562's "would this create an illegal state" and actually pushing the
+    /// item onto a Chain (558/563.2.a) aren't modeled here, see
+    /// `applyPlay`'s doc comment for why — this only decides whether the
+    /// attempt is legal, `GameActionApplier` still resolves immediately
+    /// rather than queuing).
+    ///   - 516.2.b/512.1.a: Playing is a Discretionary Action — only legal
+    ///     with Priority, which `TurnState.playerWithPriority` already
+    ///     derives correctly for all four states (Turn Player in Neutral
+    ///     Open, the Chain's `activePlayer` when Closed, the Showdown's
+    ///     `focusPlayer` when Open).
+    ///   - 509.1.a/508.1.a: which cards are eligible depends on which of
+    ///     the four `TurnState` cases this is — Neutral Open has no
+    ///     keyword restriction at all (it's the normal "just play a card"
+    ///     state); Neutral Closed and Showdown Closed require
+    ///     `Keyword.reaction`; Showdown Open requires `Keyword.action` or
+    ///     `Keyword.reaction`. See `TurnState`'s own doc comment for the
+    ///     rule citations per case.
     ///   - 555.1/558: the card must actually be in the player's Hand.
     ///   - 559.2: a Unit must be given a real Location (not `.none`); a
     ///     Battlefield destination already Controlled by two *other*
@@ -106,14 +131,24 @@ public enum LegalityValidator {
         in state: GameState,
         player: PlayerID
     ) -> Result<Void, LegalityValidator.Failure> {
-        guard case .neutralOpen = state.turnState else {
-            return .failure(.notPlayersPriority)
-        }
         guard state.playerWithPriority(for: player) else {
             return .failure(.notPlayersPriority)
         }
         guard let card = state.zones[player]?.hand.first(where: { $0.id == cardID }) else {
             return .failure(.cardNotInHand(cardID))
+        }
+
+        switch state.turnState {
+        case .neutralOpen:
+            break  // 516.2.b: no keyword restriction — this is the normal play window.
+        case .neutralClosed, .showdownClosed:
+            guard card.keywords.contains(.reaction) else {
+                return .failure(.reactionRequired)
+            }
+        case .showdownOpen:
+            guard card.keywords.contains(.action) || card.keywords.contains(.reaction) else {
+                return .failure(.actionOrReactionRequired)
+            }
         }
 
         switch (card.type, destination) {
@@ -166,6 +201,20 @@ public enum LegalityValidator {
             return .failure(.exhaustedRuneCountMismatch(required: energyCost, observed: observedExhaustedRuneCount))
         }
 
+        return .success(())
+    }
+
+    /// Rule 540.4/553.4: Pass is legal whenever `player` currently has
+    /// Priority — unlike `.play`, it isn't keyword-gated by `TurnState`;
+    /// declining to act is always available to whoever may currently act,
+    /// in any of the four `TurnState` cases (including when there's no
+    /// Chain to pass on at all, `.neutralOpen`/`.showdownOpen` —
+    /// `ChainResolver.pass` just no-ops there rather than this being
+    /// illegal to attempt).
+    private static func validatePass(in state: GameState, player: PlayerID) -> Result<Void, LegalityValidator.Failure> {
+        guard state.playerWithPriority(for: player) else {
+            return .failure(.notPlayersPriority)
+        }
         return .success(())
     }
 

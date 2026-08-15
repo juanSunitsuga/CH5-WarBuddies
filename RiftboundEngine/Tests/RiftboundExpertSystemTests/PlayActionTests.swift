@@ -14,7 +14,8 @@ struct PlayActionTests {
         energy: Int = 0,
         powerCost: Int = 0,
         eligibleDomains: [Domain] = [],
-        might: Int? = 3
+        might: Int? = 3,
+        keywords: [Keyword] = []
     ) -> MainDeckCard {
         MainDeckCard(
             definitionID: CardDefID(rawValue: "card-\(name)"),
@@ -22,7 +23,20 @@ struct PlayActionTests {
             name: name,
             type: type,
             cost: Cost(energy: energy, powerCost: powerCost, eligibleDomains: eligibleDomains),
-            might: might
+            might: might,
+            keywords: keywords
+        )
+    }
+
+    /// A throwaway single-item Chain, just to give `GameState.turnState`
+    /// something concrete to be Closed around — its content doesn't matter
+    /// for these tests, only that a Chain exists and who its `activePlayer`
+    /// is (512.2.c: that's who has Priority while it does).
+    private static func chain(activePlayer: PlayerID, relevantPlayers: Set<PlayerID>) -> Chain {
+        Chain(
+            firstItem: .activatedAbility(source: ObjectID(), effectID: EffectID(), targets: []),
+            activePlayer: activePlayer,
+            relevantPlayers: relevantPlayers
         )
     }
 
@@ -97,6 +111,160 @@ struct PlayActionTests {
         )
 
         #expect(result.failureValue == .insufficientEnergy(required: 5, available: 1))
+    }
+
+    // MARK: - Action/Reaction windows (508.1.a/509.1.a)
+
+    /// 509.1.a: while the turn is Neutral Closed (a Chain exists, no
+    /// Showdown), only Reaction-tagged cards may respond.
+    @Test("A Reaction card is legal while the turn is Neutral Closed")
+    func reactionCardLegalWhenNeutralClosed() {
+        var (state, playerA, playerB, _) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, type: .spell, might: nil, keywords: [.reaction])
+        state.zones[playerA]?.hand.append(card)
+        state.turnState = .neutralClosed(Self.chain(activePlayer: playerA, relevantPlayers: [playerA, playerB]))
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .none, additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.isSuccess)
+    }
+
+    /// Same window, but the card carries no Reaction tag — the normal
+    /// "just play a card" case is only legal in Neutral Open.
+    @Test("A plain card is rejected while the turn is Neutral Closed")
+    func plainCardRejectedWhenNeutralClosed() {
+        var (state, playerA, playerB, _) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, type: .spell, might: nil)
+        state.zones[playerA]?.hand.append(card)
+        state.turnState = .neutralClosed(Self.chain(activePlayer: playerA, relevantPlayers: [playerA, playerB]))
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .none, additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.failureValue == .reactionRequired)
+    }
+
+    /// 512.2.c: Priority while Closed belongs to the Chain's `activePlayer`
+    /// specifically — even a Reaction card from someone else is rejected,
+    /// on priority grounds rather than the card's own tag.
+    @Test("Even a Reaction card is rejected from a player without Priority")
+    func reactionCardRejectedWithoutPriority() {
+        var (state, playerA, playerB, _) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerB, type: .spell, might: nil, keywords: [.reaction])
+        state.zones[playerB]?.hand.append(card)
+        state.turnState = .neutralClosed(Self.chain(activePlayer: playerA, relevantPlayers: [playerA, playerB]))
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .none, additionalChoices: []),
+            in: state,
+            proposedBy: playerB
+        )
+
+        #expect(result.failureValue == .notPlayersPriority)
+    }
+
+    /// 508.1.a: while a Showdown is Open (no Chain yet), Action-tagged
+    /// cards may open its Chain.
+    @Test("An Action card is legal while a Showdown is Open")
+    func actionCardLegalWhenShowdownOpen() {
+        var (state, playerA, playerB, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, type: .spell, might: nil, keywords: [.action])
+        state.zones[playerA]?.hand.append(card)
+        state.turnState = .showdownOpen(Showdown(
+            origin: .standalone(battlefield: battlefieldID),
+            focusPlayer: playerA,
+            relevantPlayers: [playerA, playerB]
+        ))
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .none, additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.isSuccess)
+    }
+
+    /// Same window also accepts Reaction-tagged cards (508.1.a lists both).
+    @Test("A Reaction card is also legal while a Showdown is Open")
+    func reactionCardLegalWhenShowdownOpen() {
+        var (state, playerA, playerB, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, type: .spell, might: nil, keywords: [.reaction])
+        state.zones[playerA]?.hand.append(card)
+        state.turnState = .showdownOpen(Showdown(
+            origin: .standalone(battlefield: battlefieldID),
+            focusPlayer: playerA,
+            relevantPlayers: [playerA, playerB]
+        ))
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .none, additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.isSuccess)
+    }
+
+    /// A plain, untagged card can't open a Showdown's Chain either.
+    @Test("A plain card is rejected while a Showdown is Open")
+    func plainCardRejectedWhenShowdownOpen() {
+        var (state, playerA, playerB, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, type: .spell, might: nil)
+        state.zones[playerA]?.hand.append(card)
+        state.turnState = .showdownOpen(Showdown(
+            origin: .standalone(battlefield: battlefieldID),
+            focusPlayer: playerA,
+            relevantPlayers: [playerA, playerB]
+        ))
+
+        let result = LegalityValidator.validate(
+            .play(card: card.id, destination: .none, additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+
+        #expect(result.failureValue == .actionOrReactionRequired)
+    }
+
+    /// 510.4/509.1.a: Showdown Closed is the stricter gate — once a Chain
+    /// exists *inside* the Showdown, only Reaction-tagged cards may
+    /// respond, same as Neutral Closed; an Action-only card that was legal
+    /// a moment ago (Showdown Open) is not legal here.
+    @Test("Only a Reaction card is legal while a Showdown is Closed")
+    func onlyReactionCardLegalWhenShowdownClosed() {
+        var (state, playerA, playerB, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let reactionCard = Self.handCard(owner: playerA, name: "Reaction Card", type: .spell, might: nil, keywords: [.reaction])
+        let actionCard = Self.handCard(owner: playerA, name: "Action Card", type: .spell, might: nil, keywords: [.action])
+        state.zones[playerA]?.hand.append(contentsOf: [reactionCard, actionCard])
+
+        let showdown = Showdown(
+            origin: .standalone(battlefield: battlefieldID),
+            focusPlayer: playerA,
+            relevantPlayers: [playerA, playerB]
+        )
+        state.turnState = .showdownClosed(showdown, Self.chain(activePlayer: playerA, relevantPlayers: [playerA, playerB]))
+
+        let reactionResult = LegalityValidator.validate(
+            .play(card: reactionCard.id, destination: .none, additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+        #expect(reactionResult.isSuccess)
+
+        let actionResult = LegalityValidator.validate(
+            .play(card: actionCard.id, destination: .none, additionalChoices: []),
+            in: state,
+            proposedBy: playerA
+        )
+        #expect(actionResult.failureValue == .reactionRequired)
     }
 
     // MARK: - Observed exhausted-Rune count (130.2)
@@ -309,12 +477,14 @@ struct PlayActionTests {
         #expect(unit?.baseMight == 4)
     }
 
-    /// Rule 556.2/563.2: a Spell has no board form — it produces its effect
-    /// and goes to the Trash. (Its effect isn't executed yet; ability
-    /// parsing returns `[]` until the Effects pipeline is built.)
-    @Test("Applying a Spell play sends it to the trash rather than the board")
-    func applyPlaySpellGoesToTrash() {
-        var (state, playerA, _, _) = TestFixtures.makeTwoPlayerState()
+    /// Rule 556.2/563.2/534: a Spell has no board form and does not
+    /// resolve immediately — it leaves the Hand right away (558) but
+    /// becomes a Chain item, opening a Chain (Neutral Open → Neutral
+    /// Closed) rather than landing straight in the Trash. It only reaches
+    /// the Trash once the Chain resolves (both players Passing).
+    @Test("Applying a Spell play opens a Chain instead of trashing it immediately")
+    func applyPlaySpellOpensChain() {
+        var (state, playerA, playerB, _) = TestFixtures.makeTwoPlayerState()
         let card = Self.handCard(owner: playerA, name: "Test Spell", type: .spell, might: nil)
         state.zones[playerA]?.hand.append(card)
 
@@ -324,9 +494,26 @@ struct PlayActionTests {
             proposedBy: playerA
         )
 
-        #expect(state.zones[playerA]?.hand.isEmpty == true)
-        #expect(state.zones[playerA]?.trash.count == 1)
+        #expect(state.zones[playerA]?.hand.isEmpty == true)      // 558
+        #expect(state.zones[playerA]?.trash.isEmpty == true)     // not yet — still on the Chain
         #expect(state.units.isEmpty)
+
+        guard case .neutralClosed(let chain) = state.turnState else {
+            Issue.record("Expected a Chain to have opened, got \(state.turnState)")
+            return
+        }
+        #expect(chain.items.count == 1)
+        #expect(chain.activePlayer == playerA)
+
+        // Both players Pass — the Chain resolves its one item and closes.
+        GameActionApplier.apply(.pass, to: &state, proposedBy: playerB)
+        GameActionApplier.apply(.pass, to: &state, proposedBy: playerA)
+
+        #expect(state.zones[playerA]?.trash.count == 1)
+        guard case .neutralOpen = state.turnState else {
+            Issue.record("Expected the Chain to have closed, got \(state.turnState)")
+            return
+        }
     }
 
     /// Rule 563.1.d + 144.2: Gear always enters at the player's Base, Ready

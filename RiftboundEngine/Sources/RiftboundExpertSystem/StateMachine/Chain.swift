@@ -50,15 +50,22 @@ public struct EffectID: Hashable, Codable, Sendable {
 /// unit-testable against constructed Chain states without needing a full
 /// GameState.
 public struct Chain: Sendable {
-    public private(set) var items: [ChainItem]
-    public private(set) var activePlayer: PlayerID
+    // `internal(set)`, not `private(set)`: mutation is meant to happen
+    // exclusively through `ChainResolver` (a sibling file in this same
+    // module, per this type's own doc comment above), not from outside
+    // the module (RiftboundVision/RiftboundTextProcessing/the app, which
+    // only ever see `RiftboundExpertSystem`'s public surface). `private`
+    // would block same-module-different-file access too, which is
+    // exactly the access `ChainResolver` needs.
+    public internal(set) var items: [ChainItem]
+    public internal(set) var activePlayer: PlayerID
     /// Rule 528–531: who may currently act on this Chain. Re-derived, not
     /// just accumulated — a player who becomes irrelevant should be
     /// removed unless a broader Showdown scope keeps them relevant (530.1).
-    public private(set) var relevantPlayers: Set<PlayerID>
+    public internal(set) var relevantPlayers: Set<PlayerID>
     /// Players who have passed *since the last item was added or resolved*.
     /// Reset whenever `items` changes (540.4.b, 543.4).
-    public private(set) var passedPlayers: Set<PlayerID>
+    public internal(set) var passedPlayers: Set<PlayerID>
 
     public init(firstItem: ChainItem, activePlayer: PlayerID, relevantPlayers: Set<PlayerID>) {
         self.items = [firstItem]
