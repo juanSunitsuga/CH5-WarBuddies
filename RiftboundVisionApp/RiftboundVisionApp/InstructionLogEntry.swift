@@ -7,7 +7,7 @@ import RiftboundExpertSystem
 /// keeps `RiftboundExpertSystem` free of presentation concerns, same
 /// division as everywhere else in this app.
 struct InstructionLogEntry: Identifiable {
-    enum Verdict {
+    enum Verdict: Equatable {
         case accepted
         case rejected
         case unrecognized
@@ -86,9 +86,7 @@ struct InstructionLogEntry: Identifiable {
         }
     }
 
-    /// Renders the raw observation. Every calibrated region now has a
-    /// `TableZone`, so a card entering the Rune Area or Trash reaches this
-    /// too; only a card off the mat entirely produces no row.
+    /// Renders the raw observation.
     static func summarize(_ event: ObservedTableEvent, card: String) -> String {
         switch event.kind {
         case .cardAppeared(let region):
@@ -102,10 +100,14 @@ struct InstructionLogEntry: Identifiable {
         }
     }
 
+    /// Reads the region's `zone`, not its `location`.
+    ///
+    /// `location` is `nil` for everything that isn't a Base or Battlefield
+    /// (rule 106), so once the Trash, the decks and the Rune Area became
+    /// representable this rendered all six of them as "unknown zone" — a
+    /// card going to the Trash read as "Base → unknown zone", which tells
+    /// a player their move wasn't understood when it was.
     private static func name(_ region: TableRegion) -> String {
-        // Switch on `zone`, not `location`: `location` is nil for every
-        // zone rule 106.5.b excludes, so reading it here rendered the Trash,
-        // both decks and the Rune Area all as "unknown zone".
         switch region.zone {
         case .hand: return "Hand"
         case .base: return "Base"
@@ -115,8 +117,8 @@ struct InstructionLogEntry: Identifiable {
         case .runeArea: return "Rune Area"
         case .trash: return "Trash"
         case .banishment: return "Banishment"
-        case .legendZone: return "Legend"
-        case .championZone: return "Champion"
+        case .legendZone: return "Legend zone"
+        case .championZone: return "Champion zone"
         }
     }
 
@@ -152,8 +154,6 @@ struct InstructionLogEntry: Identifiable {
             return "\(card) was banished."
         case .endTurn:
             return "Turn ended."
-        case .pass:
-            return "Passed."
         default:
             return "Action accepted."
         }
@@ -180,13 +180,16 @@ struct InstructionLogEntry: Identifiable {
         case .insufficientEnergy(let required, let available):
             return "\(card) costs \(required) energy and you have \(available)."
         case .insufficientPower(let required, let available):
-            return "\(card) needs \(required) power from a matching Domain and you have \(available) recycled that qualify."
+            // `available` counts only pool entries of a Domain this card
+            // accepts, so "you have 0" can be true with a full pool — say
+            // "matching" rather than leaving the player counting runes.
+            return "\(card) needs \(required) matching power and your pool has \(available). Recycle runes of a domain it accepts."
         case .exhaustedRuneCountMismatch(let required, let observed):
-            return "\(card) needs \(required) rune\(required == 1 ? "" : "s") exhausted to pay for it, but \(observed) \(observed == 1 ? "is" : "are") exhausted."
+            return "\(card) costs \(required) energy, but \(observed) rune\(observed == 1 ? " was" : "s were") exhausted. Exhaust exactly \(required)."
         case .reactionRequired:
-            return "\(card) can't respond right now — only Reaction cards can, while something else is already happening."
+            return "Something is already resolving — only a Reaction can be played into it."
         case .actionOrReactionRequired:
-            return "\(card) can't be played to open this Showdown — it needs the Action or Reaction keyword."
+            return "A showdown is open — only an Action or Reaction can start the chain."
         case .limitedActionNotAuthorized:
             return "Nothing has called for that action yet — it can't be taken freely."
         case .notImplemented:
