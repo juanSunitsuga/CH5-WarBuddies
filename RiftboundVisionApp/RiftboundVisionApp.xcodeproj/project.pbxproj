@@ -29,7 +29,6 @@
 		CCCC6491D5C14229AAC7452C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D88B8B2034A14CA4A0D53DCE /* Assets.xcassets */; };
 		3017319CBC1F45C2A4AAC042 /* ScoreTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 251D5F4F0E7D46AA9AA7C612 /* ScoreTracker.swift */; };
 		690BCB3309B5473291FEE083 /* PipelineSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED891118FA894EA18345F333 /* PipelineSettingsView.swift */; };
-		BED27183FF894312832F24D9 /* TrackingLogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9CCDD764F424FE69DE25C3F /* TrackingLogEntry.swift */; };
 		C3AA581B11C8447994662CBF /* BoardStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */; };
 		71EB87BDA66944C493D04B22 /* best-2.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = C80542A83A3C4765A9F7868D /* best-2.mlpackage */; };
 /* End PBXBuildFile section */
@@ -56,7 +55,6 @@
 		D88B8B2034A14CA4A0D53DCE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		251D5F4F0E7D46AA9AA7C612 /* ScoreTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreTracker.swift; sourceTree = "<group>"; };
 		ED891118FA894EA18345F333 /* PipelineSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineSettingsView.swift; sourceTree = "<group>"; };
-		F9CCDD764F424FE69DE25C3F /* TrackingLogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackingLogEntry.swift; sourceTree = "<group>"; };
 		7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardStatePersistence.swift; sourceTree = "<group>"; };
 		C80542A83A3C4765A9F7868D /* best-2.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best-2.mlpackage; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -108,7 +106,6 @@
 				3055869C4ECE495FA5A42260 /* GameStateBar.swift */,
 				24E64947F63B40999CFAA66D /* TurnControlBar.swift */,
 				7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */,
-				F9CCDD764F424FE69DE25C3F /* TrackingLogEntry.swift */,
 				ED891118FA894EA18345F333 /* PipelineSettingsView.swift */,
 				251D5F4F0E7D46AA9AA7C612 /* ScoreTracker.swift */,
 				72026DCCA9ED4F599499A115 /* GameSessionBuilder.swift */,
@@ -246,7 +243,6 @@
 				93F14F27D8F144288BE9E603 /* GameStateBar.swift in Sources */,
 				C23F1F80285A40E1A5E4C4E1 /* TurnControlBar.swift in Sources */,
 				C3AA581B11C8447994662CBF /* BoardStatePersistence.swift in Sources */,
-				BED27183FF894312832F24D9 /* TrackingLogEntry.swift in Sources */,
 				690BCB3309B5473291FEE083 /* PipelineSettingsView.swift in Sources */,
 				3017319CBC1F45C2A4AAC042 /* ScoreTracker.swift in Sources */,
 				FB1E6BC3244E442BAF1B7766 /* GameSessionBuilder.swift in Sources */,

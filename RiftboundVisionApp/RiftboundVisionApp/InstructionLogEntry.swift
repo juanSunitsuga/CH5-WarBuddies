@@ -7,7 +7,7 @@ import RiftboundExpertSystem
 /// keeps `RiftboundExpertSystem` free of presentation concerns, same
 /// division as everywhere else in this app.
 struct InstructionLogEntry: Identifiable {
-    enum Verdict {
+    enum Verdict: Equatable {
         case accepted
         case rejected
         case unrecognized
@@ -86,10 +86,7 @@ struct InstructionLogEntry: Identifiable {
         }
     }
 
-    /// Renders the raw observation. `TableRegion` can only express Hand,
-    /// Base, and Battlefield (rule 106.5.b), so a card entering the Rune
-    /// Area or Trash never reaches this at all — if a physical move
-    /// produces no log row, that gap is the first place to look.
+    /// Renders the raw observation.
     static func summarize(_ event: ObservedTableEvent, card: String) -> String {
         switch event.kind {
         case .cardAppeared(let region):
@@ -103,12 +100,25 @@ struct InstructionLogEntry: Identifiable {
         }
     }
 
+    /// Reads the region's `zone`, not its `location`.
+    ///
+    /// `location` is `nil` for everything that isn't a Base or Battlefield
+    /// (rule 106), so once the Trash, the decks and the Rune Area became
+    /// representable this rendered all six of them as "unknown zone" — a
+    /// card going to the Trash read as "Base → unknown zone", which tells
+    /// a player their move wasn't understood when it was.
     private static func name(_ region: TableRegion) -> String {
-        if region.isHandRegion { return "Hand" }
-        switch region.location {
+        switch region.zone {
+        case .hand: return "Hand"
         case .base: return "Base"
         case .battlefield: return "Battlefield"
-        case nil: return "unknown zone"
+        case .mainDeck: return "Main Deck"
+        case .runeDeck: return "Rune Deck"
+        case .runeArea: return "Rune Area"
+        case .trash: return "Trash"
+        case .banishment: return "Banishment"
+        case .legendZone: return "Legend zone"
+        case .championZone: return "Champion zone"
         }
     }
 

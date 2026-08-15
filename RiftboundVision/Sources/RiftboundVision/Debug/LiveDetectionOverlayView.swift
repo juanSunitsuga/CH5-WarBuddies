@@ -17,6 +17,14 @@ public struct LiveDetectionOverlayView: View {
     /// `CardDatabase.shared.card(for:)`. `nil` skips the lookup entirely
     /// and falls back to the detector's raw class label.
     let cardDatabase: CardDatabase?
+    /// Which card is currently selected, so its box can be highlighted.
+    /// Matched by printing id rather than by detection: detections carry no
+    /// identity across polls, so anything keyed to one would flicker.
+    var selectedPrintingID: String?
+    /// Called when a box is tapped, with the card it resolved to. `nil`
+    /// makes the overlay non-interactive, which is what previews and the
+    /// unidentified-detector path want.
+    var onSelect: ((CardPrinting) -> Void)?
 
     /// Confidence at/above this reads green ("recognized"); below reads
     /// orange ("detected but not confidently recognized"). Everything
@@ -25,9 +33,21 @@ public struct LiveDetectionOverlayView: View {
     /// not a second filter.
     private static let recognizedThreshold: Float = 0.75
 
-    public init(detections: [Detection], cardDatabase: CardDatabase? = nil) {
+    public init(
+        detections: [Detection],
+        cardDatabase: CardDatabase? = nil,
+        selectedPrintingID: String? = nil,
+        onSelect: ((CardPrinting) -> Void)? = nil
+    ) {
         self.detections = detections
         self.cardDatabase = cardDatabase
+        self.selectedPrintingID = selectedPrintingID
+        self.onSelect = onSelect
+    }
+
+    /// The catalogue entry behind a detection, if it was recognized.
+    private func printing(for detection: Detection) -> CardPrinting? {
+        detection.recognizedLabel.flatMap { cardDatabase?.printing(approximatelyNamed: $0) }
     }
 
     public var body: some View {
@@ -41,16 +61,28 @@ public struct LiveDetectionOverlayView: View {
     @ViewBuilder
     private func box(for detection: Detection) -> some View {
         let box = detection.boundingBox
-        let color: Color = detection.confidence >= Self.recognizedThreshold ? .green : .orange
+        let card = printing(for: detection)
+        let isSelected = card != nil && card?.id == selectedPrintingID
+        let color: Color = isSelected
+            ? .cyan
+            : (detection.confidence >= Self.recognizedThreshold ? .green : .orange)
 
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .stroke(color, lineWidth: 3)
-            .shadow(color: color.opacity(0.7), radius: 6)
+            .stroke(color, lineWidth: isSelected ? 6 : 3)
+            .shadow(color: color.opacity(0.7), radius: isSelected ? 12 : 6)
+            // The stroke alone is only hit-testable on the line itself; a
+            // filled, near-transparent shape makes the whole card tappable.
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(color.opacity(isSelected ? 0.18 : 0.001)))
             .frame(width: max(box.width, 1), height: max(box.height, 1))
             .position(x: box.midX, y: box.midY)
+            .onTapGesture {
+                guard let card else { return }
+                onSelect?(card)
+            }
             .overlay(alignment: .topLeading) {
                 label(for: detection, color: color)
                     .position(x: box.minX + 4, y: box.minY - 14)
+                    .allowsHitTesting(false)
             }
     }
 

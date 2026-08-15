@@ -11,48 +11,96 @@ import RiftboundVision
 struct TurnControlBar: View {
     @Binding var gameState: ManualGameState
     @Binding var isAutoDetecting: Bool
-    /// Newest verdict from the Expert System, if the pipeline has produced
-    /// one — this is what makes the bar reflect what the camera actually
-    /// saw rather than only the manually-set phase.
-    var latestInstruction: InstructionLogEntry?
+    /// Recent verdicts from the Expert System, newest first.
+    ///
+    /// The bar takes the list rather than just the newest because the
+    /// pipeline emits an instruction for *every* observed event: an
+    /// accepted Play could be pushed off screen a fraction of a second
+    /// later by a routine "came into view in the hand". The thing a player
+    /// needs to see is whether their move was allowed, so a real verdict
+    /// outranks an incidental one within the same window.
+    var instructions: [InstructionLogEntry] = []
     /// Cards sitting somewhere they can't be. Takes over the bar while any
     /// exist: the board and the engine have diverged, so telling the player
     /// what to put back matters more than the next turn step.
     var misplacedCards: [MisplacedCard] = []
+    /// Most cards are landing outside every calibrated zone — the mat
+    /// almost certainly doesn't line up with the camera.
+    var needsCalibration = false
+
+    /// How long a verdict stays on screen before the bar returns to the
+    /// phase instruction.
+    ///
+    /// Without this the newest verdict was shown forever: minutes after a
+    /// play the bar still read "Played Tibbers to the Battlefield," which a
+    /// player reasonably reads as a statement about *now*. Stale feedback
+    /// is worse than none — it says the app is keeping up when it isn't.
+    /// A misplaced card is exempt, since that condition persists until the
+    /// card is physically moved back.
+    private static let verdictLifetime: TimeInterval = 12
 
     var body: some View {
-        HStack(alignment: .center, spacing: 20) {
+        // Re-evaluates once a second so a verdict can age out on its own,
+        // without the controller having to schedule a timer per instruction.
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            content(now: context.date)
+        }
+    }
+
+    private func content(now: Date) -> some View {
+        let recent = instructions.filter { now.timeIntervalSince($0.timestamp) < Self.verdictLifetime }
+        // Accepted and rejected are decisions about a move the player made;
+        // the rest is commentary. Prefer a decision, then fall back to the
+        // newest of anything.
+        let recentInstruction = recent.first { $0.verdict == .accepted || $0.verdict == .rejected } ?? recent.first
+
+        return HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
-                if let misplaced = misplacedCards.first {
+                if needsCalibration {
+                    // Ranked above everything else: while this is true the
+                    // pipeline can't produce a verdict about anything, so a
+                    // stale one would be actively misleading.
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.dashed")
+                            .foregroundStyle(.yellow)
+                        Text("Cards aren't landing on the mat.")
+                            .font(.title3.bold())
+                            .foregroundStyle(.white)
+                    }
+                    Text("Turn on Calibrate Playmat and drag the outline onto your mat — until then nothing can be read as a move.")
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let misplaced = misplacedCards.first {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
                         Text("Put \(misplaced.label) back in the \(Self.name(misplaced.suggestedZone)).")
-                            .font(.callout.bold())
+                            .font(.title3.bold())
                             .foregroundStyle(.white)
                     }
                     Text(Self.reason(for: misplaced) + (misplacedCards.count > 1 ? "  ·  \(misplacedCards.count - 1) more misplaced." : ""))
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.white.opacity(0.75))
                         .fixedSize(horizontal: false, vertical: true)
-                } else if let latestInstruction {
+                } else if let latestInstruction = recentInstruction {
                     HStack(spacing: 6) {
                         Image(systemName: latestInstruction.verdict.iconName)
                             .foregroundStyle(latestInstruction.verdict.tint)
                         Text(latestInstruction.headline)
-                            .font(.callout.bold())
+                            .font(.title3.bold())
                             .foregroundStyle(.white)
                     }
                     Text(latestInstruction.detail ?? gameState.phase.instruction)
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.white.opacity(0.7))
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("Next Step")
-                        .font(.caption)
+                        .font(.callout)
                         .foregroundStyle(.white.opacity(0.6))
                     Text(gameState.phase.instruction)
-                        .font(.callout)
+                        .font(.title3)
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -80,7 +128,7 @@ struct TurnControlBar: View {
             .disabled(isAutoDetecting)
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.vertical, 18)
         .background(Color(red: 0.11, green: 0.23, blue: 0.33))
     }
 
