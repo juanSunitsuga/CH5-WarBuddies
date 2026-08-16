@@ -47,14 +47,52 @@ enum TestFixtures {
         MainDeckCard(definitionID: CardDefID(rawValue: "card-\(name)"), owner: owner, name: name, type: .spell)
     }
 
+    static func makeRuneCard(owner: PlayerID, domain: Domain = .fury) -> RuneCard {
+        RuneCard(definitionID: CardDefID(rawValue: "rune-\(domain.rawValue)"), owner: owner, domain: domain)
+    }
+
+    /// Puts already-Channeled Runes in `owner`'s Rune Area (606.1), as if
+    /// their Channel Phase had run. Returns their IDs so a test can Exhaust
+    /// specific ones.
+    @discardableResult
+    static func channelRunes(
+        _ domains: [Domain],
+        for owner: PlayerID,
+        exhausted: Bool = false,
+        into state: inout GameState
+    ) -> [ObjectID] {
+        domains.map { domain in
+            let rune = Rune(owner: owner, card: makeRuneCard(owner: owner, domain: domain), isExhausted: exhausted)
+            state.runes[rune.id] = rune
+            return rune.id
+        }
+    }
+
+    /// Stocks `owner`'s Rune Deck so a Channel Step has something to draw
+    /// from — 515.3.b.1 channels "as many as possible," so an empty deck
+    /// silently channels nothing.
+    static func stockRuneDeck(_ domains: [Domain], for owner: PlayerID, in state: inout GameState) {
+        state.zones[owner]?.runeDeck = domains.map { makeRuneCard(owner: owner, domain: $0) }
+    }
+
     /// Two-player game state, one Battlefield each player nominally owns,
     /// no units placed yet. Caller adds units/mutates as needed.
-    static func makeTwoPlayerState() -> (state: GameState, playerA: PlayerID, playerB: PlayerID, battlefield: BattlefieldID) {
+    ///
+    /// Starts in the **Action Phase** (516), because that's the only phase
+    /// a player takes Discretionary Actions in and almost every test here
+    /// is about one. A `GameState` fresh from its initializer sits at
+    /// `.startOfTurn(.awaken)` — realistic, but it would make every play/
+    /// move test fail on `.notActionPhase` before reaching what it's
+    /// actually checking. Tests about the turn structure itself pass
+    /// `phase:` explicitly instead.
+    static func makeTwoPlayerState(
+        phase: Phase = .action
+    ) -> (state: GameState, playerA: PlayerID, playerB: PlayerID, battlefield: BattlefieldID) {
         let playerA = makePlayer()
         let playerB = makePlayer()
         let battlefield = makeBattlefield(owner: playerA)
 
-        let state = GameState(
+        var state = GameState(
             turnOrder: [playerA, playerB],
             battlefields: [battlefield.id: battlefield],
             zones: [
@@ -62,6 +100,7 @@ enum TestFixtures {
                 playerB: makeZones(owner: playerB)
             ]
         )
+        state.phase = phase
         return (state, playerA, playerB, battlefield.id)
     }
 }
@@ -87,5 +126,23 @@ struct FixedActionTranslator: ActionTranslating {
 struct NeverObserving: BoardObserving {
     func events() -> AsyncStream<ObservedTableEvent> {
         AsyncStream { $0.finish() }
+    }
+}
+
+/// Assertion helpers for `LegalityValidator.validate`'s result.
+///
+/// Defined once here rather than `private` in each test file: three
+/// identical copies had accumulated, which is the same duplication trap
+/// CLAUDE.md flags for view helpers — a fourth test file wanting these
+/// should not have to paste them again.
+extension Result where Success == Void, Failure == LegalityValidator.Failure {
+    var isSuccess: Bool {
+        if case .success = self { return true }
+        return false
+    }
+
+    var failureValue: LegalityValidator.Failure? {
+        if case .failure(let error) = self { return error }
+        return nil
     }
 }

@@ -74,33 +74,96 @@ public enum ChainResolver {
     /// still a legal Discretionary Action in `.neutralOpen`/`.showdownOpen`
     /// (589.1: any player with Priority may decline to act), it just has
     /// nothing here to resolve.
-    @discardableResult
-    public static func pass(by player: PlayerID, in state: inout GameState) -> ChainItem? {
-        switch state.turnState {
-        case .neutralOpen, .showdownOpen:
+    /// What a Pass produced. A Pass is not one thing: depending on the
+    /// state it can resolve a Chain item, hand Focus to the next player,
+    /// end a Showdown outright, or do nothing at all — and the caller has
+    /// to apply a different consequence for each. Returning `ChainItem?`
+    /// could only ever express the first, which is why a Pass during a
+    /// Showdown used to silently do nothing: there was no shape for
+    /// "Focus moved."
+    public enum PassOutcome: Sendable {
+        /// Recorded, nothing further — the pass-around isn't complete.
+        case recorded
+        /// Rule 543.1: the top Chain item resolved. Apply its effect.
+        case resolvedChainItem(ChainItem)
+        /// Rule 553.4.a: every Relevant Player passed in sequence and the
+        /// Showdown ended. The caller resolves the Combat (626–628).
+        case showdownEnded(Showdown)
+
+        /// The Chain item this Pass resolved, if it resolved one.
+        public var resolvedItem: ChainItem? {
+            if case .resolvedChainItem(let item) = self { return item }
             return nil
+        }
+
+        /// The Showdown this Pass ended, if it ended one.
+        public var endedShowdown: Showdown? {
+            if case .showdownEnded(let showdown) = self { return showdown }
+            return nil
+        }
+
+        /// Nothing resolved and nothing ended — the pass-around continues.
+        public var isRecordedOnly: Bool {
+            if case .recorded = self { return true }
+            return false
+        }
+    }
+
+    @discardableResult
+    public static func pass(by player: PlayerID, in state: inout GameState) -> PassOutcome {
+        switch state.turnState {
+        case .neutralOpen:
+            // 589.1: declining to act in an Open Neutral state is legal but
+            // has nothing to resolve — there's no Chain and no Showdown.
+            return .recorded
+
+        case .showdownOpen(var showdown):
+            // 553.4: a Pass during a Showdown is the substantive case the
+            // previous implementation dropped on the floor. Without it,
+            // Focus never moved (553.5) and a Showdown that nobody wanted
+            // to act in never ended (553.4.a) — the turn simply stopped.
+            showdown.recordPass(by: player)
+            if showdown.allRelevantPlayersPassed {
+                state.turnState = .neutralOpen
+                return .showdownEnded(showdown)
+            }
+            showdown.passFocus(turnOrder: state.turnOrder)   // 553.5
+            state.turnState = .showdownOpen(showdown)
+            return .recorded
 
         case .neutralClosed(var chain):
             chain.passedPlayers.insert(player)
             guard chain.relevantPlayers.isSubset(of: chain.passedPlayers) else {
                 state.turnState = .neutralClosed(chain)
-                return nil
+                return .recorded
             }
             let resolved = chain.items.popLast()
             chain.passedPlayers = []
             state.turnState = chain.items.isEmpty ? .neutralOpen : .neutralClosed(chain)
-            return resolved
+            return resolved.map(PassOutcome.resolvedChainItem) ?? .recorded
 
-        case .showdownClosed(let showdown, var chain):
+        case .showdownClosed(var showdown, var chain):
             chain.passedPlayers.insert(player)
             guard chain.relevantPlayers.isSubset(of: chain.passedPlayers) else {
                 state.turnState = .showdownClosed(showdown, chain)
-                return nil
+                return .recorded
             }
             let resolved = chain.items.popLast()
             chain.passedPlayers = []
-            state.turnState = chain.items.isEmpty ? .showdownOpen(showdown) : .showdownClosed(showdown, chain)
-            return resolved
+
+            if chain.items.isEmpty {
+                // 552: when the last item on the Chain resolves during a
+                // Showdown, Focus passes and the next Relevant Player gains
+                // both Focus and Priority. The Showdown reopens with a
+                // clean slate of passes (553.4.a counts passes *in
+                // sequence*, and an item just resolved).
+                showdown.clearPasses()
+                showdown.passFocus(turnOrder: state.turnOrder)
+                state.turnState = .showdownOpen(showdown)
+            } else {
+                state.turnState = .showdownClosed(showdown, chain)
+            }
+            return resolved.map(PassOutcome.resolvedChainItem) ?? .recorded
         }
     }
 }

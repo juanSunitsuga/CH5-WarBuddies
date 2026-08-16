@@ -65,6 +65,12 @@ struct FullPipelineIntegrationTests {
             battlefields: [battlefieldID: battlefield],
             zones: [player: PlayerZones(hand: hand, legend: legend)]
         )
+        // Rule 516.1: a Play is only legal in the Action Phase, and a fresh
+        // `GameState` starts at `.startOfTurn(.awaken)`. Without advancing
+        // past the Start of Turn the pipeline's Play is rejected as
+        // `.notActionPhase` — a correct verdict, but one that tells us
+        // nothing about the stages this test exists to exercise.
+        state.phase = .action
         state.zones[player]?.runePool.energy = 99
         return state
     }

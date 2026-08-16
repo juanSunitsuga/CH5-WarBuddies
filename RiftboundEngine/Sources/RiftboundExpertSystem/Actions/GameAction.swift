@@ -45,22 +45,32 @@ public enum GameAction: Sendable, Equatable {
     // point in the turn structure calls for it; never player-initiated at will.
 
     case draw(count: Int)
+    /// Rule 592. Limited in general — but exhausting **your own Runes** is
+    /// 157.2.a's `[T]: Add [1]`, an Activated Ability whose cost is the
+    /// exhaust, so that case is Discretionary and needs no authorization.
+    /// This is the only way Energy enters a Rune Pool. See
+    /// `LegalityValidator.validateRuneAbility`.
     case exhaust(objects: [ObjectID])
     case ready(objects: [ObjectID])
     case recycle(cards: [ObjectID], to: RecycleDestination)
-    /// Rule 130.3: recycle one Rune of `domain` to pay a Power cost. A
-    /// domain-only sibling to `.recycle(cards:to:)`, not a replacement for
-    /// it — once Channeled, a Rune has no `ObjectID`-tracked board
-    /// presence (only `RunePool.power`, an aggregate), so there's no card
-    /// identity to name here, only which Domain it was. One rune per case
-    /// instance, matching `.channel(count: 1, ...)`'s existing per-observed-
-    /// event granularity — paying a multi-symbol Power cost means multiple
-    /// `.recycleRune` actions, one per physical Rune recycled, feeding the
-    /// same `RunePool.power` that `LegalityValidator` checks against. A
-    /// Rune's stance at the moment of Recycling doesn't matter — an
-    /// Exhausted Rune is just as Recyclable as a Ready one (only an
-    /// unspent Rune is required to still exist at all, which "it's
-    /// physically in the Rune Area" already establishes).
+    /// Rule 157.2.b (`Recycle this: Add [C]`): activate a Rune's own
+    /// intrinsic ability, recycling it to the Rune Deck for 1 Power of its
+    /// Domain (157.2.b.1).
+    ///
+    /// **Discretionary despite living in this section.** 594.2 makes
+    /// Recycle a Limited Action in general, but 157.2.b is an Activated
+    /// Ability (577.2 — it has the `:`) whose *cost* is recycling, and
+    /// activating an ability is the player's to choose. See
+    /// `LegalityValidator.validateRuneAbility`. `.recycle(cards:to:)` below
+    /// is the Limited Action proper and stays authorization-gated.
+    ///
+    /// Domain-only rather than naming a specific Rune: the physical act the
+    /// camera sees is "a Fury rune left the Rune Area," and which of two
+    /// identical Fury runes it was changes nothing. One case instance per
+    /// Rune recycled, so a multi-symbol Power cost is several of these.
+    ///
+    /// A Rune's stance doesn't matter — an Exhausted Rune is as Recyclable
+    /// as a Ready one, since the cost is returning the card, not turning it.
     case recycleRune(domain: Domain)
     case discard(cards: [ObjectID])
     case stun(units: [ObjectID])

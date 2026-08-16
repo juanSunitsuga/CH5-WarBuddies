@@ -16,9 +16,44 @@ public enum Cleanup {
         applyStateBasedEffects(&state)           // 522 ("While"/"As long as" effects)
         removeOrphanedHiddenCards(&state)         // 523
         markPendingCombats(&state)                 // 524
+        releaseControlOfAbandonedBattlefields(&state) // 181.4.d — see below
         openShowdownForUncontrolledContested(&state) // 525
         beginCombatIfPending(&state)                  // 526
         return state
+    }
+
+    /// Rule 181.4.d: "If a player has no Units at a Battlefield, they have
+    /// no Control of that Battlefield." 181.5 makes Control "a constant
+    /// state with no reliance on timing" — i.e. a state-based fact, which
+    /// is exactly what a Cleanup exists to reconcile, so it belongs here
+    /// even though 518–526 never numbers it as a step.
+    ///
+    /// Without it, Control could outlive the Units that established it: a
+    /// player whose Units died elsewhere or were Recalled stayed the
+    /// `controller` of a Battlefield they had abandoned. That is not just
+    /// a stale field — 525 only opens its Showdown for a Contested
+    /// Battlefield with **no** Controller, so an opponent moving into that
+    /// abandoned Battlefield got no Showdown, never established Control,
+    /// and could never Conquer it. The Battlefield became permanently
+    /// unwinnable while looking perfectly normal on the table.
+    ///
+    /// 181.4.b is the exception: "A player maintains control of a
+    /// Battlefield while it is being Contested by an opponent," and 181.4.a
+    /// scopes Control-by-presence to "outside of Combat" — so a Battlefield
+    /// with a Combat pending keeps its Controller until that Combat
+    /// resolves.
+    private static func releaseControlOfAbandonedBattlefields(_ state: inout GameState) {
+        for battlefieldID in state.battlefields.keys {
+            guard let controller = state.battlefieldControl[battlefieldID]?.controller else { continue }
+            guard state.battlefieldControl[battlefieldID]?.combatPending != true else { continue }  // 181.4.b
+
+            let stillPresent = state.units.values.contains {
+                $0.location == .battlefield(battlefieldID) && $0.controller == controller
+            }
+            if !stillPresent {
+                state.battlefieldControl[battlefieldID]?.controller = nil
+            }
+        }
     }
 
     /// 520: any Unit with nonzero damage >= current Might is killed and
@@ -76,6 +111,13 @@ public enum Cleanup {
     /// Relevant Players.
     private static func openShowdownForUncontrolledContested(_ state: inout GameState) {
         guard case .neutralOpen = state.turnState else { return }
+        // 516.5: Showdowns occur as a result of Discretionary Actions taken
+        // during the Action Phase. Cleanup also runs from the End of Turn's
+        // Cleanup Step (517.3), and without this guard a Battlefield left
+        // Contested at end of turn would open a Showdown *there* — after
+        // the turn had ended, with the state then handed to the next
+        // player mid-Showdown.
+        guard case .action = state.phase else { return }
 
         // 525: "the Turn Player chooses one" — the choice among multiple
         // simultaneously-qualifying Battlefields is a genuine player
@@ -128,6 +170,7 @@ public enum Cleanup {
     ///   exactly two.
     private static func beginCombatIfPending(_ state: inout GameState) {
         guard case .neutralOpen = state.turnState else { return }
+        guard case .action = state.phase else { return }   // 516.5, same as 525 above
 
         // Same placeholder as 525: the choice among multiple simultaneously
         // Combat-Pending Battlefields is a genuine player decision this

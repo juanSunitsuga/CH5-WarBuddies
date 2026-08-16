@@ -221,11 +221,14 @@ legality is restricted to Neutral Open.
 | # | Item | Rules | Status |
 |---|---|---|---|
 | 1 | Core types, zones, board setup | 100–184 | ✅ |
-| 2 | Turn phase state machine | 515–517 | ✅ |
+| 2 | Turn phase state machine | 515–517 | ✅ `TurnSequencer` runs Awaken→Draw and End of Turn |
 | 3 | Chain + priority passing | 532–544 | ✅ built, ⚠ not driven live |
-| 4 | Showdown + combat steps | 545–553, 620–628 | ✅ |
+| 4 | Showdown + Focus | 545–553 | ✅ Focus passes, Showdowns end |
+| 4b | Combat damage + resolution | 620–628 | 🟡 damage/lethal/recall/conquer; no Assault, Shield, Deflect, Tank ordering |
 | 5 | Cleanup as a first-class function | 518–526 | ✅ |
-| 6 | Legality validator | 586–615 | 🟡 `.play`, `.standardMove`, `.draw` |
+| 6 | Legality validator | 586–615 | 🟡 `.play`, `.standardMove`, `.draw`, `.endTurn`, rune abilities |
+| 6b | Scoring — Hold, Conquer, victory | 629–633 | ✅ |
+| 6c | Rune economy — channel, exhaust, recycle | 153–160, 594, 606 | ✅ Runes are board objects |
 | 7 | Effect execution + Layers | 634–639 | ❌ defined, not executed |
 | 8 | NLP → candidate `GameAction` | — | ✅ live |
 | 9 | Detection → `ObservedTableEvent` | — | ✅ live |
@@ -237,17 +240,26 @@ per session, driven from the adapter's event stream, and its
 
 ### What blocks fuller play, in order
 
-1. **Widen `TableRegion`** (in `Ingestion/CardIdentification.swift`). It can
-   only express Hand, Base, and Battlefield, so Main Deck, Rune Deck, Trash,
-   and Rune Area have no representation — which makes **Draw and Channel Rune
-   structurally unreachable** from the camera, regardless of how well tracking
-   works. This is the highest-leverage fix.
+1. **Propose `.exhaust` when a rune turns.** The engine now models the real
+   rune economy — Channel puts a Rune on the board (606.1), Exhausting it is
+   what adds Energy (157.2.a), Recycling returns the card to the Rune Deck for
+   Power (157.2.b/594.1.b) — and both abilities are Discretionary, so no
+   authorization blocks them. But the vision layer only *counts* exhausted
+   runes (`observedExhaustedRuneCount`); it never emits an action for one
+   turning. Until it does, no Energy can enter a pool from play, which is why
+   `GameSessionBuilder` still seeds a stand-in pool. **The fix is that event,
+   not a bigger seeded number.**
 2. **Item 7** — route the NLP layer's mechanic tags into `parseAbility` and
-   execute `EffectInstruction`, so cards actually *do* what they say.
-3. **Real game setup** — deck selection and player identification, replacing
-   the app's permissive stand-in hand (every Unit and Spell, 99 Energy).
-4. **Drive the Chain** for real, so Reactions resolve in rules order.
-
-Item 6's remaining actions are deliberately *not* top of this list: the
-vocabulary gap that matters most is a representational one (1), not a missing
-validator branch.
+   execute `EffectInstruction`, so cards actually *do* what they say. Score
+   abilities (632.2) and Cleanup's 520/522/523 all wait on this too.
+3. **A second seat.** `GameEngine` is built for one local player, so an
+   opponent's Hold, Conquer and Focus are unreachable in the app even though
+   the engine handles them. Scoring is therefore still effectively manual.
+4. **Real game setup** — deck selection and player identification, replacing
+   the app's stand-in hand (every Unit and Spell) and placeholder Rune Deck
+   (two of each Domain).
+5. **Drive the Chain** for real, so Reactions resolve in rules order —
+   `applyPlay` still resolves a Unit/Gear immediately rather than pushing it.
+6. **Layers (634–639)** — combat and Cleanup both use printed Might, so a
+   buffed or debuffed Unit fights at its printed value, and Assault (719),
+   Shield (726), Deflect (721) and Tank ordering don't apply.

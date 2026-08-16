@@ -73,20 +73,41 @@ enum GameSessionBuilder {
             )
         }
 
+        // Rule 103.3: 12 Runes in the Rune Deck. Two of each Domain is a
+        // placeholder for the player's real Rune Deck, which nothing in
+        // this app captures yet — the camera can see the Rune Area but has
+        // no way to be told what was put in the deck before play started.
+        let runeDeck = Domain.allCases.flatMap { domain in
+            (0..<2).map { index in
+                RuneCard(
+                    definitionID: CardDefID(rawValue: "rune-\(domain.rawValue)-\(index)"),
+                    owner: localPlayerID,
+                    domain: domain
+                )
+            }
+        }
+
         var state = GameState(
             turnOrder: [localPlayerID],
             battlefields: battlefields,
-            zones: [localPlayerID: PlayerZones(hand: hand, legend: legend)]
+            zones: [localPlayerID: PlayerZones(hand: hand, runeDeck: runeDeck, legend: legend)]
         )
 
-        // Rule 560–561: Plays are rejected outright without Energy to pay
-        // with, and nothing in this app drives a live turn structure yet
-        // to actually Channel some in (architecture.md blocker (c) — no
-        // live `GameEngine` construction here yet, even though Channel
-        // Rune is observable end-to-end as of `ExpertSystemAdapter`'s
-        // `.runeArea`/`.runeDeck` support). Seeding a generous pool keeps
-        // cost from silently blocking every Play until that's wired; it
-        // is not a rules-accurate starting state.
+        // Rule 515–516: run Awaken → Beginning → Channel → Draw so the
+        // session actually starts where a player can act. Without this the
+        // state sits at `.startOfTurn(.awaken)` and every observed Play is
+        // rejected as `.notActionPhase` — correctly, but for a reason the
+        // player can do nothing about, since nothing here would ever
+        // advance the phase.
+        state = TurnSequencer.startTurn(state)
+
+        // Rule 157.2.a: Energy comes from Exhausting Runes, and the vision
+        // layer does not yet propose `.exhaust` when it sees a rune turn
+        // sideways — it only counts them (`observedExhaustedRuneCount`).
+        // Until that event exists, a real pool would leave every Play
+        // rejected for cost. Seeding one keeps cost from being the thing
+        // that blocks play; it is explicitly NOT a rules-accurate start,
+        // and the fix is the rune-exhaust event, not a bigger number.
         state.zones[localPlayerID]?.runePool.energy = 99
 
         return Session(

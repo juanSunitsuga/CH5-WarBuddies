@@ -11,7 +11,16 @@ public enum GameActionApplier {
     /// Applies `action` to `state` in place. Callers are responsible for
     /// having already confirmed legality via `LegalityValidator` — this
     /// performs no validation of its own.
-    public static func apply(_ action: GameAction, to state: inout GameState, proposedBy player: PlayerID) {
+    ///
+    /// Returns any `PlayerInstruction`s the application produced. Most
+    /// actions produce none; the ones that do are the ones that reach
+    /// scoring — ending a Showdown resolves a Combat, which can Conquer a
+    /// Battlefield (630.1) and even win the game (633), and ending a turn
+    /// runs the next player's Beginning Phase, which Holds (630.2). Those
+    /// are consequences of the action rather than the action itself, so
+    /// they can't be derived by the caller from the `GameAction` alone.
+    @discardableResult
+    public static func apply(_ action: GameAction, to state: inout GameState, proposedBy player: PlayerID) -> [PlayerInstruction] {
         switch action {
         case .play(let card, let destination, let additionalChoices, _):
             applyPlay(card: card, destination: destination, additionalChoices: additionalChoices, to: &state, proposedBy: player)
@@ -19,12 +28,26 @@ public enum GameActionApplier {
             applyStandardMove(units: units, destination: destination, to: &state, proposedBy: player)
         case .draw(let count):
             applyDraw(count: count, to: &state, player: player)
-        case .channel(let count, _):
-            applyChannel(count: count, to: &state, player: player)
+        case .channel(let count, let exhausted):
+            applyChannel(count: count, exhausted: exhausted, to: &state, player: player)
         case .recycleRune(let domain):
             applyRecycleRune(domain: domain, to: &state, player: player)
+        case .exhaust(let objects):
+            applyExhaust(objects: objects, to: &state, player: player)
+        case .ready(let objects):
+            applyReady(objects: objects, to: &state, player: player)
         case .pass:
-            applyPass(to: &state, player: player)
+            return applyPass(to: &state, player: player)
+        case .endTurn:
+            // 516.6.b/517.5: ending the Action Phase runs End of Turn and
+            // then hands over. The incoming player's Awaken→Draw prefix
+            // runs immediately too: 515 grants no window of opportunity
+            // between those steps for anyone to act in, so stopping at
+            // `.awaken` would just leave the game unable to proceed until
+            // something else nudged it.
+            let outcome = TurnSequencer.startTurnReporting(TurnSequencer.endTurn(state))
+            state = outcome.state
+            return outcome.events
         default:
             // TODO: remaining GameAction cases — add here once
             // LegalityValidator gains real logic for them (see
@@ -32,6 +55,7 @@ public enum GameActionApplier {
             // currently keeps this branch unreachable from `GameEngine`).
             break
         }
+        return []
     }
 
     /// Rule 558/560–561/563: Playing a Card.
@@ -117,12 +141,28 @@ public enum GameActionApplier {
         }
     }
 
-    /// Rule 540.4/553.4: Pass — resolves through `ChainResolver`, and if
-    /// that pass-around just completed (every Relevant Player passed),
-    /// applies whatever the top item's terminal effect is.
-    private static func applyPass(to state: inout GameState, player: PlayerID) {
-        guard let resolvedItem = ChainResolver.pass(by: player, in: &state) else { return }
-        applyResolvedChainItem(resolvedItem, to: &state)
+    /// Rule 540.4/553.4: Pass. Three different things can come of it —
+    /// nothing, a Chain item resolving, or a Showdown ending — so this
+    /// dispatches on `ChainResolver.PassOutcome` rather than assuming the
+    /// middle one.
+    ///
+    /// The Showdown case is the one that makes a Showdown mean anything:
+    /// 553.4.a ends it once everyone has passed in sequence, and 626–628
+    /// then resolve the Combat, which is where damage, deaths, Control and
+    /// the Conquer score actually happen. `scoringEvents` carries the
+    /// resulting `PlayerInstruction`s back out to `GameEngine`.
+    private static func applyPass(to state: inout GameState, player: PlayerID) -> [PlayerInstruction] {
+        switch ChainResolver.pass(by: player, in: &state) {
+        case .recorded:
+            return []
+        case .resolvedChainItem(let item):
+            applyResolvedChainItem(item, to: &state)
+            return []
+        case .showdownEnded(let showdown):
+            let outcome = Combat.resolve(showdown, in: state)
+            state = outcome.state
+            return outcome.events
+        }
     }
 
     /// Rule 563.2.b: what happens when a Chain item actually resolves.
@@ -202,44 +242,121 @@ public enum GameActionApplier {
         }
     }
 
-    /// Rule 154.3: Channel — move `count` Runes from the Rune Deck into
-    /// the Rune Pool as Energy. Individual Runes aren't tracked as board
-    /// objects (see `GameAction.recycleRune`'s doc comment), so this only
-    /// touches the aggregate `RunePool.energy` plus the cumulative
-    /// `totalRunesChanneled` tally `GameState` keeps for the pace check —
-    /// it does not remove cards from `zones.runeDeck` one-for-one, since
-    /// there's no per-Rune identity here to remove. Deliberately NOT
-    /// domain-typed, unlike `applyRecycleRune` — Energy is paid by
-    /// exhausting Runes regardless of Domain (130.2), so which Domain got
-    /// Channeled doesn't matter for anything Energy touches.
-    private static func applyChannel(count: Int, to state: inout GameState, player: PlayerID) {
+    /// Rule 606.1: Channel — take `count` Runes off the top of the player's
+    /// Rune Deck and **put them on the board**, into their Rune Area. They
+    /// enter Ready unless the instructing effect said otherwise (606.2).
+    ///
+    /// This adds no Energy, and that is the whole point. Rule 157.2.a is
+    /// `[T]: Add [1]` — a Rune produces Energy when it is *Exhausted*, not
+    /// when it is Channeled. The previous version of this function did
+    /// `runePool.energy += count`, which handed a player Energy for Runes
+    /// they had only placed, let them pay a cost without ever turning a
+    /// Rune sideways, and left the physical Rune Area with nothing in it
+    /// for the camera to count. See `applyExhaust` for where Energy is
+    /// actually produced.
+    ///
+    /// 515.3.b.1/606: fewer Runes than requested in the deck means channel
+    /// as many as possible — not a failure.
+    private static func applyChannel(count: Int, exhausted: Bool, to state: inout GameState, player: PlayerID) {
         guard var zones = state.zones[player] else { return }
-        zones.runePool.energy += count
+        let channelCount = min(count, zones.runeDeck.count)
+        for card in zones.runeDeck.prefix(channelCount) {
+            let rune = Rune(owner: player, card: card, isExhausted: exhausted)
+            state.runes[rune.id] = rune
+        }
+        zones.runeDeck.removeFirst(channelCount)
         state.zones[player] = zones
-        state.totalRunesChanneled[player, default: 0] += count
+        state.totalRunesChanneled[player, default: 0] += channelCount
 
-        if let index = state.pendingLimitedActions[player]?.firstIndex(of: .channel(count: count, exhausted: false)) {
+        if let index = state.pendingLimitedActions[player]?.firstIndex(of: .channel(count: count, exhausted: exhausted)) {
             state.pendingLimitedActions[player]?.remove(at: index)
         }
     }
 
-    /// Rule 130.3: Recycle one Rune of `domain` to pay a Power cost — adds
-    /// it to the spendable `RunePool.power` pool (which `applyPlay`
-    /// consumes from and `LegalityValidator.validatePlay` checks against)
-    /// and separately records the recycle against the cumulative
-    /// `totalRunesRecycled` tally, so `totalRunesChanneled -
-    /// totalRunesRecycled` stays the correct "should still be visible in
-    /// the Rune Area" figure for the vision layer's live count to
-    /// reconcile against. These two effects are independent — the pool
-    /// entry gets consumed by a later Play, but the recycle still
-    /// happened, so the cumulative tally does not reverse.
+    /// Rule 157.2.a (`[T]: Add [1]`): Exhausting a Ready Rune adds 1 Energy
+    /// to its controller's Rune Pool. This is the only way Energy is
+    /// produced, and it's the physical act the camera can actually see — a
+    /// rune rotated sideways in the Rune Area.
+    ///
+    /// Objects that aren't Runes are exhausted without producing anything
+    /// (592: Exhaust is a general Limited Action; only Runes carry 157.2.a's
+    /// intrinsic ability). Already-Exhausted Runes produce nothing — the
+    /// ability's cost is turning it, and a Rune that's already turned has
+    /// nothing left to pay with.
+    private static func applyExhaust(objects: [ObjectID], to state: inout GameState, player: PlayerID) {
+        for objectID in objects {
+            if var rune = state.runes[objectID] {
+                guard !rune.isExhausted else { continue }
+                rune.isExhausted = true
+                state.runes[objectID] = rune
+                state.zones[rune.controller]?.runePool.energy += 1   // 157.2.a
+            } else if var unit = state.units[objectID] {
+                unit.isExhausted = true
+                state.units[objectID] = unit
+            } else if var gear = state.gear[objectID] {
+                gear.isExhausted = true
+                state.gear[objectID] = gear
+            }
+        }
+        consumeAuthorization(.exhaust(objects: objects), for: player, in: &state)
+    }
+
+    /// Rule 593: Ready — the inverse of Exhaust, and deliberately *not*
+    /// symmetric with it: readying a Rune does not remove Energy from the
+    /// pool. Energy already added is spent or lost to 160's emptying, never
+    /// clawed back by the Rune's stance changing later.
+    private static func applyReady(objects: [ObjectID], to state: inout GameState, player: PlayerID) {
+        for objectID in objects {
+            if var rune = state.runes[objectID] {
+                rune.isExhausted = false
+                state.runes[objectID] = rune
+            } else if var unit = state.units[objectID] {
+                unit.isExhausted = false
+                state.units[objectID] = unit
+            } else if var gear = state.gear[objectID] {
+                gear.isExhausted = false
+                state.gear[objectID] = gear
+            }
+        }
+        consumeAuthorization(.ready(objects: objects), for: player, in: &state)
+    }
+
+    /// Rule 157.2.b (`Recycle this: Add [C]`) + 594.1.b: Recycling a Rune
+    /// takes it off the board and puts it on the **bottom of the Rune
+    /// Deck** (154.2.b), adding Power of that Rune's Domain to the pool
+    /// (157.2.b.1).
+    ///
+    /// The card really does return to the deck — that's what makes the Rune
+    /// Deck able to run out and refill across a long game, and it's why
+    /// `Rune` carries its whole `RuneCard` rather than just a Domain.
+    /// Previously this only appended to `RunePool.power` and bumped a
+    /// counter, which meant recycling was free: the Rune never left the
+    /// board, so the same physical Rune could be recycled indefinitely.
+    ///
+    /// 594.3: a Recycle used as a cost must be completable — the validator
+    /// confirms a Rune of this Domain is actually present before this runs.
+    /// An Exhausted Rune is as Recyclable as a Ready one (the cost is
+    /// returning the card, not turning it), so stance is not consulted;
+    /// where both exist, the Exhausted one goes first, since it has already
+    /// produced its Energy and is the one with nothing left to give.
     private static func applyRecycleRune(domain: Domain, to state: inout GameState, player: PlayerID) {
+        let candidates = state.runes.values.filter { $0.controller == player && $0.domain == domain }
+        guard let rune = candidates.first(where: \.isExhausted) ?? candidates.first else { return }
+
+        state.runes[rune.id] = nil
         guard var zones = state.zones[player] else { return }
-        zones.runePool.power.append(.domain(domain))
+        zones.runeDeck.append(rune.card)             // 594.1: bottom of the deck
+        zones.runePool.power.append(.domain(domain)) // 157.2.b.1
         state.zones[player] = zones
         state.totalRunesRecycled[player, default: 0] += 1
 
-        if let index = state.pendingLimitedActions[player]?.firstIndex(of: .recycleRune(domain: domain)) {
+        consumeAuthorization(.recycleRune(domain: domain), for: player, in: &state)
+    }
+
+    /// Rule 589.2: an authorization is spent by the action it authorized,
+    /// so one "you may draw" can't be redeemed for two physical draws.
+    private static func consumeAuthorization(_ action: GameAction, for player: PlayerID, in state: inout GameState) {
+        if let index = state.pendingLimitedActions[player]?.firstIndex(of: action) {
             state.pendingLimitedActions[player]?.remove(at: index)
         }
     }

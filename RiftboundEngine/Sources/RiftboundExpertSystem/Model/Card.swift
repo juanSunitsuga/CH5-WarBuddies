@@ -77,7 +77,7 @@ public struct MainDeckCard: Card, Codable, Sendable, Identifiable {
 
 /// Rune Deck card (rule 153–157). Not a Main Deck card, not a Permanent
 /// (154.1.a), but still a "card" per rule 052.
-public struct RuneCard: Card, Codable, Sendable, Identifiable {
+public struct RuneCard: Card, Codable, Sendable, Identifiable, Equatable {
     public var id: ObjectID
     public var definitionID: CardDefID
     public var owner: PlayerID

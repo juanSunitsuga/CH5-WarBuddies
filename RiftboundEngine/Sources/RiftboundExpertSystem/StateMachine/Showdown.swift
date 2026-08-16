@@ -37,6 +37,44 @@ public struct Showdown: Sendable {
         self.passedPlayers = []
         self.nestedChain = nestedChain
     }
+
+    /// Rule 553.5/552: hand Focus to the next Relevant Player in Turn
+    /// Order. Used both when the player with Focus passes (553.5) and when
+    /// the last item on a nested Chain resolves (552).
+    ///
+    /// Wraps around `turnOrder`, skipping non-Relevant players — a Showdown
+    /// from Combat has only two Relevant Players (550.1) even at a table of
+    /// four, so "the next player" means the next *Relevant* one, not simply
+    /// the next seat.
+    mutating func passFocus(turnOrder: [PlayerID]) {
+        guard let currentIndex = turnOrder.firstIndex(of: focusPlayer), !relevantPlayers.isEmpty else { return }
+        for step in 1...turnOrder.count {
+            let candidate = turnOrder[(currentIndex + step) % turnOrder.count]
+            if relevantPlayers.contains(candidate) {
+                focusPlayer = candidate
+                return
+            }
+        }
+    }
+
+    /// Rule 553.4: record a Pass at the Showdown level (distinct from
+    /// passes on a nested Chain, which `Chain.passedPlayers` tracks).
+    mutating func recordPass(by player: PlayerID) {
+        passedPlayers.insert(player)
+    }
+
+    /// Rule 553.4.a: the Showdown ends once all Relevant Players have
+    /// passed once in sequence.
+    var allRelevantPlayersPassed: Bool {
+        relevantPlayers.isSubset(of: passedPlayers)
+    }
+
+    /// Rule 552: a resolving Chain item is something happening, so the
+    /// sequence of passes that would have ended the Showdown is broken —
+    /// Focus moves on and everyone gets another look.
+    mutating func clearPasses() {
+        passedPlayers = []
+    }
 }
 
 /// Rule 624–628: the fixed sequence within a Combat (itself entered via
