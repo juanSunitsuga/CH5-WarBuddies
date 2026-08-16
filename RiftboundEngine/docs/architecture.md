@@ -87,6 +87,7 @@ describes them rather than duplicating them, so it can't drift.
 | `MainDeckCard` | `Model/Card.swift` | A *card* (rule 052). `.unit(isChampion:)` / `.gear` / `.spell`. |
 | `ChampionLegend`, `Battlefield` | `Model/Card.swift` | Game Objects, deliberately **not** `MainDeckCard`. |
 | `Unit`, `Gear` | `Model/BoardPermanent.swift` | Board instances. Units enter exhausted (139.4). |
+| `Rune` | `Model/Rune.swift` | A Channeled Rune sitting in a Rune Area (606.1). Carries its whole `RuneCard`, because Recycling puts *that card* back on the Rune Deck (154.2.b). |
 | `Location` | `Model/Location.swift` | **Only** `.base` and `.battlefield` (rule 106). |
 | `GameObject` | `Model/Location.swift` | `id`, `owner`, `controller` — Control ≠ ownership (179–183). |
 
@@ -95,6 +96,35 @@ describes them rather than duplicating them, so it can't drift.
 "cards." Card text that says "card" means the narrower thing. Conflating them
 breaks triggers like Legion (724), which counts *Main Deck cards played*, not
 any object entering play.
+
+`Rune` is where that distinction earns its keep. A Rune is a Game Object on
+the board with a stance, and `RuneCard` is the card it came from — they are
+separate because the two halves genuinely separate: Recycling moves the card
+back to the deck while the object leaves play. A Rune is also explicitly *not*
+a Permanent (154.1.a), so it lives beside `Unit`/`Gear` rather than among them.
+
+### The rune economy (153–160, 594, 606)
+
+Three distinct physical acts, and the reason they must stay distinct:
+
+| Act | Rule | Effect |
+|---|---|---|
+| **Channel** | 606.1 | Rune Deck → Rune Area, on the board, Ready. Produces **nothing**. |
+| **Exhaust** | 157.2.a `[T]: Add [1]` | Turn it sideways → **+1 Energy**. |
+| **Recycle** | 157.2.b / 594.1.b | Rune Area → bottom of Rune Deck → **+1 Power** of its Domain. |
+
+Channel used to do `runePool.energy += count`, collapsing the first two. That
+paid players for runes they had only placed, let costs be met without turning
+anything, and left the Rune Area with nothing in it for the camera to count.
+
+Both abilities carry a `:`, so 577.2 makes them **Activated Abilities** whose
+costs happen to be Exhausting and Recycling — Discretionary, needing only
+Priority. They were previously gated on 589.2 authorization that nothing ever
+granted, which made the entire economy unreachable from the camera. Channel
+stays Limited; 606.3.a says so outright.
+
+Pools empty at the end of each Draw Phase **and** each turn (160/515.4.d/
+517.2.c), for *every* player both times.
 
 ## 3. State Machine
 
@@ -113,36 +143,121 @@ Pattern-matching on it answers "what can be played right now" (508–510)
 almost for free, and `playerWithPriority(turnPlayer:)` derives priority from
 it rather than from a separate field that could disagree.
 
+### The turn (514–517) — `StateMachine/TurnSequencer.swift`
+
+A Riftbound turn is one rigid prefix and then nothing:
+
+```
+Awaken → Beginning → Channel → Draw  │  Action Phase  │  End of Turn
+├──────── fixed, automatic ─────────┤  └ free-form ┘   └ automatic ┘
+```
+
+515 gives the four Start of Turn steps no windows of opportunity, so
+`TurnSequencer` runs them straight through without asking anyone. 516.2 then
+says the Action Phase "has no defined structure" — a player moves units, plays
+cards and triggers Showdowns in any order and any number of times until they
+end the turn (516.6). **There is no Action → Showdown → End sequence.** A
+Showdown is something a Move *causes* (516.5.b), not a step the turn advances
+into.
+
+So `.action` is terminal in the sequencer: `advance` refuses to move past it,
+and only `GameAction.endTurn` leaves. `endTurn` walks 517's steps as it
+performs them rather than setting the phase once at the end — `Cleanup` reads
+`phase` to decide whether a Showdown may open, so leaving it at `.action`
+through the Cleanup Step let a turn end by starting a fight.
+
+The validator gates `.play` and `.standardMove` on `.action` (516.1/140.1.a),
+which is what makes "you're still in the channel phase" a real, reportable
+verdict instead of a silently accepted move.
+
 ### The Chain (532–544)
 
 A literal stack, resolved top-down (543.1), requiring a full pass-around among
 Relevant Players before popping (539–542). Implemented in
 `StateMachine/Chain.swift` and unit-tested.
 
-> **Not yet driven live.** `GameActionApplier.applyPlay` resolves immediately
-> rather than pushing onto the Chain. With a single seat and legality
-> restricted to Neutral Open there is no observable difference today, but
-> Reaction (725) and Legion (724) timing depend on it being real, so this is a
-> known simplification rather than a design choice.
+> **Partly driven live.** `GameActionApplier.applyPlay` pushes a **Spell**
+> onto the Chain, so Reactions get a real window against it (509.1.a) before
+> anything happens. **Units and Gear still resolve immediately** — they have no
+> `ChainItem` shape — and the two rune abilities resolve immediately too, by a
+> deliberate divergence from 577.3 documented at `validateRuneAbility` (putting
+> "add 1 energy" on the Chain would require a full pass-around before the
+> Energy existed to spend with). With one seat the difference is unobservable
+> today, but Reaction (725) and Legion (724) timing depend on it being real, so
+> these are known simplifications rather than design choices.
 
-### Showdowns (545–553)
+### Showdowns and Focus (545–553)
 
 Its own structure, not just "combat" — it also fires when moving into an
 uncontested empty battlefield (516.5.b). Holds `focusPlayer`,
 `relevantPlayers`, and an optional owned `Chain` for its Initial Chain (551).
+
+**Focus moves**, and that movement is the engine of the whole Showdown:
+
+- 549 — the player who applied Contested status gets it first (the attacker).
+- 553.5 — it passes to the next *Relevant* player when its holder passes,
+  skipping seats that aren't Relevant to this Showdown (550.1 makes a Combat
+  Showdown two-player even at a table of four).
+- 552 — it passes again when a nested Chain's last item resolves, and the run
+  of passes resets, because 553.4.a counts passes *in sequence*.
+- 553.4.a — when every Relevant player has passed in sequence, the Showdown
+  ends and Combat resolves.
+
+`ChainResolver.pass` returns a `PassOutcome` rather than `ChainItem?` because a
+Pass is not one thing: it can record, resolve a Chain item, or end a Showdown,
+and the caller applies something different for each. The old `ChainItem?`
+could only express the middle one — which is why a Pass during a Showdown
+silently did nothing, Focus never moved, and the turn stopped dead.
+
+### Combat (620–628) — `StateMachine/Combat.swift`
+
+Runs when a Combat Showdown closes: 626 damage → 627 resolution → 628 Cleanup.
+627.3 is what it exists to reach — *no Defending Units remain but Attacking
+Units do* — because that hands Control over (627.3.a), which is rule 630.1's
+definition of a Conquer.
+
+Damage assignment (626.1.d) is nominally the assigning player's choice, but
+626.1.d.1 (Tank first) and 626.1.d.2 (lethal in full before moving on) narrow
+it enough that a stable canonical order is faithful. Not modelled, and each
+would change the numbers: Assault (719), Shield (726), Deflect (721), and
+"assign me last" restrictions. Might is printed Might, since the Layers
+calculator (637) doesn't exist.
+
+### Scoring (629–633) — `StateMachine/Scoring.swift`
+
+Hold (630.2) at the Beginning Phase, Conquer (630.1) on gaining Control,
+capped once per battlefield per turn (631). The final point is asymmetric and
+easy to get wrong: a Hold takes it outright (632.1.b.1), but a Conquer takes it
+only if the player has scored *every* battlefield this turn — otherwise they
+draw a card instead (632.1.b.2). You cannot steal the last point with one late
+attack.
 
 ### Cleanup (518–526)
 
 The state-based action sweep. Run after **every** Chain item resolution, Move
 completion, Showdown completion, and Combat completion.
 
-Battlefield control changes, lethal-damage kills, and Pending Combat detection
-happen *only* inside Cleanup. It is one pure function called religiously —
-inlining ad hoc versions of it in several places is the most common way these
-engines silently drift from spec.
+Pending Combat detection, Showdown opening, and Control-follows-presence
+(181.4.d) happen inside Cleanup. It is one pure function called religiously —
+inlining ad hoc versions of it is the most common way these engines silently
+drift from spec.
+
+181.4.d isn't a numbered Cleanup step, but 181.5 calls Control "a constant
+state with no reliance on timing", which makes it exactly the kind of fact a
+Cleanup reconciles. It matters more than it looks: 525 only opens a Showdown
+at a Contested battlefield with **no** Controller, so a battlefield whose
+controller had left stayed unconquerable by anyone while looking entirely
+normal on the table.
+
+Both 525 and 526 are gated on the Action Phase (516.5) — Cleanup also runs from
+End of Turn (517.3), and without the gate a turn could end by opening a
+Showdown and handing it to the next player.
 
 `GameEngine.process` runs `GameActionApplier.apply` and `Cleanup.run` inside a
-single `store.mutate`, so no observer can see the state between them.
+single `store.mutate`, so no observer can see the state between them. `apply`
+returns `[PlayerInstruction]`, because an action can *cause* something the
+player must be told that isn't the action itself — a Conquer, a Hold, a win —
+and none of that is derivable from the `GameAction` alone.
 
 ## 4. Ability Resolution — where the NLP plugs in
 
@@ -186,17 +301,25 @@ Implemented checks:
 
 | Action | Rules | Checks |
 |---|---|---|
-| `.play` | 555–563 | Neutral Open + priority; card actually in hand; Units need a real Location (559.2); Gear can't target a Battlefield (144.2); destination not held by 2 other controllers; Energy payable from the Rune Pool (560–561) |
-| `.standardMove` | 140 | Neutral Open + priority; unit exists and is ready; destination not held by 2 other controllers (140.4.a.1 / 623.2) |
+| `.play` | 555–563 | Action Phase (516.1); priority; card actually in hand; keyword gate per `TurnState` — none in Neutral Open, Reaction when Closed (509.1.a), Action-or-Reaction in a Showdown (508.1.a); Units need a real Location (559.2); Gear can't target a Battlefield (144.2); destination not held by 2 other controllers; Energy from the pool and Power matched against `Cost.eligibleDomains` (560–561); observed exhausted-rune count matches cost when supplied (130.2) |
+| `.standardMove` | 140 | Action Phase and Neutral Open — which is also how 140.1.b/c's "not Closed, not during a Showdown" is enforced; priority; unit exists and is ready; destination legal per 140.4 (Base↔Battlefield; Battlefield→Battlefield needs Ganking); destination not held by 2 other controllers (140.4.a.1 / 623.2) |
+| `.endTurn` | 516.6 | Action Phase; proposer is the Turn Player |
+| Rune abilities | 157.2, 577 | `.recycleRune`, and `.exhaust` of one's *own* Runes: priority only — Activated Abilities, so **not** authorization-gated. `.recycleRune` also needs a matching Rune present (594.3) |
 | Limited Actions | 589.2 | Authorized in `GameState.pendingLimitedActions` — generic across all of them |
+| Anything | 633 | Rejected outright once someone has won |
 
 `Failure` cases are user-facing by design (`cardNotInHand`,
-`insufficientEnergy(required:available:)`, `invalidPlayDestination`), so the
-app renders a real reason instead of a validator case name.
+`insufficientEnergy(required:available:)`, `notActionPhase(Phase)`,
+`illegalMoveDestination(from:to:)`, `noRuneOfDomainAvailable(Domain)`), so the
+app renders a real reason instead of a validator case name. The enum is
+exhaustively switched in `InstructionLogEntry` on purpose: adding a case
+without giving the player words for it fails the build rather than rendering a
+rejection as "Action accepted."
 
-**Known gaps:** Power cost isn't checked (`RunePool.power` and `Cost.power`
-aren't typed alike yet); Showdown/Focus-based play timing isn't modelled, so
-legality is restricted to Neutral Open.
+**Known gaps:** `.hide`, `.invite`, `.activateAbility` and the remaining
+Limited Actions get the generic 589.2 authorization check only, with no
+per-action logic; team-mode co-priority (516.2.b.1 / 648.8.a) isn't modelled,
+so "whose turn" is strict.
 
 ## 6. Swift / macOS Implementation Notes
 
@@ -222,7 +345,7 @@ legality is restricted to Neutral Open.
 |---|---|---|---|
 | 1 | Core types, zones, board setup | 100–184 | ✅ |
 | 2 | Turn phase state machine | 515–517 | ✅ `TurnSequencer` runs Awaken→Draw and End of Turn |
-| 3 | Chain + priority passing | 532–544 | ✅ built, ⚠ not driven live |
+| 3 | Chain + priority passing | 532–544 | ✅ built; Spells push onto it, Units/Gear still resolve immediately |
 | 4 | Showdown + Focus | 545–553 | ✅ Focus passes, Showdowns end |
 | 4b | Combat damage + resolution | 620–628 | 🟡 damage/lethal/recall/conquer; no Assault, Shield, Deflect, Tank ordering |
 | 5 | Cleanup as a first-class function | 518–526 | ✅ |

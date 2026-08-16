@@ -14,7 +14,7 @@ saw and whether it was legal.
 │                         RiftboundVisionApp                           │
 │                    (macOS SwiftUI — the runnable app)                │
 ├──────────────────────────────────────────────────────────────────────┤
-│  Camera capture → calibration overlay → live overlays → event logs   │
+│  Camera capture → calibration overlay → live overlays → instructions │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │ CapturedFrame (CVPixelBuffer + timestamp)
                                 ▼
@@ -47,6 +47,9 @@ saw and whether it was legal.
 ├──────────────────────────────────────────────────────────────────────┤
 │  ④ LegalityValidator   is this legal in this GameState?              │
 │     GameActionApplier  mutate through GameStateStore (actor)         │
+│     TurnSequencer      the fixed ABCD prefix, and End of Turn        │
+│     ChainResolver      the Chain, and Focus around a Showdown        │
+│     Combat / Scoring   damage, Conquer, Hold, victory                │
 │     Cleanup            rule 518–526 sweep after every action         │
 │                        → PlayerInstruction                           │
 └──────────────────────────────────────────────────────────────────────┘
@@ -59,7 +62,7 @@ Four Swift packages, each independently buildable and tested:
 | **RiftboundEngine** (`RiftboundExpertSystem`) | Pure rules engine — legality, the Chain, Showdowns, Cleanup, turn structure. No UI, no camera, no ML. The source of truth for "is this move legal." |
 | **RiftboundVision** | Camera capture, YOLO detection, object tracking, playmat calibration, card database. A library with no app bundle of its own. |
 | **RiftboundTextProcessing** | Card text → game action. SwiftData cache over a SQLite card index, with on-device Foundation Models for cards the index doesn't know. |
-| **RiftboundVisionApp** | The runnable macOS app — camera picker, calibration, live overlays, event logs, score tracking. |
+| **RiftboundVisionApp** | The runnable macOS app — camera picker, calibration, live overlays, card details, score tracking, and the instruction bar. |
 
 Dependencies point inward; the engine depends on nothing:
 
@@ -241,32 +244,80 @@ drive state directly — it *proposes* deltas, the validator accepts or rejects
 them, and only accepted deltas mutate `GameState`. That's what lets the engine
 catch a move a player physically made but wasn't allowed to.
 
+### The turn
+
+The only fixed part of a Riftbound turn is its opening:
+
+```text
+Awaken → Beginning → Channel → Draw  │  Action Phase  │  End of Turn
+├──────── fixed, automatic ─────────┤  └ free-form ┘   └ automatic ┘
+```
+
+`TurnSequencer` runs the four Start of Turn steps straight through — 515 gives
+nobody a window to act between them — and then stops. The Action Phase "has no
+defined structure" (516.2): move units, play cards, trigger Showdowns, in any
+order, until you end the turn. **There is no Action → Showdown → End
+sequence.** A Showdown is something a Move *causes* (516.5.b).
+
+A Move goes to exactly one Battlefield (140.3.a), which is why each Showdown is
+about exactly one Battlefield. Inside a Showdown, Focus starts with the
+attacker (549) and passes around the Relevant players; when everyone has passed
+in sequence the Showdown ends (553.4.a) and combat resolves. If your units are
+the only ones left standing, you Conquer it (627.3) and score (630.1).
+
+### The rune economy
+
+Three separate physical acts, deliberately not collapsed:
+
+| Act | Rule | Effect |
+|---|---|---|
+| **Channel** | 606.1 | Rune Deck → Rune Area, on the board, ready. Produces nothing. |
+| **Exhaust** | 157.2.a | Turn it sideways → +1 Energy. |
+| **Recycle** | 157.2.b | Back to the Rune Deck → +1 Power of its Domain. |
+
+Energy comes from *turning* a rune, not from placing one. Both abilities are
+the rune's own (577.2), so a player uses them at will with priority.
+
 ### Implemented Game Actions
 
-Rules 586–607 define a closed set of 21 Game Actions. Three have real logic:
+Rules 586–607 define a closed set of 21 Game Actions:
 
 | Action | Validator | Applier | Rules |
 |---|---|---|---|
-| `.play` | ✅ | ✅ | 555–563 — hand membership, destination, Energy cost |
-| `.standardMove` | ✅ | ✅ | 140 — exhaust cost, 2-controller destination limit |
+| `.play` | ✅ | ✅ | 555–563 — phase, priority, keyword window, hand membership, destination, Energy + Domain-matched Power |
+| `.standardMove` | ✅ | ✅ | 140 — exhaust cost, 140.4 destinations, 2-controller limit |
+| `.pass` | ✅ | ✅ | 540.4/553.4 — resolves the Chain, passes Focus, ends Showdowns |
+| `.endTurn` | ✅ | ✅ | 516.6/517 — runs End of Turn and hands over |
 | `.draw` | ✅ | ✅ | 591 — Limited Action, requires authorization |
-| Limited Actions (11 more) | 🟡 generic | ❌ | 589.2 authorization check only |
-| `.activateAbility`, `.hide`, `.pass`, `.invite`, `.endTurn` | ❌ | ❌ | fall through `.notImplemented` |
+| `.channel` | ✅ | ✅ | 606 — Limited; the Channel Phase authorizes it |
+| `.exhaust`, `.ready`, `.recycleRune` | ✅ | ✅ | 157.2/592/593 — discretionary for your own Runes |
+| Limited Actions (9 more) | 🟡 generic | ❌ | 589.2 authorization check only |
+| `.activateAbility`, `.hide`, `.invite` | ❌ | ❌ | fall through `.notImplemented` |
+
+Scoring (629–633) — Hold, Conquer, the once-per-battlefield cap, the final
+point, and victory — runs off the back of these rather than being an action of
+its own.
 
 ## Debugging
 
-The app ships two logs side by side, and the difference between them is the
-diagnosis:
+The app screen is deliberately quiet: the camera with its overlay, a score and
+card-detail sidebar, and one instruction bar along the bottom. Tap a card's box
+on the camera to inspect that printing.
 
-| Log | Source | Shows |
-|---|---|---|
-| **Tracking Log** | `VisionEvent`, pre-translation | Track ID, zone transitions, confidence, and whether the event reached the engine. Includes zones the engine can't represent. |
-| **Event Log** | `PlayerInstruction`, post-translation | What the camera saw paired with the engine's verdict and its reason. |
+The bottom bar is the primary diagnostic, and it is prioritised so the most
+actionable thing wins: calibration needed → misplaced cards → the most recent
+accepted or rejected verdict → the current phase. A rejection always carries a
+reason in the player's words ("you're still in the channel phase", "units can't
+move straight between battlefields"), never a validator case name.
 
-A busy Tracking Log next to an empty Event Log localises the fault
-immediately. Watch the `#N` badge on each centroid dot: a card that keeps
-getting a new number every time it's touched is being re-created rather than
-followed, and no play can ever be recognized.
+`LegalityValidator.Failure` is switched exhaustively where it's rendered, so a
+new rejection reason fails the build until someone writes words for it. That's
+deliberate: with a `default:` branch, a new *rejection* would have quietly
+rendered as "Action accepted."
+
+Watch the `#N` badge on each centroid dot. A card that gets a new number every
+time it's touched is being re-created rather than followed, and no play can
+ever be recognized from it.
 
 Pipeline stages can be toggled individually from the gear menu; disabling a
 stage cascades to everything downstream of it.
@@ -277,8 +328,9 @@ stage cascades to everything downstream of it.
 Challenge 5/
 ├── RiftboundEngine/
 │   ├── Sources/RiftboundExpertSystem/
-│   │   ├── Model/          GameState, Card, BoardPermanent, Zones, Location
-│   │   ├── StateMachine/   GameStateStore (actor), TurnState, Chain, Showdown, Cleanup
+│   │   ├── Model/          GameState, Card, BoardPermanent, Rune, Zones, Location
+│   │   ├── StateMachine/   GameStateStore (actor), TurnState, Phase, TurnSequencer,
+│   │   │                   Chain, ChainResolver, Showdown, Combat, Scoring, Cleanup
 │   │   ├── Actions/        GameAction, GameActionApplier
 │   │   ├── Validation/     LegalityValidator
 │   │   ├── Ingestion/      BoardObserving, ActionTranslating, ObservedTableEvent
@@ -309,7 +361,9 @@ Challenge 5/
     └── RiftboundVisionApp/
         ├── CameraPipelineController.swift
         ├── GameSessionBuilder.swift
-        ├── ContentView, DetectedCardsPanel, TurnControlBar, ScoreTracker
+        ├── BoardStatePersistence.swift
+        ├── ContentView, DetectedCardsPanel, CardDetailView, TurnControlBar,
+        │   GameStateBar, ScoreTracker, InstructionLogEntry, PipelineSettingsView
         └── Assets.xcassets/
 ```
 
@@ -363,28 +417,35 @@ all 75 printings, and alternate arts stay distinct (`ogn-214-298` vs
 
 Flagged rather than papered over:
 
-- **`TableRegion` can only express Hand, Base, and Battlefield** (rule
-  106.5.b). Main Deck, Rune Deck, Trash, and Rune Area have no representation,
-  so **Draw and Channel Rune are structurally unreachable** from the camera.
-  Events for those zones appear in the Tracking Log marked as not forwarded.
+- **Nothing proposes `.exhaust` when a rune turns.** The engine models the rune
+  economy properly now, and both rune abilities are discretionary, so the path
+  is open — but the vision layer only *counts* exhausted runes, it never emits
+  an action for one turning sideways. Until it does, no Energy can enter a pool
+  from play, which is why `GameSessionBuilder` still seeds one. **The fix is
+  that event, not a bigger seeded number.**
 - **`parseAbility` returns `[]`.** Mechanic tags are extracted and then
   dropped, so no card ability ever executes. `EffectInstruction` is fully
-  defined but nothing runs it.
-- **The Chain isn't driven live.** `applyPlay` resolves immediately rather
-  than passing through the Chain's open/close cycle. With one seat and
-  Neutral-Open-only legality there's no observable difference yet, but
-  Reaction and Legion timing depend on it being real.
+  defined but nothing runs it. Score abilities (632.2) wait on this too.
+- **No second seat.** The engine handles an opponent's Hold, Conquer and Focus,
+  but the app is built for one local player, so scoring is still effectively
+  manual and a Showdown has nobody to pass to.
+- **Units and Gear skip the Chain.** Spells push onto it, so Reactions get a
+  real window; Units and Gear still resolve immediately. Reaction and Legion
+  timing depend on that becoming real.
 - **No deck or player setup UI.** The hand is seeded with every Unit and Spell
-  in the bundled decks and 99 Energy, so cost and hand-membership never block a
-  play for the wrong reason. That is deliberately permissive, not a real deck.
-- **Scoring is manual.** The engine can score a contested Battlefield during
-  Cleanup, but the app has no opponent seat to score against, so the two aren't
-  connected.
+  in the bundled decks, and the Rune Deck is a placeholder two-of-each-Domain.
+  Deliberately permissive, not a real deck.
+- **No Layers (634–639).** Combat and Cleanup use printed Might, so a buffed or
+  debuffed unit fights at its printed value, and Assault, Shield, Deflect and
+  Tank damage-ordering don't apply. One consequence worth knowing: 627.2's
+  "both sides survive" outcome is arithmetically unreachable without them, so
+  an even trade is always mutual destruction.
 
 ## Roadmap
 
-- [ ] Widen `TableRegion` so Draw and Channel Rune can cross the boundary
+- [ ] Emit `.exhaust` when the camera sees a rune turn, and drop the seeded pool
 - [ ] Route mechanic tags into `parseAbility` → `EffectInstruction` execution
+- [ ] Second seat, so Hold, Conquer and Focus have an opponent to work against
 - [ ] Deck selection and player identification, replacing the permissive hand
-- [ ] Drive the Chain for real, so Reactions resolve in rules order
-- [ ] Second seat, and connect Cleanup scoring to the score tracker
+- [ ] Push Units and Gear through the Chain, so Reactions resolve in rules order
+- [ ] Layers, and the combat keywords that depend on them
