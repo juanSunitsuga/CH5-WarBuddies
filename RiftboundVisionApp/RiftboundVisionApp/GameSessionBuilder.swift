@@ -103,7 +103,7 @@ enum GameSessionBuilder {
     /// the six Domains (133) rather than a guessed default — a printing
     /// with an unrecognized Domain string is a data problem worth
     /// surfacing, not silently dropping into "domainless."
-    private static func domain(named raw: String) -> Domain? {
+    static func domain(named raw: String) -> Domain? {
         Domain(rawValue: raw.lowercased())
     }
 
