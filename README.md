@@ -265,6 +265,29 @@ attacker (549) and passes around the Relevant players; when everyone has passed
 in sequence the Showdown ends (553.4.a) and combat resolves. If your units are
 the only ones left standing, you Conquer it (627.3) and score (630.1).
 
+### What the app asks of you
+
+Playing a card is a sequence, and the app follows it rather than accepting
+the first step and going quiet:
+
+```text
+card leaves hand → lands in base → turn it sideways → turn runes for energy
+                                 → return runes to rune deck for power
+                                 → (spells only) put it in the trash
+```
+
+The Action Phase is **held open** until all of it is done, and a second card
+is refused meanwhile. Not because the rules forbid overlapping actions, but
+because a half-paid play is a board the engine and the table disagree about,
+and every action stacked on top inherits that disagreement.
+
+Auto-detect drives the fixed phases from what the camera sees — Awaken ends
+when nothing of yours is still sideways, Beginning scores the battlefields
+you hold, Channel counts your 2 new runes (3 on the second player's opening
+turn), Draw ends when a card reaches your hand. The Action Phase never
+auto-completes: 516.2 gives it no completion condition and 516.6 says you
+declare the end.
+
 ### The rune economy
 
 Three separate physical acts, deliberately not collapsed:
@@ -346,12 +369,14 @@ Challenge 5/
 │       ├── Geometry/       BoardZone, ZoneMapper
 │       ├── Events/         VisionEvent, TemporalEventDetector
 │       ├── Calibration/    PlaymatCalibration, PlaymatOverlayView, template
+│       ├── GameState/      ManualGameState, PhaseAutoDetector,
+│       │                   RunePayment, PendingPlay
 │       ├── Adapter/        ExpertSystemAdapter
 │       ├── CardDatabase/   CardDatabase, CardPrinting
 │       └── Debug/          LiveDetectionOverlayView, TrackedObjectOverlayView
 ├── RiftboundTextProcessing/
 │   └── Sources/RiftboundTextProcessing/
-│       ├── Engine/         ActionTranslatingEngine
+│       ├── Engine/         ActionTranslatingEngine, CardAbilityParser
 │       ├── Services/       SwiftDataCardService, CardDatabaseService,
 │       │                   FoundationModelTaggingService, SwiftRegexParsingService
 │       ├── Models/         RiftboundCard (@Model)
@@ -362,8 +387,9 @@ Challenge 5/
         ├── CameraPipelineController.swift
         ├── GameSessionBuilder.swift
         ├── BoardStatePersistence.swift
-        ├── ContentView, DetectedCardsPanel, CardDetailView, TurnControlBar,
-        │   GameStateBar, ScoreTracker, InstructionLogEntry, PipelineSettingsView
+        ├── ContentView, DetectedCardsPanel, CardDetailView, CardArtView,
+        │   TurnControlBar, GameStateBar, ScoreTracker, InstructionLogEntry,
+        │   PipelineSettingsView
         └── Assets.xcassets/
 ```
 
@@ -425,9 +451,11 @@ Flagged rather than papered over:
   nowhere else handles it. So no Energy can enter a pool from play, which is
   why `GameSessionBuilder` still seeds one. **The fix is that one translation,
   not a bigger seeded number.**
-- **`parseAbility` returns `[]`.** Mechanic tags are extracted and then
-  dropped, so no card ability ever executes. `EffectInstruction` is fully
-  defined but nothing runs it. Score abilities (632.2) wait on this too.
+- **Abilities are read but never run.** `CardAbilityParser` turns printed
+  text into named Game Actions and the app shows them, but nothing executes
+  an `EffectInstruction` against `GameState`, so a card still doesn't *do*
+  what it says. Targeted effects can be named but not aimed — `TargetSpec`
+  is deliberately still a placeholder. Score abilities (632.2) wait on this.
 - **No second seat.** The engine handles an opponent's Hold, Conquer and Focus,
   but the app is built for one local player, so scoring is still effectively
   manual and a Showdown has nobody to pass to.

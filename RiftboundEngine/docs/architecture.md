@@ -58,7 +58,7 @@ Four packages. Dependencies point inward; this package depends on nothing.
                      ▼
 ┌──────────────────────────────────────────────┐
 │  Ability resolution                          │  EffectInstruction
-│  ⚠ defined, not executed — see §7            │  (nothing runs it yet)
+│  ⚠ parsed + shown, not executed — see §7     │  CardAbilityParser  
 └────────────────────┬─────────────────────────┘
                      │ resulting state diff
                      ▼
@@ -277,17 +277,77 @@ enum EffectInstruction {
 card text onto *only* those primitives is the constraint. Text that doesn't
 map is a parse failure to surface, not a new primitive to invent.
 
-> **Status: defined, not executed.** `EffectInstruction` exists with the full
-> vocabulary, but nothing runs it against `GameState`, and `TargetSpec` /
-> `LocationSpec` / `EffectCondition` are still placeholders — deliberately, so
-> their shape is settled against real card text rather than guessed. Both
-> `parseAbility` implementations return `[]`, so mechanic tags extracted by the
-> NLP layer are currently dropped.
+> **Status: parsed and shown, not executed.** `CardAbilityParser` reads
+> printed text into this vocabulary and `ExpertSystemTranslatorAdapter.parseAbility`
+> returns it, so a card's abilities reach the player — the app lists what
+> everything in play does, and names each by the Game Action it resolves to.
+> What still doesn't happen is *execution*: nothing runs an
+> `EffectInstruction` against `GameState`.
+>
+> The untargeted cases (`.draw`, `.channelRune`, `.discard`) carry real
+> arguments and are the ones the engine could already apply. Targeted ones
+> come back with `TargetSpec.placeholder`, because `TargetSpec` /
+> `LocationSpec` / `EffectCondition` are still placeholders on purpose —
+> their shape gets settled against real card text rather than guessed. Until
+> then a targeted ability can be *named* but not aimed, and the
+> `ParsedAbility.summary` is what carries its meaning.
+>
+> Text that mentions a game verb but matches no known shape is reported as
+> unparsed rather than guessed at. A card whose ability shows as unread is a
+> parser gap someone can go fix; one silently invented is a wrong game state
+> nobody can trace.
 
 When it is built, resolution must follow the defined steps: re-validate
 targets at *resolution* time (559.3.c), apply Layers in Trait → Ability →
 Arithmetic order (634–639), and run replacement effects (571–575) as a filter
 *before* the effect executor rather than a special case inside it.
+
+## 4b. Play flow at the table (`RiftboundVision`)
+
+The Expert System validates *actions*. What the player at the table needs is
+a level below that: which physical steps they still owe. Those are different
+questions, and the second one lives in `RiftboundVision` because it's about
+what the camera can see, not about legality.
+
+Four types, none of which know anything about the Chain or `GameState`:
+
+| Type | Answers |
+|---|---|
+| `ManualGameState` / `GamePhase` | Which phase, whose turn — the facts vision can't infer |
+| `PhaseAutoDetector` | Has the player finished this phase's step yet? |
+| `RunePayment` | Can the runes on the table cover this card? |
+| `PendingPlay` | What does this played card still owe? |
+
+**The turn shown to the player is five phases, not eight.** 517's Ending,
+Expiration and Cleanup are real, but a player does nothing in them, so
+`GamePhase` stops at `.action` and ending the Action Phase hands over
+directly. `TurnSequencer` still models all three properly — this enum is the
+player-facing sequence, not the rules one.
+
+**Verdicts are withheld until the Action Phase.** 516.2 makes it the only
+phase whose contents the player chooses, so it's the only one where "was that
+allowed?" is a question. During the fixed prefix the bar says what to *do*
+instead; narrating each card touched while following a script buries the
+instruction being followed.
+
+**A play is a sequence, not a moment.** The card lands, then it's turned
+sideways (139.4), then runes are turned for Energy (157.2.a), then runes go
+back to the Rune Deck for Power (157.2.b). `PendingPlay` holds the Action
+Phase open until all of it is done, and refuses a second card meanwhile — a
+half-paid play is a board the engine and the table disagree about, and every
+action stacked on top inherits that disagreement.
+
+Progress is measured against **baselines taken as the card landed**. "Two
+runes are exhausted" means nothing; "two more than when this card hit the
+table" is the payment. Power is the mirror image: recycling takes the rune
+off the board, so it reads as the Rune Area shrinking. That's inferred from
+the area rather than the deck growing because a deck is a *stack* — the
+detector sees one object on top however many cards are underneath.
+
+Three ways a play could settle itself for free, each guarded: a card the
+camera has lost sight of counts as not-yet-turned (otherwise a hand passing
+over the table pays a cost); runes reappearing can't count as negative
+payment; and a card that enters ready (717) owes nothing for its own stance.
 
 ## 5. Legality Validator
 
@@ -352,14 +412,18 @@ so "whose turn" is strict.
 | 6 | Legality validator | 586–615 | 🟡 `.play`, `.standardMove`, `.draw`, `.endTurn`, rune abilities |
 | 6b | Scoring — Hold, Conquer, victory | 629–633 | ✅ |
 | 6c | Rune economy — channel, exhaust, recycle | 153–160, 594, 606 | ✅ Runes are board objects |
-| 7 | Effect execution + Layers | 634–639 | ❌ defined, not executed |
+| 7 | Ability parsing | 586–607 | ✅ `CardAbilityParser`; untargeted cases produce real `EffectInstruction`s |
+| 7b | Effect execution + Layers | 634–639 | ❌ nothing runs an `EffectInstruction` yet |
 | 8 | NLP → candidate `GameAction` | — | ✅ live |
 | 9 | Detection → `ObservedTableEvent` | — | ✅ live |
-| 10 | Instruction / feedback UI | — | ✅ live (turn bar + event log) |
+| 10 | Instruction / feedback UI | — | ✅ live (instruction bar + card details) |
+| 11 | Play flow at the table | 515–516, 139.4, 157.2 | ✅ `PhaseAutoDetector`, `RunePayment`, `PendingPlay` — see §4b |
+| 12 | Auto-detect of the fixed phases | 515 | ✅ Awaken, Beginning, Channel, Draw; Action never auto-completes (516.2) |
 
-Items 8–10 run end to end in `RiftboundVisionApp`: `GameEngine` is constructed
+Items 8–12 run end to end in `RiftboundVisionApp`: `GameEngine` is constructed
 per session, driven from the adapter's event stream, and its
-`PlayerInstruction`s render in the app.
+`PlayerInstruction`s render in the app alongside the play-flow prompts §4b
+describes.
 
 ### What blocks fuller play, in order
 
@@ -376,9 +440,11 @@ per session, driven from the adapter's event stream, and its
    `GameAction.exhaust`, no Energy can enter a pool from play, which is why
    `GameSessionBuilder` still seeds a stand-in pool. **The fix is that one
    translation, not a bigger seeded number.**
-2. **Item 7** — route the NLP layer's mechanic tags into `parseAbility` and
-   execute `EffectInstruction`, so cards actually *do* what they say. Score
-   abilities (632.2) and Cleanup's 520/522/523 all wait on this too.
+2. **Item 7b — execute `EffectInstruction`.** Parsing is done: card text now
+   reaches the player as named Game Actions. What's missing is anything that
+   *runs* one against `GameState`, so a card still doesn't do what it says.
+   Score abilities (632.2), Cleanup's 520/522/523, and every targeted effect
+   (which needs a real `TargetSpec` first) all wait on this.
 3. **A second seat.** `GameEngine` is built for one local player, so an
    opponent's Hold, Conquer and Focus are unreachable in the app even though
    the engine handles them. Scoring is therefore still effectively manual.
