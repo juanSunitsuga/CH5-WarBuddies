@@ -81,4 +81,51 @@ struct CardPlacementRulesTests {
         #expect(CardKind.from(type: "Battlefield") == .battlefield)
         #expect(CardKind.from(type: "Nonsense") == .unknown)
     }
+
+    /// The catalogue puts `supertype: "Champion"` on the champion **tag**
+    /// (rule 169 / 103.2.a.2), which both a Legend and a Champion Unit
+    /// carry — `Annie - Dark Child (Starter)` is `type: Legend`,
+    /// `supertype: Champion`, and so is every other starter Legend.
+    ///
+    /// Reading `supertype` first therefore classified every Legend in every
+    /// deck as a Champion. Champions aren't allowed in the Legend zone, so
+    /// the app told the player to move a Legend out of the Legend zone —
+    /// permanently, and about the one card rules 166–169 require to be
+    /// exactly there.
+    @Test("A Legend carrying the champion tag is a Legend, not a Champion")
+    func legendWithChampionTagIsALegend() {
+        let annie = CardKind.from(type: "Legend", supertype: "Champion")
+
+        #expect(annie == .legend)
+        #expect(annie != .champion, "The old ordering returned .champion here.")
+
+        // The consequence that was actually visible on screen.
+        #expect(rules.isPlausible(kind: annie, in: .legend))
+    }
+
+    /// The other half: the tag still distinguishes a Champion Unit, which
+    /// is the only kind whose zones it changes (107.2's Champion zone).
+    @Test("A Unit carrying the champion tag is a Champion")
+    func unitWithChampionTagIsAChampion() {
+        #expect(CardKind.from(type: "Unit", supertype: "Champion") == .champion)
+        #expect(rules.isPlausible(kind: .champion, in: .champion))
+        #expect(!rules.isPlausible(kind: .unit, in: .champion))
+    }
+
+    /// Every Legend in the four bundled starter decks is `type: Legend`,
+    /// `supertype: Champion` — so this was never a one-card typo to special-
+    /// case, it was every deck the app ships with.
+    @Test("All four starter legends classify as legends")
+    func allStarterLegendsAreLegends() {
+        let starters = [
+            "Annie - Dark Child (Starter)",
+            "Lux - Lady of Luminosity (Starter)",
+            "Master Yi - Wuju Bladesman (Starter)",
+            "Garen - Might of Demacia (Starter)"
+        ]
+        for name in starters {
+            let kind = CardKind.from(type: "Legend", supertype: "Champion")
+            #expect(kind == .legend, "\(name) should classify as a Legend.")
+        }
+    }
 }

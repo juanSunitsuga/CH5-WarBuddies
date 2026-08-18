@@ -16,12 +16,30 @@ public enum CardKind: String, Sendable, Equatable, CaseIterable {
     case battlefield
     case unknown
 
-    /// Maps `CardPrinting.classification.type` (and its supertype, which is
-    /// where "Champion" lives) onto a kind.
+    /// Maps `CardPrinting.classification.type` onto a kind, using
+    /// `supertype` only to tell a Champion Unit from an ordinary one.
+    ///
+    /// **`type` is authoritative; `supertype` is a tag, not a card type.**
+    /// `supertype: "Champion"` is the champion tag (rule 169 / 103.2.a.2 —
+    /// what a Legend is matched against to find its Chosen Champion), and
+    /// the catalogue puts it on *both* kinds of card that depict a champion:
+    ///
+    /// | `type` | `supertype` | e.g. |
+    /// |---|---|---|
+    /// | `Legend` | `Champion` | Annie - Dark Child (Starter) |
+    /// | `Unit` | `Champion` | Lux - Illuminated |
+    ///
+    /// Testing `supertype` first therefore classified **every Legend in
+    /// every deck** as a Champion. Champions aren't allowed in the Legend
+    /// zone, so the Legend zone was reported misplaced permanently, on a
+    /// card sitting exactly where the rules require it (166–169). The
+    /// player was told to move the one card they cannot move.
     public static func from(type: String, supertype: String? = nil) -> CardKind {
-        if supertype?.localizedCaseInsensitiveContains("champion") == true { return .champion }
         switch type.lowercased() {
-        case "unit": return .unit
+        case "unit":
+            // The only place the champion tag changes the kind: a Champion
+            // Unit may also occupy the Champion zone (107.2).
+            return supertype?.localizedCaseInsensitiveContains("champion") == true ? .champion : .unit
         case "spell": return .spell
         case "rune": return .rune
         case "gear": return .gear
