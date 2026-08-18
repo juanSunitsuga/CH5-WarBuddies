@@ -1023,7 +1023,17 @@ extension CameraPipelineController {
         }
 
         let progress = detector.progress(for: gameState.phase, cards: observed, seat: .player1)
-        phaseProgress = paymentNotice ?? progress
+
+        // A payment notice replaces the *headline*, not the board. The
+        // ability list is a standing property of what's in play, so it
+        // carries across rather than blinking out for the twelve seconds a
+        // cost message is up.
+        if var notice = paymentNotice {
+            notice.steps = progress.steps
+            phaseProgress = notice
+        } else {
+            phaseProgress = progress
+        }
 
         guard isAutoDetectingPhase else { return }
 
@@ -1113,10 +1123,31 @@ extension CameraPipelineController {
     /// anything.
     func checkAffordability(of event: RiftboundExpertSystem.ObservedTableEvent) {
         guard gameState.phase.validatesPlayerMoves else { return }
-        guard case .cardMoved(let from, let to) = event.kind, from.isHandRegion else { return }
+
+        // A play arrives as either shape, and assuming only the first is
+        // why this never fired. Picking a card up ends its track and
+        // putting it down starts a new one — `ExpertSystemAdapter`'s own
+        // doc comment says so — so the common signature for playing a card
+        // is `.cardAppeared` at the destination, *not* a `.cardMoved` that
+        // remembers the hand. Requiring the move meant the app watched for
+        // an event that mostly doesn't happen.
+        let destination: TableRegion
+        switch event.kind {
+        case .cardMoved(let from, let to):
+            guard from.isHandRegion else { return }
+            destination = to
+        case .cardAppeared(let region):
+            // A card appearing in hand is the camera catching up, not a
+            // play (and it's where cards come *from*).
+            guard !region.isHandRegion else { return }
+            destination = region
+        case .cardRemoved, .cardOrientationChanged:
+            return
+        }
+
         // Rule 106: only a Location is somewhere a card gets played *to*.
         // Hand → trash is a discard, not a play, and costs nothing.
-        guard to.location != nil else { return }
+        guard destination.location != nil else { return }
         guard let definitionID = event.card?.cardDefinitionID,
               let printing = cardDatabase.printing(riftboundID: definitionID.rawValue) else { return }
 

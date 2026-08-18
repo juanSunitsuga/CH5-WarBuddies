@@ -249,6 +249,68 @@ struct PhaseAutoDetectorTests {
         #expect(progress.detail?.contains("3 energy") == true)
     }
 
+    // MARK: - Abilities in play, as steps
+
+    /// A card's text is live while it's in the Base, at a Battlefield, or
+    /// in the Legend zone (137–145, 166–169) — those are where a permanent
+    /// is a Game Object with its abilities available.
+    @Test("Abilities in play are listed as steps, named by their card")
+    func abilitiesInPlayAreListed() {
+        let annie = ObservedCard(id: 1, name: "Annie", zone: .base, kind: .unit,
+                                 abilities: ["Deal 2 damage."])
+        let legend = ObservedCard(id: 2, name: "Annie - Dark Child", zone: .legend,
+                                  kind: .legend, abilities: ["Draw 1 card."])
+
+        let steps = PhaseAutoDetector().abilitySteps(cards: [annie, legend])
+
+        #expect(steps.contains("Annie: Deal 2 damage."))
+        #expect(steps.contains("Annie - Dark Child: Draw 1 card."))
+    }
+
+    /// A card in hand, a deck or the trash does nothing. Listing those
+    /// would bury the ones that matter under everything the camera can see.
+    @Test("Cards not in play contribute no steps")
+    func cardsOutOfPlayContributeNothing() {
+        let inHand = ObservedCard(id: 1, name: "Gust", zone: .player1Hand,
+                                  kind: .spell, abilities: ["Deal 1 damage."])
+        let trashed = ObservedCard(id: 2, name: "Dead", zone: .trash,
+                                   kind: .unit, abilities: ["Draw 1 card."])
+
+        #expect(PhaseAutoDetector().abilitySteps(cards: [inHand, trashed]).isEmpty)
+    }
+
+    /// The Battlefield's own card is the one thing in these zones that
+    /// isn't a permanent the player controls — its text applies to whoever
+    /// fights there, not as a step they resolve.
+    @Test("The battlefield card itself is not a step")
+    func battlefieldCardIsNotAStep() {
+        let voidGate = ObservedCard(id: 1, name: "Void Gate", zone: .battlefield,
+                                    kind: .battlefield, abilities: ["Deal 1 bonus damage."])
+
+        #expect(PhaseAutoDetector().abilitySteps(cards: [voidGate]).isEmpty)
+    }
+
+    @Test("The opponent's cards in play are not your steps")
+    func opponentsAbilitiesAreNotListed() {
+        let theirs = ObservedCard(id: 1, name: "Theirs", zone: .base, owner: .player2,
+                                  kind: .unit, abilities: ["Draw 1 card."])
+
+        #expect(PhaseAutoDetector().abilitySteps(cards: [theirs]).isEmpty)
+    }
+
+    /// Carried on every phase, not just Action — an ability that names the
+    /// beginning phase is exactly the kind that gets forgotten.
+    @Test("Steps ride along with every phase's progress")
+    func stepsRideAlongWithEveryPhase() {
+        let annie = ObservedCard(id: 1, name: "Annie", zone: .base, kind: .unit,
+                                 abilities: ["Deal 2 damage."])
+
+        for phase in GamePhase.allCases {
+            let progress = PhaseAutoDetector().progress(for: phase, cards: [annie])
+            #expect(progress.steps == ["Annie: Deal 2 damage."], "\(phase.displayName) dropped the steps.")
+        }
+    }
+
     // MARK: - What the player owes after putting a unit down
 
     /// Rule 139.4: a Unit enters the board **exhausted**. That's a physical

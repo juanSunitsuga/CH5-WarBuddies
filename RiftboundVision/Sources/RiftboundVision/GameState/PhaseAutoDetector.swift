@@ -91,19 +91,24 @@ public struct PhaseAutoDetector: Sendable {
         /// to undo it — currently only an unaffordable Play. Never
         /// auto-advances.
         public var needsCorrection: Bool
+        /// Every ability currently in play, one line each, ready to work
+        /// through in order. See `abilitySteps(cards:seat:)`.
+        public var steps: [String]
 
         public init(
             headline: String,
             detail: String? = nil,
             isComplete: Bool = false,
             pointsToAward: Int = 0,
-            needsCorrection: Bool = false
+            needsCorrection: Bool = false,
+            steps: [String] = []
         ) {
             self.headline = headline
             self.detail = detail
             self.isComplete = isComplete
             self.pointsToAward = pointsToAward
             self.needsCorrection = needsCorrection
+            self.steps = steps
         }
     }
 
@@ -129,13 +134,19 @@ public struct PhaseAutoDetector: Sendable {
     }
 
     public func progress(for phase: GamePhase, cards: [ObservedCard], seat: Player = .player1) -> Progress {
+        var progress: Progress
         switch phase {
-        case .awaken:   return awaken(cards: cards, seat: seat)
-        case .beginning: return beginning(cards: cards, seat: seat)
-        case .channel:  return channel(cards: cards, seat: seat)
-        case .draw:     return draw(cards: cards, seat: seat)
-        case .action:   return action()
+        case .awaken:   progress = awaken(cards: cards, seat: seat)
+        case .beginning: progress = beginning(cards: cards, seat: seat)
+        case .channel:  progress = channel(cards: cards, seat: seat)
+        case .draw:     progress = draw(cards: cards, seat: seat)
+        case .action:   progress = action()
         }
+        // Carried on every phase, not just Action: a "at the start of your
+        // beginning phase" ability is exactly the kind a player forgets,
+        // and it's live during the phase it names.
+        progress.steps = abilitySteps(cards: cards, seat: seat)
+        return progress
     }
 
     // MARK: - Awaken (515.1)
@@ -299,6 +310,38 @@ public struct PhaseAutoDetector: Sendable {
             detail: "Play cards, move units, attack — in any order. Press End Turn when you're done (Rule 516.6)."
         )
     }
+
+    // MARK: - What's in play, and what it does
+
+    /// Every ability on the board right now, as a list of steps to work
+    /// through — the cards in the player's Base, their units on
+    /// Battlefields, and their Legend.
+    ///
+    /// Those three zones and no others because they're where a card's text
+    /// is *live*: a permanent in the Base or at a Battlefield is a Game
+    /// Object with its abilities available (137–145), and the Legend's
+    /// effect applies for the whole game (166–169). A card in hand, a deck
+    /// or the trash does nothing, and listing it would bury the ones that
+    /// matter.
+    ///
+    /// Prefixed with the card's name because the player is looking at a
+    /// table, not a list — "Annie: Deal 2 damage" is findable, "Deal 2
+    /// damage" is a puzzle.
+    public func abilitySteps(cards: [ObservedCard], seat: Player = .player1) -> [String] {
+        cards
+            .filter { Self.abilityZones.contains($0.zone) }
+            .filter { $0.owner == nil || $0.owner == seat }
+            // A Battlefield's own card text applies to whoever fights
+            // there, not to its abilities being "yours to resolve" — and
+            // it's the one card in these zones that isn't a permanent the
+            // player controls.
+            .filter { $0.kind != .battlefield }
+            .filter { !$0.abilities.isEmpty }
+            .sorted { $0.name < $1.name }
+            .flatMap { card in card.abilities.map { "\(card.name): \($0)" } }
+    }
+
+    private static let abilityZones: Set<Zone> = [.base, .battlefield, .legend, .champion]
 
     // MARK: - Paying for a play (130.2/130.3)
 

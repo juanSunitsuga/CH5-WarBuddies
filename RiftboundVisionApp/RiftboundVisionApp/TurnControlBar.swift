@@ -154,6 +154,24 @@ struct TurnControlBar: View {
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                // Abilities live on the board right now (base, battlefields,
+                // legend). Shown under whatever the bar is saying rather
+                // than instead of it — these are standing reminders, not
+                // the current step, and a card's text is easy to forget
+                // once it's been sitting there a few turns.
+                if let steps = phaseProgress?.steps, !steps.isEmpty {
+                    ForEach(steps.prefix(3), id: \.self) { step in
+                        Text("• \(step)")
+                            .font(.callout)
+                            .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(1)
+                    }
+                    if steps.count > 3 {
+                        Text("+ \(steps.count - 3) more in play")
+                            .font(.callout)
+                            .foregroundStyle(.white.opacity(0.45))
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -170,24 +188,30 @@ struct TurnControlBar: View {
             // same effect and different names read as two different
             // choices, so only one is offered: step through the fixed
             // phases, then end the turn.
-            if gameState.phase.validatesPlayerMoves {
-                Button("End Turn") {
-                    gameState.endTurn()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isAutoDetecting)
-            } else {
+            // "Next" is what Auto-detect takes over, so it's the only
+            // button the toggle disables.
+            if !gameState.phase.validatesPlayerMoves {
                 Button("Next") {
                     gameState.advance()
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isAutoDetecting)
+            }
 
-                Button("End Turn") {
-                    gameState.endTurn()
-                }
-                .buttonStyle(.bordered)
-                .disabled(isAutoDetecting)
+            // **Never disabled.** 516.2 gives the Action Phase no
+            // completion condition and 516.6 says it ends when the player
+            // declares it, so nothing the camera sees can end a turn.
+            // Disabling this under Auto-detect left the only way out of the
+            // Action Phase greyed out — the turn could be started
+            // automatically but never finished.
+            // Styled prominently in the Action Phase, where it's the only
+            // way forward, and secondary elsewhere.
+            if gameState.phase.validatesPlayerMoves {
+                Button("End Turn") { gameState.endTurn() }
+                    .buttonStyle(.borderedProminent)
+            } else {
+                Button("End Turn") { gameState.endTurn() }
+                    .buttonStyle(.bordered)
             }
         }
         .padding(.horizontal, 20)
