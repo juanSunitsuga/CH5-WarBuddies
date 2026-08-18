@@ -152,6 +152,7 @@ public struct PhaseAutoDetector: Sendable {
         let exhausted = cards.filter {
             $0.stance == .exhausted
                 && Self.readyableZones.contains($0.zone)
+                && Self.isReadyable($0.kind)
                 && ($0.owner == nil || $0.owner == seat)
         }
 
@@ -173,6 +174,19 @@ public struct PhaseAutoDetector: Sendable {
     }
 
     private static let readyableZones: Set<Zone> = [.base, .battlefield, .runeArea, .champion]
+
+    /// 515.1 readies Game Objects "that are able to be readied", which is
+    /// not all of them.
+    ///
+    /// A Battlefield is never exhausted in play — it's a place, not a
+    /// participant — and it is the one card type printed **landscape**, so
+    /// it sits in the battlefield zone looking permanently sideways. Left
+    /// in, it made the Awaken phase impossible to finish from the first
+    /// turn onward: the phase waits for nothing to be exhausted, and a
+    /// battlefield card is always on the mat.
+    private static func isReadyable(_ kind: CardKind) -> Bool {
+        kind != .battlefield
+    }
 
     /// "a", "a and b", "a, b and c" — a list a player reads as a single
     /// instruction rather than three stacked ones.

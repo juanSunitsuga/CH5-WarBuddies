@@ -104,3 +104,26 @@ public struct TrackedObject: Sendable, Equatable {
         self.recognizedLabel = recognizedLabel
     }
 }
+
+public extension TrackedObject {
+    /// Ready vs Exhausted, using the card's printed orientation when the
+    /// card has been recognized and falling back to bounding-box shape when
+    /// it hasn't.
+    ///
+    /// Always prefer this over `stance` where a `CardPrinting` is available.
+    /// `stance` assumes portrait means upright, which holds for 96 of the
+    /// 100 printings in the bundled decks and fails for every Battlefield —
+    /// those are printed **landscape**, so shape alone calls them exhausted
+    /// the moment they're placed and never stops.
+    ///
+    /// Defined here because two callers already needed it independently
+    /// (durable board state and the phase auto-detector) and the second one
+    /// got it wrong by reaching for `stance` — exactly the duplication
+    /// CLAUDE.md warns about, where one copy silently disagrees with the
+    /// other.
+    func stance(knowing printing: CardPrinting?) -> CardStance {
+        guard let printing else { return stance }
+        return printing.isExhausted(observedBoundingBox: boundingBox) ? .exhausted : .ready
+    }
+}
+

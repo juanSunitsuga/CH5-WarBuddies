@@ -59,6 +59,37 @@ struct PhaseAutoDetectorTests {
         #expect(progress.isComplete)
     }
 
+    /// A Battlefield is the one card type printed **landscape**, so its
+    /// bounding box reads as sideways the moment it's placed and never
+    /// stops. It's also never exhausted in play — it's a place, not a
+    /// participant (515.1 readies objects "able to be readied").
+    ///
+    /// Counting it made Awaken impossible to finish from the first turn on:
+    /// the phase waits for nothing to be exhausted, and a battlefield card
+    /// is always sitting on the mat.
+    @Test("A landscape battlefield card doesn't hold Awaken open forever")
+    func battlefieldDoesNotBlockAwaken() {
+        let progress = PhaseAutoDetector().progress(for: .awaken, cards: [
+            card(1, "Void Gate", zone: .battlefield, stance: .exhausted, kind: .battlefield),
+            card(2, "Tibbers", zone: .base)
+        ])
+
+        #expect(progress.isComplete)
+    }
+
+    /// The exclusion is by card kind, not by zone — a unit standing on a
+    /// battlefield still has to be readied.
+    @Test("A unit on a battlefield still blocks Awaken")
+    func unitOnBattlefieldStillBlocksAwaken() {
+        let progress = PhaseAutoDetector().progress(for: .awaken, cards: [
+            card(1, "Void Gate", zone: .battlefield, stance: .exhausted, kind: .battlefield),
+            card(2, "Tibbers", zone: .battlefield, stance: .exhausted, kind: .unit)
+        ])
+
+        #expect(!progress.isComplete)
+        #expect(progress.headline == "1 card is still exhausted.")
+    }
+
     /// 515.1 is the *Turn Player's* Awaken — the opponent's exhausted cards
     /// stay exhausted and must not hold up the turn.
     @Test("The opponent's exhausted cards don't block your Awaken")

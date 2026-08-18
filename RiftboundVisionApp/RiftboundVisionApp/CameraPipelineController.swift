@@ -1059,7 +1059,7 @@ extension CameraPipelineController {
             zone: zone,
             battlefieldSlot: boardZone?.battlefieldSlot,
             owner: boardZone?.owner,
-            stance: object.stance,
+            stance: object.stance(knowing: printing),
             kind: object.recognizedLabel.map { kind(forLabel: $0) } ?? .unknown,
             domain: domains.first,
             energyCost: printing?.attributes.energy ?? 0,
