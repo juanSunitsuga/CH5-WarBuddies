@@ -15,6 +15,27 @@ enum RiftboundVisionResources {
     static let bundle = Bundle.module
 }
 
+/// The handful of design-board colours this package draws with.
+///
+/// The app target owns the full palette (`RiftboundPalette` in
+/// `RiftboundTheme.swift`), but `RiftboundVision` is a package the app
+/// depends on and can't import back the other way. Rather than reach
+/// across that boundary, the four values these overlays actually use are
+/// restated here — same hexes, and worth grepping for both names when a
+/// swatch changes.
+enum PlaymatPalette {
+    /// #1D3145 — shadow/stroke for elements.
+    static let elementShadow = Color(red: 0x1D / 255, green: 0x31 / 255, blue: 0x45 / 255)
+    /// #CEA73F — highlight overlay.
+    static let highlightOverlay = Color(red: 0xCE / 255, green: 0xA7 / 255, blue: 0x3F / 255)
+    /// #C5A560 — playmat overlay.
+    static let playmatOverlay = Color(red: 0xC5 / 255, green: 0xA5 / 255, blue: 0x60 / 255)
+    /// #CBCBCB — disabled element stroke.
+    static let disabledElementStroke = Color(red: 0xCB / 255, green: 0xCB / 255, blue: 0xCB / 255)
+    /// #FFF2D6 — regular text.
+    static let regularText = Color(red: 0xFF / 255, green: 0xF2 / 255, blue: 0xD6 / 255)
+}
+
 public struct PlaymatOverlayView: View {
     @Binding private var calibration: PlaymatCalibration
     private let isEditable: Bool
@@ -100,14 +121,31 @@ public struct PlaymatOverlayView: View {
                     let rect = boundingRect(of: points)
                     context.draw(frame(for: zoneTemplate.zone), in: rect)
 
-                    if showLabels, let centroid = centroid(of: points) {
-                        // Draw a white outline (offsets) and dark center
-                        // text so labels read like the reference image.
-                        let text = Text(label(for: zoneTemplate)).font(.system(size: 24, weight: .bold))
+                    if showLabels {
+                        let anchorPoint = labelAnchor(of: rect)
+                        // Cream halo (offsets) under a dark centre, so the
+                        // label survives being drawn over both pale mat and
+                        // dark card art.
+                        //
+                        // `Font.custom` silently falls back to the system
+                        // face when Sora isn't registered, which is the
+                        // right behaviour here: this package is also built
+                        // by the test target, which has no app bundle to
+                        // load fonts from.
+                        //
+                        // 24pt, not the design system's 15 — this is drawn
+                        // in the *camera frame's* pixel space and then
+                        // scaled by `ContentView`'s aspect-fit factor, so
+                        // its number has no fixed relationship to on-screen
+                        // points. Sizing it at 15 made it illegible.
+                        let text = Text(label(for: zoneTemplate)).font(.custom("Sora-Bold", size: 24))
                         for offset in [CGPoint(x: -1.5, y: -1.5), CGPoint(x: 1.5, y: -1.5), CGPoint(x: -1.5, y: 1.5), CGPoint(x: 1.5, y: 1.5)] {
-                            context.draw(text.foregroundStyle(.white), at: CGPoint(x: centroid.x + offset.x, y: centroid.y + offset.y))
+                            context.draw(
+                                text.foregroundStyle(PlaymatPalette.regularText),
+                                at: CGPoint(x: anchorPoint.x + offset.x, y: anchorPoint.y + offset.y)
+                            )
                         }
-                        context.draw(text.foregroundStyle(Color(red: 0.12, green: 0.10, blue: 0.08)), at: centroid)
+                        context.draw(text.foregroundStyle(PlaymatPalette.elementShadow), at: anchorPoint)
                     }
                 }
 
@@ -147,8 +185,8 @@ public struct PlaymatOverlayView: View {
     private func handle(_ corner: Corner) -> some View {
         let position = point(for: corner)
         return Circle()
-            .fill(Color.yellow)
-            .overlay(Circle().stroke(Color.black, lineWidth: 1))
+            .fill(PlaymatPalette.highlightOverlay)
+            .overlay(Circle().stroke(PlaymatPalette.elementShadow, lineWidth: 1))
             .frame(width: 18, height: 18)
             .position(position)
             .gesture(
@@ -163,8 +201,8 @@ public struct PlaymatOverlayView: View {
     private var moveHandle: some View {
         let rect = currentRect
         return Circle()
-            .fill(Color.yellow.opacity(0.85))
-            .overlay(Image(systemName: "arrow.up.and.down.and.arrow.left.and.right").font(.system(size: 11, weight: .bold)).foregroundStyle(.black))
+            .fill(PlaymatPalette.highlightOverlay.opacity(0.85))
+            .overlay(Image(systemName: "arrow.up.and.down.and.arrow.left.and.right").font(.system(size: 11, weight: .bold)).foregroundStyle(PlaymatPalette.elementShadow))
             .frame(width: 26, height: 26)
             .position(x: rect.midX, y: rect.midY)
             .gesture(
@@ -228,19 +266,34 @@ public struct PlaymatOverlayView: View {
         )
     }
 
+    /// Whether zone labels need a "(P1)"/"(P2)" suffix.
+    ///
+    /// Only the two-player template puts both seats' zones on one mat; in
+    /// the single-player layout every owned zone belongs to the same
+    /// person, so the suffix repeats the same fact on every box and tells
+    /// the reader nothing. Derived from the template rather than hardcoded
+    /// so switching to `twoPlayerZones` brings the suffix back on its own.
+    private var showsSeatSuffix: Bool {
+        // `Player` is Equatable but not Hashable, so this asks the
+        // question directly rather than counting a Set.
+        let owners = template.compactMap(\.owner)
+        return owners.contains(.player1) && owners.contains(.player2)
+    }
+
+    /// Same idea for Battlefield slot numbers: "#0" only earns its place
+    /// when there is more than one Battlefield region to tell apart.
+    private var showsBattlefieldSlot: Bool {
+        template.filter { $0.battlefieldSlot != nil }.count > 1
+    }
+
     private func label(for template: PlaymatZoneTemplate) -> String {
-        // `Zone.player1Hand`/`.player2Hand`'s raw value already spells out
-        // which seat — showing it via `rawValue` would double up with the
-        // "(P1)"/"(P2)" suffix below ("player1Hand (P1)"). Every other
-        // zone case is seat-agnostic, so only this one needs the override.
-        var text: String
-        switch template.zone {
-        case .player1Hand, .player2Hand: text = "hand"
-        default: text = template.zone.rawValue
-        }
-        if let slot = template.battlefieldSlot {
+        var text = Self.displayName(for: template.zone)
+
+        if showsBattlefieldSlot, let slot = template.battlefieldSlot {
             text += " #\(slot)"
         }
+
+        guard showsSeatSuffix else { return text }
         switch template.owner {
         case .player1: return "\(text) (P1)"
         case .player2: return "\(text) (P2)"
@@ -248,11 +301,52 @@ public struct PlaymatOverlayView: View {
         }
     }
 
-    private func centroid(of points: [CGPoint]) -> CGPoint? {
-        guard !points.isEmpty else { return nil }
-        let x = points.map(\.x).reduce(0, +) / CGFloat(points.count)
-        let y = points.map(\.y).reduce(0, +) / CGFloat(points.count)
-        return CGPoint(x: x, y: y)
+    /// Table-facing zone names, matching the wording printed on the mat
+    /// and used in the reference overlay.
+    ///
+    /// This was `Zone.rawValue`, which is a Swift identifier and reads
+    /// like one: "runeDeck", "mainDeck", "runeArea". Those are the
+    /// engine's names for these regions and they're correct there — but
+    /// the person reading them is looking at a physical mat that says
+    /// "Rune Deck", "Deck" and "Runes", so the overlay says that.
+    /// Kept as an explicit switch rather than a camel-case splitter: it
+    /// isn't a formatting problem, `mainDeck` → "Deck" and `runeArea` →
+    /// "Runes" are genuinely different words, and a new `Zone` case
+    /// should be a compile error here rather than silently rendering as
+    /// its identifier.
+    private static func displayName(for zone: Zone) -> String {
+        switch zone {
+        // Both hand cases collapse to "Hand": the raw value already
+        // spells out the seat, which would double up with the "(P1)"
+        // suffix above ("player1Hand (P1)").
+        case .player1Hand, .player2Hand: return "Hand"
+        case .base: return "Base"
+        case .battlefield: return "Battlefield"
+        case .runeArea: return "Runes"
+        case .runeDeck: return "Rune Deck"
+        case .mainDeck: return "Deck"
+        case .trash: return "Trash"
+        case .legend: return "Legend"
+        case .champion: return "Champion"
+        case .unknown: return "Unknown"
+        }
+    }
+
+    /// Where a zone's label sits: horizontally centred, vertically on the
+    /// zone's *bottom* border.
+    ///
+    /// This used to be the polygon's centroid, which put every label in
+    /// the middle of its box — directly over the part of the mat where
+    /// cards actually get placed, so the label and the cards it describes
+    /// competed for the same pixels. On the bottom border it labels the
+    /// zone from its edge and leaves the interior clear, which is what the
+    /// reference does.
+    ///
+    /// `Canvas.draw(_:at:)` anchors at the text's centre by default, so
+    /// returning `maxY` straddles the text across the border line rather
+    /// than hanging it below.
+    private func labelAnchor(of rect: CGRect) -> CGPoint {
+        CGPoint(x: rect.midX, y: rect.maxY)
     }
 
     private func boundingRect(of points: [CGPoint]) -> CGRect {

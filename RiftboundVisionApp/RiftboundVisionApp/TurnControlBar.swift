@@ -1,13 +1,16 @@
 import SwiftUI
 import RiftboundVision
 
-/// Bottom bar: the current phase's instruction text, an "Auto-detect"
-/// toggle, and the Next/End Turn buttons that actually move
-/// `ManualGameState` forward. Auto-detect follows the same pattern as the
-/// pipeline settings popover's unwired-stage rows — it's a real switch the
-/// UI honors (it disables the manual buttons), but nothing in
-/// `CameraPipelineController.process(_:)` drives it yet; see
-/// `isAutoDetectingPhase`'s doc comment.
+/// Bottom bar: the three turn-stage cards, an "Auto-detect" toggle, and
+/// the Next / End Turn buttons that move `ManualGameState` forward.
+///
+/// V3 restructures this bar. It used to be one line of phase prose plus
+/// two buttons; it's now the phase map (`TurnPhasePanel`) plus a control
+/// row. Everything the old bar *said* is still said — calibration
+/// warnings, misplaced cards, `PhaseAutoDetector` progress, engine
+/// verdicts and the standing ability list — it just moved into a status
+/// strip above the cards that only appears when there's something to
+/// report, rather than occupying a fixed line forever.
 struct TurnControlBar: View {
     @Binding var gameState: ManualGameState
     @Binding var isAutoDetecting: Bool
@@ -25,15 +28,27 @@ struct TurnControlBar: View {
     /// static phase text with a live count — "1 of 2 runes channeled" —
     /// so the player can see the app registering what they do.
     var phaseProgress: PhaseAutoDetector.Progress?
-    /// Cards sitting somewhere they can't be. Takes over the bar while any
-    /// exist: the board and the engine have diverged, so telling the player
-    /// what to put back matters more than the next turn step.
+    /// Cards sitting somewhere they can't be. Takes over the strip while
+    /// any exist: the board and the engine have diverged, so telling the
+    /// player what to put back matters more than the next turn step.
     var misplacedCards: [MisplacedCard] = []
     /// Most cards are landing outside every calibrated zone — the mat
     /// almost certainly doesn't line up with the camera.
     var needsCalibration = false
 
-    /// How long a verdict stays on screen before the bar returns to the
+    /// The mockup's "START / Begin your turn." state — the moment before
+    /// Awaken, where every pip is unlit and the gold button reads "Start
+    /// Turn".
+    ///
+    /// Deliberately view-local rather than a new field on
+    /// `ManualGameState`. It carries no rules meaning (nothing in 515
+    /// distinguishes "at Awaken" from "about to be at Awaken") and the
+    /// Expert System never reads it; it exists so the bottom row can show
+    /// the two-step affordance the mockup draws. Reset whenever the seat
+    /// changes, so the next player starts from START.
+    @State private var hasStartedTurn = false
+
+    /// How long a verdict stays on screen before the strip returns to the
     /// phase instruction.
     ///
     /// Without this the newest verdict was shown forever: minutes after a
@@ -49,6 +64,9 @@ struct TurnControlBar: View {
         // without the controller having to schedule a timer per instruction.
         TimelineView(.periodic(from: .now, by: 1)) { context in
             content(now: context.date)
+        }
+        .onChange(of: gameState.turnPlayer) { _, _ in
+            hasStartedTurn = false
         }
     }
 
@@ -68,119 +86,158 @@ struct TurnControlBar: View {
         // newest of anything.
         let recentInstruction = recent.first { $0.verdict == .accepted || $0.verdict == .rejected } ?? recent.first
 
-        return HStack(alignment: .center, spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
-                if needsCalibration {
-                    // Ranked above everything else: while this is true the
-                    // pipeline can't produce a verdict about anything, so a
-                    // stale one would be actively misleading.
-                    HStack(spacing: 6) {
-                        Image(systemName: "square.dashed")
-                            .foregroundStyle(.yellow)
-                        Text("Cards aren't landing on the mat.")
-                            .font(.title3.bold())
-                            .foregroundStyle(.white)
-                    }
-                    Text("Turn on Calibrate Playmat and drag the outline onto your mat — until then nothing can be read as a move.")
-                        .font(.body)
-                        .foregroundStyle(.white.opacity(0.75))
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if let misplaced = misplacedCards.first {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                        Text("Put \(misplaced.label) back in the \(Self.name(misplaced.suggestedZone)).")
-                            .font(.title3.bold())
-                            .foregroundStyle(.white)
-                    }
-                    Text(Self.reason(for: misplaced) + (misplacedCards.count > 1 ? "  ·  \(misplacedCards.count - 1) more misplaced." : ""))
-                        .font(.body)
-                        .foregroundStyle(.white.opacity(0.75))
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if let progress = phaseProgress, progress.needsCorrection {
-                    // Ranked above the engine's own verdict: this says the
-                    // card on the table can't be paid for and has to go
-                    // back, which the player must act on before anything
-                    // the engine goes on to say about it means much.
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                        Text(progress.headline)
-                            .font(.title3.bold())
-                            .foregroundStyle(.white)
-                    }
-                    Text(progress.detail ?? gameState.phase.instruction)
-                        .font(.body)
-                        .foregroundStyle(.white.opacity(0.75))
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if let latestInstruction = recentInstruction {
-                    HStack(spacing: 6) {
-                        Image(systemName: latestInstruction.verdict.iconName)
-                            .foregroundStyle(latestInstruction.verdict.tint)
-                        Text(latestInstruction.headline)
-                            .font(.title3.bold())
-                            .foregroundStyle(.white)
-                    }
-                    Text(latestInstruction.detail ?? gameState.phase.instruction)
-                        .font(.body)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if let progress = phaseProgress {
-                    // Live phase feedback. `isComplete` is the app saying
-                    // it saw the player finish, which is worth a different
-                    // icon from a step still outstanding — with Auto-detect
-                    // on it's also the last frame before the phase moves.
-                    HStack(spacing: 6) {
-                        Image(systemName: progress.needsCorrection
-                              ? "exclamationmark.triangle.fill"
-                              : (progress.isComplete ? "checkmark.circle.fill" : "circle.dashed"))
-                            .foregroundStyle(progress.needsCorrection
-                                             ? .red
-                                             : (progress.isComplete ? .green : .yellow))
-                        Text(progress.headline)
-                            .font(.title3.bold())
-                            .foregroundStyle(.white)
-                    }
-                    Text(progress.detail ?? gameState.phase.instruction)
-                        .font(.body)
-                        .foregroundStyle(.white.opacity(0.75))
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("Next Step")
-                        .font(.callout)
-                        .foregroundStyle(.white.opacity(0.6))
-                    Text(gameState.phase.instruction)
-                        .font(.title3)
-                        .foregroundStyle(.white)
+        return VStack(alignment: .leading, spacing: 14) {
+            statusStrip(recentInstruction)
+            phaseCards
+            controlRow
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RiftboundPalette.mainBackground)
+    }
+
+    // MARK: - Status strip
+
+    /// Same priority order the old single-line bar used, so nothing that
+    /// could be said before goes unsaid now. Only rendered when there is
+    /// something to say, so the row of cards isn't permanently pushed down
+    /// by an empty slot — the plain phase instruction is the one case
+    /// that's dropped, because the phase cards below already say it.
+    @ViewBuilder
+    private func statusStrip(_ recentInstruction: InstructionLogEntry?) -> some View {
+        if needsCalibration {
+            // Ranked above everything else: while this is true the
+            // pipeline can't produce a verdict about anything, so a stale
+            // one would be actively misleading.
+            strip(
+                icon: "square.dashed",
+                tint: RiftboundPalette.highlightOverlay,
+                headline: "Cards aren't landing on the mat.",
+                detail: "Turn on Calibrate Playmat and drag the outline onto your mat — until then nothing can be read as a move."
+            )
+        } else if let misplaced = misplacedCards.first {
+            strip(
+                icon: "exclamationmark.triangle.fill",
+                tint: RiftboundPalette.primaryButton,
+                headline: "Put \(misplaced.label) back in the \(Self.name(misplaced.suggestedZone)).",
+                detail: Self.reason(for: misplaced) + (misplacedCards.count > 1 ? "  ·  \(misplacedCards.count - 1) more misplaced." : "")
+            )
+        } else if let progress = phaseProgress, progress.needsCorrection {
+            // Ranked above the engine's own verdict: this says the card on
+            // the table can't be paid for and has to go back, which the
+            // player must act on before anything the engine goes on to say
+            // about it means much.
+            strip(
+                icon: "exclamationmark.triangle.fill",
+                tint: RiftboundPalette.primaryButton,
+                headline: progress.headline,
+                detail: progress.detail,
+                steps: progress.steps
+            )
+        } else if let latest = recentInstruction {
+            strip(
+                icon: latest.verdict.iconName,
+                tint: latest.verdict.tint,
+                headline: latest.headline,
+                detail: latest.detail,
+                steps: phaseProgress?.steps ?? []
+            )
+        } else if let progress = phaseProgress {
+            // Live phase feedback. `isComplete` is the app saying it saw
+            // the player finish, which is worth a different icon from a
+            // step still outstanding — with Auto-detect on it's also the
+            // last frame before the phase moves.
+            strip(
+                icon: progress.isComplete ? "checkmark.circle.fill" : "circle.dashed",
+                tint: progress.isComplete ? RiftboundPalette.highlightOverlay : RiftboundPalette.elementStroke,
+                headline: progress.headline,
+                detail: progress.detail,
+                steps: progress.steps
+            )
+        }
+    }
+
+    private func strip(icon: String, tint: Color, headline: String, detail: String?, steps: [String] = []) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(headline)
+                    .font(RiftboundFont.heading)
+                    .foregroundStyle(RiftboundPalette.regularText)
+                if let detail {
+                    Text(detail)
+                        .font(RiftboundFont.body)
+                        .foregroundStyle(RiftboundPalette.regularText.opacity(0.75))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 // Abilities live on the board right now (base, battlefields,
-                // legend). Shown under whatever the bar is saying rather
+                // legend). Shown under whatever the strip is saying rather
                 // than instead of it — these are standing reminders, not
                 // the current step, and a card's text is easy to forget
                 // once it's been sitting there a few turns.
-                if let steps = phaseProgress?.steps, !steps.isEmpty {
+                if !steps.isEmpty {
                     ForEach(steps.prefix(3), id: \.self) { step in
                         Text("• \(step)")
-                            .font(.callout)
-                            .foregroundStyle(.white.opacity(0.6))
+                            .font(RiftboundFont.body)
+                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
                             .lineLimit(1)
                     }
                     if steps.count > 3 {
                         Text("+ \(steps.count - 3) more in play")
-                            .font(.callout)
-                            .foregroundStyle(.white.opacity(0.45))
+                            .font(RiftboundFont.body)
+                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.45))
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(RiftboundPalette.elementShadow.opacity(0.6))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(tint.opacity(0.7), lineWidth: 1)
+        )
+    }
 
+    // MARK: - Phase cards
+
+    /// Centre-aligned, not top-aligned: `RiftPanelCard` stretches every
+    /// card to the row's height, so the connecting hairlines belong on the
+    /// shared midline rather than at a hand-guessed `.top` offset.
+    private var phaseCards: some View {
+        HStack(alignment: .center, spacing: 0) {
+            StartOfTurnPhaseCard(phase: gameState.phase, hasStartedTurn: hasStartedTurn)
+            RiftFlowConnector()
+            DoYourTurnCard(phase: gameState.phase, hasStartedTurn: hasStartedTurn)
+            RiftFlowConnector()
+            EndTurnCard(phase: gameState.phase, hasStartedTurn: hasStartedTurn)
+            Spacer(minLength: 0)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: - Controls
+
+    private var controlRow: some View {
+        HStack(spacing: 14) {
             Toggle(isOn: $isAutoDetecting) {
                 Text("Auto-detect")
-                    .font(.callout.bold())
-                    .foregroundStyle(.white)
+                    .font(RiftboundFont.subheading)
+                    .foregroundStyle(
+                        isAutoDetecting
+                            ? RiftboundPalette.highlightOverlay
+                            : RiftboundPalette.regularText.opacity(0.7)
+                    )
             }
-            .toggleStyle(.switch)
+            .toggleStyle(RiftSwitchToggleStyle())
             .fixedSize()
 
             // Nothing follows the Action Phase (516.6), so "Next" there
@@ -188,35 +245,46 @@ struct TurnControlBar: View {
             // same effect and different names read as two different
             // choices, so only one is offered: step through the fixed
             // phases, then end the turn.
+            //
             // "Next" is what Auto-detect takes over, so it's the only
-            // button the toggle disables.
+            // button the toggle disables — and it's also unavailable
+            // before the turn has been started.
             if !gameState.phase.validatesPlayerMoves {
                 Button("Next") {
                     gameState.advance()
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(isAutoDetecting)
+                .buttonStyle(RiftPrimaryButtonStyle())
+                .disabled(isAutoDetecting || !hasStartedTurn)
             }
 
-            // **Never disabled.** 516.2 gives the Action Phase no
-            // completion condition and 516.6 says it ends when the player
-            // declares it, so nothing the camera sees can end a turn.
-            // Disabling this under Auto-detect left the only way out of the
-            // Action Phase greyed out — the turn could be started
-            // automatically but never finished.
-            // Styled prominently in the Action Phase, where it's the only
-            // way forward, and secondary elsewhere.
-            if gameState.phase.validatesPlayerMoves {
-                Button("End Turn") { gameState.endTurn() }
-                    .buttonStyle(.borderedProminent)
+            // **Never disabled once the turn is running.** 516.2 gives the
+            // Action Phase no completion condition and 516.6 says it ends
+            // when the player declares it, so nothing the camera sees can
+            // end a turn. Disabling this under Auto-detect left the only
+            // way out of the Action Phase greyed out — the turn could be
+            // started automatically but never finished.
+            //
+            // Before the turn starts, this same slot is the "Start Turn"
+            // affordance from the mockup; it doesn't touch `gameState`,
+            // only lights the first pip.
+            if hasStartedTurn {
+                Button("End Turn") {
+                    gameState.endTurn()
+                    // `endTurn()` flips the seat, which fires the
+                    // `onChange` above — set it here too so the label is
+                    // right on this render pass rather than one frame later.
+                    hasStartedTurn = false
+                }
+                .buttonStyle(gameState.phase.validatesPlayerMoves
+                             ? AnyButtonStyle(RiftPrimaryButtonStyle())
+                             : AnyButtonStyle(RiftSecondaryButtonStyle()))
             } else {
-                Button("End Turn") { gameState.endTurn() }
-                    .buttonStyle(.bordered)
+                Button("Start Turn") { hasStartedTurn = true }
+                    .buttonStyle(RiftPrimaryButtonStyle())
             }
+
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 18)
-        .background(Color(red: 0.11, green: 0.23, blue: 0.33))
     }
 
     /// Says what's wrong in the player's terms — the card's kind and where
@@ -238,5 +306,20 @@ struct TurnControlBar: View {
         case .champion: return "Champion zone"
         case .unknown: return "off-mat area"
         }
+    }
+}
+
+/// `ButtonStyle` is a protocol with an associated type, so the two styles
+/// can't be picked between inline without erasing them first. Small enough
+/// to keep next to its only use.
+struct AnyButtonStyle: ButtonStyle {
+    private let makeBodyClosure: (Configuration) -> AnyView
+
+    init<S: ButtonStyle>(_ style: S) {
+        makeBodyClosure = { AnyView(style.makeBody(configuration: $0)) }
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        makeBodyClosure(configuration)
     }
 }

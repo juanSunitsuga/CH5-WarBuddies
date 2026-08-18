@@ -5,6 +5,11 @@ import RiftboundVision
 /// straight from `CardPrinting` (real card data, per the brief: no
 /// invented "best use case" commentary, just what's actually printed on
 /// the card).
+///
+/// No call sites remain — the Card Library column in `DetectedCardsPanel`
+/// took over card inspection. Themed rather than deleted, since removing a
+/// file is a decision about the project, not the front end; it is dead
+/// code as it stands.
 struct CardDetailView: View {
     let printing: CardPrinting
     let onClose: () -> Void
@@ -12,56 +17,74 @@ struct CardDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(printing.name).font(.title2.bold())
+                Text(printing.name)
+                    .font(RiftboundFont.heading)
+                    .foregroundStyle(RiftboundPalette.regularText)
                 Spacer()
-                Button("Close", action: onClose).keyboardShortcut(.cancelAction)
+                Button("Close", action: onClose)
+                    .buttonStyle(RiftSecondaryButtonStyle())
+                    .keyboardShortcut(.cancelAction)
             }
 
             HStack(alignment: .top, spacing: 16) {
                 CardArtView(printing: printing)
                     .frame(width: 180, height: 251)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(RiftboundPalette.elementStroke, lineWidth: 2)
+                    )
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(printing.classification.type)
-                        .font(.headline)
+                        .font(RiftboundFont.heading)
+                        .foregroundStyle(RiftboundPalette.regularText)
                     if let supertype = printing.classification.supertype {
-                        Text(supertype).font(.subheadline).foregroundStyle(.secondary)
+                        Text(supertype)
+                            .font(RiftboundFont.body)
+                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
                     }
 
                     statsRow
 
                     if !printing.classification.domain.isEmpty {
                         Text(printing.classification.domain.joined(separator: " / "))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(RiftboundFont.body)
+                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
                     }
 
                     if let rarity = printing.classification.rarity {
-                        Text(rarity).font(.caption).foregroundStyle(.secondary)
+                        Text(rarity)
+                            .font(RiftboundFont.body)
+                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
                     }
 
-                    Divider()
+                    Rectangle()
+                        .fill(RiftboundPalette.elementStroke.opacity(0.4))
+                        .frame(height: 1)
 
                     Text(printing.text.plain.isEmpty ? "(No printed rules text)" : printing.text.plain)
-                        .font(.body)
+                        .font(RiftboundFont.body)
+                        .foregroundStyle(RiftboundPalette.regularText)
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let flavour = printing.text.flavour, !flavour.isEmpty {
                         Text(flavour)
-                            .font(.callout.italic())
-                            .foregroundStyle(.secondary)
+                            .font(RiftboundFont.body)
+                            .italic()
+                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
                     }
 
                     Spacer()
 
                     Text("\(printing.set.label) · #\(printing.collectorNumber.map(String.init) ?? "?") · \(printing.riftboundID)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .font(RiftboundFont.body)
+                        .foregroundStyle(RiftboundPalette.regularText.opacity(0.45))
                 }
             }
         }
-        .padding()
+        .padding(20)
         .frame(minWidth: 520, minHeight: 340)
+        .background(RiftboundPalette.secondaryBackground)
     }
 
     @ViewBuilder
@@ -77,6 +100,7 @@ struct CardDetailView: View {
                 Label("\(power)", systemImage: "sparkles")
             }
         }
-        .font(.callout)
+        .font(RiftboundFont.body)
+        .foregroundStyle(RiftboundPalette.highlightOverlay)
     }
 }

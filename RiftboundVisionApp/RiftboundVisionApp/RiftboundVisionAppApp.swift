@@ -10,6 +10,13 @@ struct RiftboundVisionAppApp: App {
     let container: ModelContainer
 
     init() {
+        // Sora has to be registered before any view builds, or the first
+        // frame renders in the system fallback and only snaps to the real
+        // face on the next redraw. `ATSApplicationFontsPath` in Info.plist
+        // handles the built app; this covers previews and any context
+        // where the bundle layout isn't the app's.
+        RiftboundFontLoader.registerBundledFonts()
+
         // A store left behind by an older/incompatible schema can't be
         // opened, and SwiftData surfaces that as a throw from deep inside a
         // fault later on — a crash in board-state code that reads nothing
@@ -47,7 +54,17 @@ struct RiftboundVisionAppApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(modelContext: container.mainContext)
+                // The window's own background shows through behind the
+                // toolbar and around the content during a live resize.
+                // Left as the system default it flashed grey against the
+                // navy layout on every drag.
+                .background(RiftboundPalette.mainBackground)
+                .preferredColorScheme(.dark)
         }
         .modelContainer(container)
+        // The reference is a fixed composition — a unified toolbar keeps
+        // the title bar from adding a second, differently-coloured band
+        // above the header bar.
+        .windowStyle(.hiddenTitleBar)
     }
 }

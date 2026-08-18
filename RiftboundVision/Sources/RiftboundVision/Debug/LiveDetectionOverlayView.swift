@@ -63,9 +63,19 @@ public struct LiveDetectionOverlayView: View {
         let box = detection.boundingBox
         let card = printing(for: detection)
         let isSelected = card != nil && card?.id == selectedPrintingID
+        // Was cyan/green/orange — three hues from nowhere on the design
+        // board, sitting directly on top of the one part of the window a
+        // player actually looks at. The palette has no traffic-light
+        // triple, so the distinction is carried by value instead: bright
+        // gold for the selected card, the mat's own gold for a confident
+        // read, and the neutral disabled stroke for an unsure one, which
+        // reads as "the app isn't committing to this" without inventing a
+        // warning colour.
         let color: Color = isSelected
-            ? .cyan
-            : (detection.confidence >= Self.recognizedThreshold ? .green : .orange)
+            ? PlaymatPalette.highlightOverlay
+            : (detection.confidence >= Self.recognizedThreshold
+                ? PlaymatPalette.playmatOverlay
+                : PlaymatPalette.disabledElementStroke)
 
         RoundedRectangle(cornerRadius: 8, style: .continuous)
             .stroke(color, lineWidth: isSelected ? 6 : 3)
@@ -98,13 +108,20 @@ public struct LiveDetectionOverlayView: View {
         // perfectly still — motion that reads as instability rather than
         // information. Confidence still drives the colour, which conveys
         // "recognized" vs "unsure" without the flicker.
+        // 32pt for the same reason the zone labels are 24: this is drawn
+        // in camera-frame pixel space and scaled down to fit the window,
+        // so it isn't a screen-point size and the 15pt body size doesn't
+        // apply. The capsule is a flat `elementShadow` fill rather than a
+        // gradient of the box colour — the gradient made two adjacent
+        // labels look like different states when they weren't.
         return Text(name)
-            .font(.system(size: 32, weight: .bold, design: .rounded))
-            .foregroundStyle(.white)
+            .font(.custom("Sora-Bold", size: 32))
+            .foregroundStyle(PlaymatPalette.regularText)
             .lineLimit(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(color.gradient, in: Capsule())
+            .background(PlaymatPalette.elementShadow, in: Capsule())
+            .overlay(Capsule().stroke(color, lineWidth: 2))
             .fixedSize()
     }
 }

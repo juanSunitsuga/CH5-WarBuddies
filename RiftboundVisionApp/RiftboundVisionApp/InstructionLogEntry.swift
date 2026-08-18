@@ -244,12 +244,22 @@ extension InstructionLogEntry.Verdict {
         }
     }
 
+    /// Mapped onto the design board rather than onto semantic system
+    /// colours.
+    ///
+    /// Worth being explicit about the compromise: the board has no error
+    /// colour. Nothing in the eleven swatches reads as "this is wrong",
+    /// so `rejected` uses the deepest, most saturated gold available and
+    /// leans on `iconName`'s warning triangle to carry the meaning. That's
+    /// weaker than a red would be, and it's the one place the palette is
+    /// doing less work than the UI needs — flagged rather than papered
+    /// over with an off-board hex.
     var tint: Color {
         switch self {
-        case .accepted: return .green
-        case .rejected: return .orange
-        case .unrecognized: return .yellow
-        case .informational: return .cyan
+        case .accepted: return RiftboundPalette.highlightOverlay
+        case .rejected: return RiftboundPalette.primaryButton
+        case .unrecognized: return RiftboundPalette.elementStroke
+        case .informational: return RiftboundPalette.iconicText
         }
     }
 }

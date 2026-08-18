@@ -5,6 +5,10 @@ import SwiftUI
 /// tracked on a physical score dial or by agreement, not by cards moving —
 /// so like `ManualGameState` this is asserted by the person at the table
 /// rather than inferred.
+///
+/// Visually this is where the board's "Iconics" 80pt size is used: the two
+/// numerals are the largest thing in the window on purpose, because they
+/// are read across a table rather than from a keyboard's distance.
 struct ScoreTracker: View {
     @Binding var playerScore: Int
     @Binding var opponentScore: Int
@@ -13,12 +17,12 @@ struct ScoreTracker: View {
     static let winningScore = 8
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("First to \(Self.winningScore) points win.")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.65))
+                .font(RiftboundFont.body)
+                .foregroundStyle(RiftboundPalette.regularText)
 
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 counter(title: "Player", score: $playerScore)
                 counter(title: "Opponent", score: $opponentScore)
             }
@@ -28,43 +32,61 @@ struct ScoreTracker: View {
     private func counter(title: String, score: Binding<Int>) -> some View {
         VStack(spacing: 0) {
             Text(title)
-                .font(.caption.bold())
-                .foregroundStyle(.white)
+                .font(RiftboundFont.heading)
+                .foregroundStyle(RiftboundPalette.regularText)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
-                .background(Color(red: 0.55, green: 0.34, blue: 0.13))
+                .padding(.vertical, 6)
+                .background(RiftboundPalette.primaryButton)
 
+            // 80pt with a tight, fixed frame — at this size the default
+            // line box adds a lot of leading, which pushed the numeral
+            // off-centre inside the gold panel.
             Text("\(score.wrappedValue)")
-                .font(.system(size: 56, weight: .bold, design: .rounded))
+                .font(RiftboundFont.iconic)
                 .monospacedDigit()
-                .foregroundStyle(Color(red: 0.99, green: 0.96, blue: 0.87))
+                .foregroundStyle(RiftboundPalette.regularText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Color(red: 0.82, green: 0.51, blue: 0.24))
+                .frame(height: 96)
+                .background(RiftboundPalette.highlightOverlay)
 
             HStack(spacing: 0) {
-                stepButton(systemName: "minus") {
+                stepButton(systemName: "minus", label: "Subtract a point from \(title)") {
                     score.wrappedValue = max(0, score.wrappedValue - 1)
                 }
-                Divider().frame(height: 18).overlay(.white.opacity(0.35))
-                stepButton(systemName: "plus") {
+                Rectangle()
+                    .fill(RiftboundPalette.regularText.opacity(0.35))
+                    .frame(width: 1, height: 18)
+                stepButton(systemName: "plus", label: "Add a point to \(title)") {
                     score.wrappedValue = min(Self.winningScore, score.wrappedValue + 1)
                 }
             }
-            .background(Color(red: 0.55, green: 0.34, blue: 0.13))
+            .background(RiftboundPalette.primaryButton)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(title) score")
+        .accessibilityValue("\(score.wrappedValue) of \(Self.winningScore)")
     }
 
-    private func stepButton(systemName: String, action: @escaping () -> Void) -> some View {
+    private func stepButton(systemName: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.caption.bold())
-                .foregroundStyle(.white)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(RiftboundPalette.regularText)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
+                .padding(.vertical, 6)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
+}
+
+#Preview {
+    ScoreTracker(playerScore: .constant(3), opponentScore: .constant(0))
+        .padding()
+        .frame(width: 340)
+        .background(RiftboundPalette.secondaryBackground)
 }
