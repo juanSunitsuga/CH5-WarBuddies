@@ -417,12 +417,14 @@ all 75 printings, and alternate arts stay distinct (`ogn-214-298` vs
 
 Flagged rather than papered over:
 
-- **Nothing proposes `.exhaust` when a rune turns.** The engine models the rune
-  economy properly now, and both rune abilities are discretionary, so the path
-  is open — but the vision layer only *counts* exhausted runes, it never emits
-  an action for one turning sideways. Until it does, no Energy can enter a pool
-  from play, which is why `GameSessionBuilder` still seeds one. **The fix is
-  that event, not a bigger seeded number.**
+- **A rune turning sideways never becomes `.exhaust`.** The engine models the
+  rune economy properly, both rune abilities are discretionary, and the camera
+  now detects the turn (orientation comes from box shape, and the adapter emits
+  `.cardOrientationChanged`). The break is the last hop: the NLP translator
+  returns `nil` for that event, saying Exhaust/Ready is handled elsewhere — and
+  nowhere else handles it. So no Energy can enter a pool from play, which is
+  why `GameSessionBuilder` still seeds one. **The fix is that one translation,
+  not a bigger seeded number.**
 - **`parseAbility` returns `[]`.** Mechanic tags are extracted and then
   dropped, so no card ability ever executes. `EffectInstruction` is fully
   defined but nothing runs it. Score abilities (632.2) wait on this too.
@@ -443,7 +445,7 @@ Flagged rather than papered over:
 
 ## Roadmap
 
-- [ ] Emit `.exhaust` when the camera sees a rune turn, and drop the seeded pool
+- [ ] Map `.cardOrientationChanged` to `.exhaust`, and drop the seeded pool
 - [ ] Route mechanic tags into `parseAbility` → `EffectInstruction` execution
 - [ ] Second seat, so Hold, Conquer and Focus have an opponent to work against
 - [ ] Deck selection and player identification, replacing the permissive hand

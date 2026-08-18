@@ -367,11 +367,15 @@ per session, driven from the adapter's event stream, and its
    rune economy — Channel puts a Rune on the board (606.1), Exhausting it is
    what adds Energy (157.2.a), Recycling returns the card to the Rune Deck for
    Power (157.2.b/594.1.b) — and both abilities are Discretionary, so no
-   authorization blocks them. But the vision layer only *counts* exhausted
-   runes (`observedExhaustedRuneCount`); it never emits an action for one
-   turning. Until it does, no Energy can enter a pool from play, which is why
-   `GameSessionBuilder` still seeds a stand-in pool. **The fix is that event,
-   not a bigger seeded number.**
+   authorization blocks them. The vision layer now *sees* it too — since
+   `best-3`, orientation is derived from box shape and
+   `ExpertSystemAdapter` emits `.cardOrientationChanged(nowExhausted:)`. What
+   is missing is the last hop: `ExpertSystemTranslatorAdapter` explicitly
+   returns `nil` for that event, saying Exhaust/Ready is "handled elsewhere in
+   the pipeline" — and nowhere else handles it. Until it maps to
+   `GameAction.exhaust`, no Energy can enter a pool from play, which is why
+   `GameSessionBuilder` still seeds a stand-in pool. **The fix is that one
+   translation, not a bigger seeded number.**
 2. **Item 7** — route the NLP layer's mechanic tags into `parseAbility` and
    execute `EffectInstruction`, so cards actually *do* what they say. Score
    abilities (632.2) and Cleanup's 520/522/523 all wait on this too.
