@@ -152,15 +152,37 @@ struct PhaseAutoDetectorTests {
         #expect(!detector.progress(for: .channel, cards: runes).isComplete)
     }
 
-    // MARK: - Draw and Action never auto-complete
+    // MARK: - Draw (515.4.b)
 
-    /// A drawn card lands in a fanned hand, where "the hand grew" is not
-    /// reliably distinguishable from a card being fanned into view. Guessing
-    /// wrong desyncs the deck count silently, so this one stays manual.
-    @Test("Draw does not auto-complete")
-    func drawStaysManual() {
-        #expect(!PhaseAutoDetector().progress(for: .draw, cards: []).isComplete)
+    /// Main Deck → Hand is the only way a card reaches the hand during this
+    /// phase, so a card appearing there *is* the draw.
+    @Test("Draw completes when a card appears in hand")
+    func drawCompletesWhenHandGrows() {
+        let detector = PhaseAutoDetector(handBaseline: 4)
+        let hand = (1...5).map { card($0, "Card \($0)", zone: .player1Hand) }
+
+        #expect(detector.progress(for: .draw, cards: hand).isComplete)
     }
+
+    @Test("Draw waits while the hand is unchanged")
+    func drawWaitsForTheCard() {
+        let detector = PhaseAutoDetector(handBaseline: 4)
+        let hand = (1...4).map { card($0, "Card \($0)", zone: .player1Hand) }
+
+        let progress = detector.progress(for: .draw, cards: hand)
+        #expect(!progress.isComplete)
+        #expect(progress.headline == "Draw 1 card.")
+    }
+
+    /// Counted against a baseline for the same reason Channel is — hand
+    /// size is whatever it is, only the change means anything.
+    @Test("Draw counts the change, not the hand size")
+    func drawIsRelativeToBaseline() {
+        let hand = (1...7).map { card($0, "Card \($0)", zone: .player1Hand) }
+        #expect(!PhaseAutoDetector(handBaseline: 7).progress(for: .draw, cards: hand).isComplete)
+    }
+
+    // MARK: - Action never auto-completes
 
     /// 516.2: the Action Phase has no completion condition — it ends when
     /// the player says so (516.6), and no amount of watching the table can
@@ -194,6 +216,75 @@ struct PhaseAutoDetectorTests {
         #expect(progress.needsCorrection)
         #expect(progress.headline == "Put Annie back in your hand.")
         #expect(progress.detail?.contains("3 energy") == true)
+    }
+
+    // MARK: - What the player owes after putting a unit down
+
+    /// Rule 139.4: a Unit enters the board **exhausted**. That's a physical
+    /// step — turn the card you just put down sideways — and it's the one
+    /// most often forgotten, because the card is already on the table and
+    /// looks finished.
+    @Test("Playing a unit asks for the unit to be turned sideways too")
+    func playedUnitMustBeExhausted() {
+        let tibbers = ObservedCard(id: 1, name: "Tibbers", zone: .base,
+                                   kind: .unit, energyCost: 2)
+        let progress = PhaseAutoDetector().paymentProgress(for: tibbers, runes: [
+            ObservedRune(domain: .fury, stance: .ready),
+            ObservedRune(domain: .fury, stance: .ready)
+        ])
+
+        #expect(progress.headline.contains("turn Tibbers sideways"))
+        #expect(progress.headline.contains("exhaust 2 runes"))
+    }
+
+    /// Rule 717: Accelerate is the exception, and worth saying out loud —
+    /// otherwise "why isn't it asking me to turn this one" is a puzzle.
+    @Test("A unit that enters ready is not asked to be turned sideways")
+    func acceleratedUnitStaysUpright() {
+        let quick = ObservedCard(id: 1, name: "Quickstep", zone: .base,
+                                 kind: .unit, energyCost: 1, entersReady: true)
+        let progress = PhaseAutoDetector().paymentProgress(for: quick, runes: [
+            ObservedRune(domain: .fury, stance: .ready)
+        ])
+
+        #expect(!progress.headline.contains("sideways"))
+        #expect(progress.headline.contains("exhaust 1 rune"))
+    }
+
+    /// A free Unit still owes the exhaust, so it can't be skipped just
+    /// because nothing has to be paid.
+    @Test("A free unit is still asked to be turned sideways")
+    func freeUnitStillExhausts() {
+        let free = ObservedCard(id: 1, name: "Poro", zone: .base, kind: .unit)
+        let progress = PhaseAutoDetector().paymentProgress(for: free, runes: [])
+
+        #expect(progress.headline.contains("turn Poro sideways"))
+    }
+
+    /// A Spell has no board form, so nothing is turned sideways for it.
+    @Test("A spell is not asked to be turned sideways")
+    func spellIsNotExhausted() {
+        let spell = ObservedCard(id: 1, name: "Gust", zone: .base, kind: .spell, energyCost: 1)
+        let progress = PhaseAutoDetector().paymentProgress(for: spell, runes: [
+            ObservedRune(domain: .fury, stance: .ready)
+        ])
+
+        #expect(!progress.headline.contains("sideways"))
+    }
+
+    /// The card's own text, translated to Game Actions by the NLP layer,
+    /// rides along on the same message — the player is told what to pay and
+    /// what to resolve in one place.
+    @Test("A played card's abilities are shown with what it costs")
+    func abilitiesAreShownOnPlay() {
+        let annie = ObservedCard(id: 1, name: "Annie", zone: .base, kind: .unit,
+                                 energyCost: 1, abilities: ["Deal 2 damage.", "Draw 1 card."])
+        let progress = PhaseAutoDetector().paymentProgress(for: annie, runes: [
+            ObservedRune(domain: .fury, stance: .ready)
+        ])
+
+        #expect(progress.detail?.contains("Deal 2 damage.") == true)
+        #expect(progress.detail?.contains("Draw 1 card.") == true)
     }
 
     @Test("A missing domain names the domain the player needs")

@@ -137,3 +137,16 @@ public struct ZoneMapper: Sendable {
         zones.first { $0.contains(point) }
     }
 }
+
+public extension Zone {
+    /// Whether this is `seat`'s own Hand. `Zone` has one case per physical
+    /// hand region rather than a single `.hand` with an owner, so asking
+    /// "is this my hand" otherwise means repeating the seat-to-case mapping
+    /// at every call site.
+    func isHand(for seat: Player) -> Bool {
+        switch seat {
+        case .player1: return self == .player1Hand
+        case .player2: return self == .player2Hand
+        }
+    }
+}

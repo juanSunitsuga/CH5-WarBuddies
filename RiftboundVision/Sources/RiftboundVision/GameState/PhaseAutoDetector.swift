@@ -22,6 +22,15 @@ public struct ObservedCard: Sendable, Equatable {
     public let energyCost: Int
     public let powerCost: Int
     public let eligibleDomains: [Domain]
+    /// Rule 139.4: Units enter the board **exhausted**. 717's Accelerate is
+    /// the exception, and some card text says so in words rather than the
+    /// keyword — either way the caller decides, since it's reading the
+    /// printed text and this type isn't.
+    public let entersReady: Bool
+    /// What this card's text does, already translated to Game Actions by
+    /// the NLP layer. Shown to the player when the card is played, so they
+    /// know what they're meant to resolve.
+    public let abilities: [String]
 
     public init(
         id: TrackedObjectID,
@@ -34,7 +43,9 @@ public struct ObservedCard: Sendable, Equatable {
         domain: Domain? = nil,
         energyCost: Int = 0,
         powerCost: Int = 0,
-        eligibleDomains: [Domain] = []
+        eligibleDomains: [Domain] = [],
+        entersReady: Bool = false,
+        abilities: [String] = []
     ) {
         self.id = id
         self.name = name
@@ -47,6 +58,8 @@ public struct ObservedCard: Sendable, Equatable {
         self.energyCost = energyCost
         self.powerCost = powerCost
         self.eligibleDomains = eligibleDomains
+        self.entersReady = entersReady
+        self.abilities = abilities
     }
 }
 
@@ -98,15 +111,21 @@ public struct PhaseAutoDetector: Sendable {
     /// The phase asks for 2 *new* ones (515.3.b), so the target is relative
     /// — an absolute "2 runes on the table" would be satisfied on turn one
     /// and never again.
+    /// Hand size when the Draw Phase began. 515.4.b draws exactly 1, so
+    /// the phase is done when the hand has grown by one — the same
+    /// relative-to-baseline trick the Channel Phase uses, and for the same
+    /// reason: an absolute hand size means nothing.
+    public var handBaseline: Int
     public var channelBaseline: Int
     /// Rule 515.3.b: 2, or 3 on the first turn of the player going last
     /// (645.7). Passed in rather than derived, since whose first turn it is
     /// is exactly the thing this package can't see.
     public var runesToChannel: Int
 
-    public init(channelBaseline: Int = 0, runesToChannel: Int = 2) {
+    public init(channelBaseline: Int = 0, runesToChannel: Int = 2, handBaseline: Int = 0) {
         self.channelBaseline = channelBaseline
         self.runesToChannel = runesToChannel
+        self.handBaseline = handBaseline
     }
 
     public func progress(for phase: GamePhase, cards: [ObservedCard], seat: Player = .player1) -> Progress {
@@ -114,7 +133,7 @@ public struct PhaseAutoDetector: Sendable {
         case .awaken:   return awaken(cards: cards, seat: seat)
         case .beginning: return beginning(cards: cards, seat: seat)
         case .channel:  return channel(cards: cards, seat: seat)
-        case .draw:     return draw()
+        case .draw:     return draw(cards: cards, seat: seat)
         case .action:   return action()
         }
     }
@@ -154,6 +173,13 @@ public struct PhaseAutoDetector: Sendable {
     }
 
     private static let readyableZones: Set<Zone> = [.base, .battlefield, .runeArea, .champion]
+
+    /// "a", "a and b", "a, b and c" — a list a player reads as a single
+    /// instruction rather than three stacked ones.
+    private func sentence(_ parts: [String]) -> String {
+        guard parts.count > 1 else { return parts.first ?? "" }
+        return parts.dropLast().joined(separator: ", ") + " and " + (parts.last ?? "")
+    }
 
     // MARK: - Beginning (515.2.b / 630.2)
 
@@ -225,14 +251,29 @@ public struct PhaseAutoDetector: Sendable {
 
     // MARK: - Draw (515.4)
 
-    /// Not auto-completed. A drawn card goes straight into a hand the
-    /// camera sees as an unordered fan, so "the hand grew by one" is not
-    /// reliably distinguishable from a card being fanned into view — and
-    /// wrongly deciding a draw happened desyncs the deck count silently.
-    private func draw() -> Progress {
-        Progress(
+    /// 515.4.b: the Turn Player draws 1. A card arriving in the hand zone
+    /// is the whole signature — Main Deck → Hand is the only way a card
+    /// gets there during this phase, so the hand growing by one is the
+    /// draw.
+    ///
+    /// Measured against a baseline taken as the phase began, for the same
+    /// reason Channel is: hand size is whatever it is, only the change
+    /// means anything.
+    private func draw(cards: [ObservedCard], seat: Player) -> Progress {
+        let inHand = cards.filter { $0.zone.isHand(for: seat) }.count
+        let drawn = inHand - handBaseline
+
+        guard drawn < 1 else {
+            return Progress(
+                headline: "Card drawn.",
+                detail: "Unspent energy and power is lost as this step ends (Rule 515.4.d).",
+                isComplete: true
+            )
+        }
+
+        return Progress(
             headline: "Draw 1 card.",
-            detail: "Then press Next — a draw into a fanned hand isn't something the camera can confirm (Rule 515.4)."
+            detail: "Take the top card of your main deck into your hand (Rule 515.4.b)."
         )
     }
 
@@ -262,6 +303,20 @@ public struct PhaseAutoDetector: Sendable {
         ) {
         case .affordable:
             var parts: [String] = []
+
+            // Rule 139.4: a Unit enters the board exhausted. That's a
+            // physical thing the player has to do — turn the card they just
+            // put down sideways — and it's the step most often forgotten,
+            // because the card is already on the table and looks finished.
+            // 717's Accelerate (and text that says so in words) is the
+            // exception, and is worth calling out rather than staying
+            // silent about, since "why isn't it asking me to turn this one"
+            // is otherwise a puzzle.
+            let entersExhausted = card.kind == .unit || card.kind == .champion
+            if entersExhausted, !card.entersReady {
+                parts.append("turn \(card.name) sideways")
+            }
+
             if card.energyCost > 0 {
                 parts.append("exhaust \(card.energyCost) rune\(card.energyCost == 1 ? "" : "s")")
             }
@@ -269,12 +324,22 @@ public struct PhaseAutoDetector: Sendable {
                 let domains = card.eligibleDomains.map { $0.rawValue.capitalized }.joined(separator: " or ")
                 parts.append("recycle \(card.powerCost) \(domains.isEmpty ? "" : domains + " ")rune\(card.powerCost == 1 ? "" : "s")")
             }
+
+            let abilityLine = card.abilities.isEmpty ? nil : card.abilities.joined(separator: "  ·  ")
+
             guard !parts.isEmpty else {
-                return Progress(headline: "\(card.name) is free to play.")
+                return Progress(
+                    headline: entersExhausted && card.entersReady
+                        ? "\(card.name) enters ready — leave it upright."
+                        : "\(card.name) costs nothing to play.",
+                    detail: abilityLine
+                )
             }
+
             return Progress(
-                headline: "Pay for \(card.name): \(parts.joined(separator: " and ")).",
-                detail: "Turn runes sideways for energy; return them to the rune deck for power (Rule 157.2)."
+                headline: "\(card.name): \(sentence(parts)).",
+                detail: abilityLine
+                    ?? "Sideways means exhausted; returning a rune to the rune deck pays power (Rule 157.2)."
             )
 
         case .unaffordable(.energy(let required, let available)):

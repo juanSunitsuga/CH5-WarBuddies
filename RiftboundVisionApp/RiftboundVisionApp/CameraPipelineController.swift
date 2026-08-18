@@ -193,6 +193,11 @@ final class CameraPipelineController: ObservableObject {
     /// later card — the same reasoning as `TurnControlBar.verdictLifetime`.
     private static let paymentNoticeLifetime: TimeInterval = 12
 
+    /// Parsed-ability text per printing. The poll re-reads the same cards
+    /// several times a second; parsing is pure, so the answer can't change
+    /// between frames.
+    var abilitySummaryCache: [String: [String]] = [:]
+
     /// Runes currently in the player's rune area, with their stances — the
     /// input to every affordability question (130.2/130.3).
     private(set) var autoDetectRunes: [ObservedRune] = []
@@ -201,6 +206,10 @@ final class CameraPipelineController: ObservableObject {
     /// asks for 2 *new* runes, and the area only fills up over a game, so
     /// an absolute count would be satisfied permanently after turn one.
     var channelBaseline = 0
+
+    /// Hand size when the Draw Phase began — 515.4.b draws exactly 1, so
+    /// only the change matters.
+    var handBaseline = 0
 
     /// Rule 515.3.b/645.7: 2, or 3 on the first turn of the player going
     /// last. Still a manual input — whose first turn it is is exactly what
@@ -993,12 +1002,16 @@ extension CameraPipelineController {
             if gameState.phase == .channel {
                 channelBaseline = observed.filter { $0.zone == .runeArea }.count
             }
+            if gameState.phase == .draw {
+                handBaseline = observed.filter { $0.zone.isHand(for: .player1) }.count
+            }
             hasAwardedHoldPoints = false
         }
 
         let detector = PhaseAutoDetector(
             channelBaseline: channelBaseline,
-            runesToChannel: runesToChannelThisTurn
+            runesToChannel: runesToChannelThisTurn,
+            handBaseline: handBaseline
         )
         // A payment message outranks the generic phase text while it's
         // live — it's about a specific card the player is holding over the
@@ -1051,8 +1064,36 @@ extension CameraPipelineController {
             domain: domains.first,
             energyCost: printing?.attributes.energy ?? 0,
             powerCost: printing?.attributes.power ?? 0,
-            eligibleDomains: domains
+            eligibleDomains: domains,
+            entersReady: printing.map(Self.entersReady(_:)) ?? false,
+            abilities: printing.map { abilitySummaries(for: $0) } ?? []
         )
+    }
+
+    /// Rule 139.4 vs 717: Units enter exhausted unless something says
+    /// otherwise. Accelerate is the keyword; some cards say it in words, so
+    /// both are checked. Read off the printed text rather than assumed,
+    /// because getting this wrong tells the player to turn a card sideways
+    /// that should stay upright — and they'll believe the app.
+    static func entersReady(_ printing: CardPrinting) -> Bool {
+        let text = printing.text.plain.lowercased()
+        return text.contains("[accelerate]")
+            || text.contains("accelerate")
+            || text.contains("enters play ready")
+            || text.contains("enters ready")
+    }
+
+    /// The card's abilities, already translated to Game Actions by the NLP
+    /// layer (`CardAbilityParser`). Memoized per printing: the poll runs
+    /// several times a second over the same handful of cards, and parsing
+    /// the same text each time would be pure waste.
+    func abilitySummaries(for printing: CardPrinting) -> [String] {
+        if let cached = abilitySummaryCache[printing.riftboundID] { return cached }
+        let summaries = CardAbilityParser.read(printing.text.plain).abilities.map { ability in
+            ability.timing.map { "\(ability.summary) (\($0.prefix(while: { $0 != " " })))" } ?? ability.summary
+        }
+        abilitySummaryCache[printing.riftboundID] = summaries
+        return summaries
     }
 
     /// Rule 130.2/130.3: a card leaving the hand for the board has to be
@@ -1084,16 +1125,31 @@ extension CameraPipelineController {
             id: 0,
             name: printing.name,
             zone: .base,
+            kind: CardKind.from(
+                type: printing.classification.type,
+                supertype: printing.classification.supertype
+            ),
             energyCost: printing.attributes.energy ?? 0,
             powerCost: printing.attributes.power ?? 0,
-            eligibleDomains: domains
+            eligibleDomains: domains,
+            entersReady: Self.entersReady(printing),
+            // The card's own text, translated to Game Actions by the NLP
+            // layer — what the player has to resolve now that it's down.
+            abilities: abilitySummaries(for: printing)
         )
 
         let progress = PhaseAutoDetector().paymentProgress(for: card, runes: autoDetectRunes)
         // Only speak up when there's something to say — a free card played
         // with a full rune area doesn't need narrating over the verdict the
         // engine is about to give.
-        guard progress.needsCorrection || card.energyCost > 0 || card.powerCost > 0 else { return }
+        // A free Unit still needs saying: 139.4 makes it enter exhausted,
+        // and that's a physical step the player owes regardless of cost.
+        let owesSomething = progress.needsCorrection
+            || card.energyCost > 0
+            || card.powerCost > 0
+            || card.kind == .unit || card.kind == .champion
+            || !card.abilities.isEmpty
+        guard owesSomething else { return }
         paymentNotice = progress
         paymentNoticeRaisedAt = Date()
         phaseProgress = progress
