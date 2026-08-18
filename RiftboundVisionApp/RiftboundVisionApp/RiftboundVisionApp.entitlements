@@ -6,5 +6,11 @@
 	<true/>
 	<key>com.apple.security.device.camera</key>
 	<true/>
+	<!-- Card art is fetched from cmsassets.rgpub.io. Under the App
+	     Sandbox outgoing connections are denied unless this is set, so
+	     without it every AsyncImage in Card Details fails and renders its
+	     placeholder — which reads as a black rectangle on a dark panel. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
 </dict>
 </plist>

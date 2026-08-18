@@ -35,8 +35,17 @@ public struct PendingPlay: Sendable, Equatable {
     /// landed. Energy paid = however many more are exhausted now.
     public let exhaustedRunesAtPlay: Int
     /// How many runes were in the rune area when this card landed.
-    /// Recycling takes a rune off the board (594.1.b), so Power paid =
-    /// however many fewer are there now.
+    ///
+    /// Recycling a rune returns it **to the rune deck** (154.2.b/594.1.b),
+    /// so it leaves the rune area — Power paid is however many fewer are
+    /// there now.
+    ///
+    /// Measured by the area shrinking rather than the deck growing, which
+    /// would be the more direct evidence, because a deck is a *stack*: the
+    /// detector sees one object on top of it however many cards are
+    /// underneath, so runes arriving there are invisible. The rune area
+    /// lays its runes out individually, which is the only place this is
+    /// countable.
     public let runesInAreaAtPlay: Int
 
     public init(
@@ -110,7 +119,11 @@ public struct PendingPlay: Sendable, Equatable {
         let powerLeft = powerCost - powerPaid(observation)
         if powerLeft > 0 {
             let named = eligibleDomains.map { $0.rawValue.capitalized }.joined(separator: " or ")
-            steps.append("recycle \(powerLeft) \(named.isEmpty ? "" : named + " ")rune\(powerLeft == 1 ? "" : "s")")
+            // Says where the rune goes, not just the verb. "Recycle" is
+            // rules vocabulary (594) that reads as "discard" to anyone who
+            // hasn't memorised it; the rune goes back to the rune deck, and
+            // a player following an instruction needs the destination.
+            steps.append("return \(powerLeft) \(named.isEmpty ? "" : named + " ")rune\(powerLeft == 1 ? "" : "s") to your rune deck")
         }
 
         return steps

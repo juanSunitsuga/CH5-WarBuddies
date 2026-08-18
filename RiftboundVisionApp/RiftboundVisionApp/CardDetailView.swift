@@ -18,13 +18,8 @@ struct CardDetailView: View {
             }
 
             HStack(alignment: .top, spacing: 16) {
-                AsyncImage(url: printing.media.imageURL) { image in
-                    image.resizable().aspectRatio(contentMode: .fit)
-                } placeholder: {
-                    RoundedRectangle(cornerRadius: 6).fill(Color.gray.opacity(0.2))
-                }
-                .frame(width: 180, height: 251)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                CardArtView(printing: printing)
+                    .frame(width: 180, height: 251)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(printing.classification.type)

@@ -21,6 +21,7 @@
 		6DE85F0742A246E596717150 /* CameraPipelineController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38DB5B31D91340FBAFB23CD8 /* CameraPipelineController.swift */; };
 		71EB87BDA66944C493D04B22 /* best-2.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = C80542A83A3C4765A9F7868D /* best-2.mlpackage */; };
 		76DA6F984DFB4D99A0C5E470 /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880B3B2F2F93462E90B88A3A /* CardDetailView.swift */; };
+		76DA6F984DFB4D99A0C5E471 /* CardArtView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880B3B2F2F93462E90B88A3B /* CardArtView.swift */; };
 		93F14F27D8F144288BE9E603 /* GameStateBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3055869C4ECE495FA5A42260 /* GameStateBar.swift */; };
 		A85A01502EB54B35B708A490 /* DetectedCardsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */; };
 		AEAAA284B54A4B9493BD0940 /* lux.json in Resources */ = {isa = PBXBuildFile; fileRef = 27536C6BCCE545FA95F26D33 /* lux.json */; };
@@ -50,6 +51,7 @@
 		7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardStatePersistence.swift; sourceTree = "<group>"; };
 		8139118751494CA29BC83F55 /* RiftboundVisionAppApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiftboundVisionAppApp.swift; sourceTree = "<group>"; };
 		880B3B2F2F93462E90B88A3A /* CardDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailView.swift; sourceTree = "<group>"; };
+		880B3B2F2F93462E90B88A3B /* CardArtView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardArtView.swift; sourceTree = "<group>"; };
 		9840E86F98974947AB667FE5 /* garen.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = garen.json; sourceTree = "<group>"; };
 		A67FDE6B5FD54571BA3EE059 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectedCardsPanel.swift; sourceTree = "<group>"; };
@@ -123,6 +125,7 @@
 				72026DCCA9ED4F599499A115 /* GameSessionBuilder.swift */,
 				3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */,
 				880B3B2F2F93462E90B88A3A /* CardDetailView.swift */,
+				880B3B2F2F93462E90B88A3B /* CardArtView.swift */,
 				B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */,
 				91954CFFD8744AD891AB10D4 /* CardData */,
 				E30AC5E6649148CCA7C653DA /* Resources */,
@@ -252,6 +255,7 @@
 				FB1E6BC3244E442BAF1B7766 /* GameSessionBuilder.swift in Sources */,
 				60C3BF9F45FE4D8AA0EFFCE3 /* InstructionLogEntry.swift in Sources */,
 				76DA6F984DFB4D99A0C5E470 /* CardDetailView.swift in Sources */,
+				76DA6F984DFB4D99A0C5E471 /* CardArtView.swift in Sources */,
 				A85A01502EB54B35B708A490 /* DetectedCardsPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

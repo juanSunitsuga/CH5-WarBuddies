@@ -406,7 +406,9 @@ public struct PhaseAutoDetector: Sendable {
             }
             if card.powerCost > 0 {
                 let domains = card.eligibleDomains.map { $0.rawValue.capitalized }.joined(separator: " or ")
-                parts.append("recycle \(card.powerCost) \(domains.isEmpty ? "" : domains + " ")rune\(card.powerCost == 1 ? "" : "s")")
+                // Naming the destination, not just the verb — see
+                // `PendingPlay.outstanding`.
+                parts.append("return \(card.powerCost) \(domains.isEmpty ? "" : domains + " ")rune\(card.powerCost == 1 ? "" : "s") to your rune deck")
             }
 
             let abilityLine = card.abilities.isEmpty ? nil : card.abilities.joined(separator: "  ·  ")
@@ -437,7 +439,7 @@ public struct PhaseAutoDetector: Sendable {
             let named = domains.map { $0.rawValue.capitalized }.joined(separator: " or ")
             return Progress(
                 headline: "Put \(card.name) back in your hand.",
-                detail: "It needs \(required) \(named.isEmpty ? "" : named + " ")power and you have \(available) rune\(available == 1 ? "" : "s") you could recycle for it (Rule 130.3).",
+                detail: "It needs \(required) \(named.isEmpty ? "" : named + " ")power, and you have \(available) rune\(available == 1 ? "" : "s") you could return to your rune deck for it (Rule 130.3).",
                 needsCorrection: true
             )
         }

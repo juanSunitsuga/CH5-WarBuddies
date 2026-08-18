@@ -85,7 +85,10 @@ struct PendingPlayTests {
         let play = annie(energy: 0, power: 1, domains: [.chaos], inAreaAtPlay: 3)
 
         #expect(!play.isSettled(seen(.exhausted, inArea: 3)))
-        #expect(play.outstanding(seen(.exhausted, inArea: 3)).contains("recycle 1 Chaos rune"))
+        // Names the destination: "recycle" is rules vocabulary that reads
+        // as "discard" to anyone who hasn't memorised 594.
+        #expect(play.outstanding(seen(.exhausted, inArea: 3))
+            .contains("return 1 Chaos rune to your rune deck"))
         #expect(play.isSettled(seen(.exhausted, inArea: 2)))
     }
 
