@@ -27,6 +27,12 @@ public struct PendingPlay: Sendable, Equatable {
     /// Rule 139.4: Units enter the board exhausted. False for Spells, Gear,
     /// and anything with Accelerate (717).
     public let mustExhaustCard: Bool
+    /// Rule 150/556.2: a Spell "creates a game effect according to its
+    /// instructions and is then placed in the Trash." It has no board form
+    /// to leave behind — but it is physically laid down in the Base while
+    /// it's being paid for and resolved, which is how it's played at a
+    /// table, so the app follows the card rather than skipping to the end.
+    public let mustGoToTrash: Bool
     public let energyCost: Int
     public let powerCost: Int
     public let eligibleDomains: [Domain]
@@ -51,6 +57,7 @@ public struct PendingPlay: Sendable, Equatable {
     public init(
         name: String,
         mustExhaustCard: Bool,
+        mustGoToTrash: Bool = false,
         energyCost: Int,
         powerCost: Int,
         eligibleDomains: [Domain],
@@ -59,6 +66,7 @@ public struct PendingPlay: Sendable, Equatable {
     ) {
         self.name = name
         self.mustExhaustCard = mustExhaustCard
+        self.mustGoToTrash = mustGoToTrash
         self.energyCost = energyCost
         self.powerCost = powerCost
         self.eligibleDomains = eligibleDomains
@@ -69,13 +77,22 @@ public struct PendingPlay: Sendable, Equatable {
     /// What the table looks like right now, as far as this play cares.
     public struct Observation: Sendable, Equatable {
         /// The played card's current stance, or `nil` if it can't be found
-        /// on the board this frame.
+        /// on the table this frame.
         public let cardStance: CardStance?
+        /// Where the played card is now — how a Spell reaching the Trash is
+        /// confirmed.
+        public let cardZone: Zone?
         public let exhaustedRunesNow: Int
         public let runesInAreaNow: Int
 
-        public init(cardStance: CardStance?, exhaustedRunesNow: Int, runesInAreaNow: Int) {
+        public init(
+            cardStance: CardStance?,
+            cardZone: Zone? = nil,
+            exhaustedRunesNow: Int,
+            runesInAreaNow: Int
+        ) {
             self.cardStance = cardStance
+            self.cardZone = cardZone
             self.exhaustedRunesNow = exhaustedRunesNow
             self.runesInAreaNow = runesInAreaNow
         }
@@ -116,14 +133,28 @@ public struct PendingPlay: Sendable, Equatable {
             steps.append("exhaust \(energyLeft) more rune\(energyLeft == 1 ? "" : "s")")
         }
 
+        var costOutstanding = false
+
         let powerLeft = powerCost - powerPaid(observation)
         if powerLeft > 0 {
+            costOutstanding = true
             let named = eligibleDomains.map { $0.rawValue.capitalized }.joined(separator: " or ")
             // Says where the rune goes, not just the verb. "Recycle" is
             // rules vocabulary (594) that reads as "discard" to anyone who
             // hasn't memorised it; the rune goes back to the rune deck, and
             // a player following an instruction needs the destination.
             steps.append("return \(powerLeft) \(named.isEmpty ? "" : named + " ")rune\(powerLeft == 1 ? "" : "s") to your rune deck")
+        }
+
+        if energyLeft > 0 { costOutstanding = true }
+
+        // 150: the Spell goes to the Trash once it has resolved — which is
+        // *after* it's paid for, not instead of. Asking for both at once
+        // would have the player sweep the card away before they've turned
+        // the runes that paid for it, and then there's nothing on the table
+        // to say what the runes were for.
+        if mustGoToTrash, !costOutstanding, observation.cardZone != .trash {
+            steps.append("put \(name) in your trash")
         }
 
         return steps

@@ -30,10 +30,14 @@ struct PendingPlayTests {
 
     private func seen(
         _ stance: CardStance?,
+        zone: Zone? = .base,
         exhausted: Int = 0,
         inArea: Int = 3
     ) -> PendingPlay.Observation {
-        PendingPlay.Observation(cardStance: stance, exhaustedRunesNow: exhausted, runesInAreaNow: inArea)
+        PendingPlay.Observation(
+            cardStance: stance, cardZone: zone,
+            exhaustedRunesNow: exhausted, runesInAreaNow: inArea
+        )
     }
 
     /// The state the app previously accepted in silence.
@@ -129,6 +133,63 @@ struct PendingPlayTests {
         // Fewer exhausted than at play: nothing has been paid, not -1.
         #expect(play.energyPaid(seen(.exhausted, exhausted: 1)) == 0)
         #expect(!play.isSettled(seen(.exhausted, exhausted: 1)))
+    }
+
+    // MARK: - Spells (150 / 556.2)
+
+    private func spell(energy: Int = 1) -> PendingPlay {
+        PendingPlay(
+            name: "Gust", mustExhaustCard: false, mustGoToTrash: true,
+            energyCost: energy, powerCost: 0, eligibleDomains: [],
+            exhaustedRunesAtPlay: 0, runesInAreaAtPlay: 3
+        )
+    }
+
+    /// 150: a Spell "creates a game effect according to its instructions
+    /// and is then placed in the Trash." The trash step comes **after** the
+    /// cost, not alongside it — asking for both at once would have the
+    /// player sweep the card away before turning the runes that paid for
+    /// it, leaving nothing on the table to say what the runes were for.
+    @Test("A spell is paid for before it's asked to go to the trash")
+    func spellIsPaidBeforeItIsBinned() {
+        let gust = spell(energy: 1)
+
+        let unpaid = gust.outstanding(seen(.ready, zone: .base, exhausted: 0))
+        #expect(unpaid == ["exhaust 1 more rune"])
+        #expect(!unpaid.contains { $0.contains("trash") })
+    }
+
+    @Test("Once paid, the spell is asked for the trash")
+    func paidSpellIsAskedForTheTrash() {
+        let gust = spell(energy: 1)
+        let owed = gust.outstanding(seen(.ready, zone: .base, exhausted: 1))
+
+        #expect(owed == ["put Gust in your trash"])
+    }
+
+    @Test("A spell in the trash with its cost paid is settled")
+    func binnedSpellIsSettled() {
+        let gust = spell(energy: 1)
+
+        #expect(gust.isSettled(seen(.ready, zone: .trash, exhausted: 1)))
+    }
+
+    /// A Spell is never turned sideways — it has no board form to exhaust.
+    @Test("A spell is never asked to be turned sideways")
+    func spellIsNeverExhausted() {
+        let owed = spell(energy: 0).outstanding(seen(.ready, zone: .base))
+
+        #expect(!owed.contains { $0.contains("sideways") })
+    }
+
+    /// A free spell still has to reach the trash — payment isn't what makes
+    /// the step apply.
+    @Test("A free spell still has to reach the trash")
+    func freeSpellStillGoesToTrash() {
+        let free = spell(energy: 0)
+
+        #expect(!free.isSettled(seen(.ready, zone: .base)))
+        #expect(free.isSettled(seen(.ready, zone: .trash)))
     }
 
     // MARK: - How it reads on the bar

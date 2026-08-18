@@ -217,10 +217,36 @@ final class CameraPipelineController: ObservableObject {
     /// only the change matters.
     var handBaseline = 0
 
-    /// Rule 515.3.b/645.7: 2, or 3 on the first turn of the player going
-    /// last. Still a manual input — whose first turn it is is exactly what
-    /// this app can't see.
-    var runesToChannelThisTurn = 2
+    /// Rule 645.7: in 1v1 the player going **second** channels an extra
+    /// rune on their first Channel Phase. Defaults to true because that's
+    /// the seat this app is set up for — the single local player is the
+    /// one taking the second turn.
+    var playerGoesSecond = true
+
+    /// How many of this player's own Channel Phases have already run.
+    /// Rule 515.3.b needs "is this their first turn", which no global round
+    /// counter answers — `ManualGameState.round` counts cycles of turn
+    /// order, not this player's turns.
+    var completedChannelPhases = 0
+
+    /// Rule 515.3.b/645.7: 3 on the second player's opening turn, 2 every
+    /// turn after that.
+    ///
+    /// Delegated to the engine's `RuneChannelPace` rather than restating
+    /// the arithmetic here — it is the same rule the Expert System's own
+    /// Channel Step uses, and two copies of "3 then 2" is exactly the pair
+    /// that drifts. The turn order is synthesized because this app has one
+    /// seat and `GameState.turnOrder` therefore has one entry, which can't
+    /// express "there is another player and they went first"; 645.7 keys
+    /// off going *last*, so the local player is placed accordingly.
+    var runesToChannelThisTurn: Int {
+        let opponent = PlayerID()
+        return RuneChannelPace.runesToChannel(
+            for: localPlayerID,
+            turnOrder: playerGoesSecond ? [opponent, localPlayerID] : [localPlayerID, opponent],
+            completedTurns: completedChannelPhases
+        )
+    }
 
     /// Phase as of the previous poll, so entering a phase can be
     /// distinguished from sitting in it — the baseline and the hold points
@@ -1010,6 +1036,11 @@ extension CameraPipelineController {
             }
             if gameState.phase == .draw {
                 handBaseline = observed.filter { $0.zone.isHand(for: .player1) }.count
+                // Leaving Channel for Draw is the Channel Phase completing.
+                // Counted on the way out rather than the way in, so the
+                // phase itself still sees `completedChannelPhases == 0` and
+                // asks for the opening three.
+                completedChannelPhases += 1
             }
             hasAwardedHoldPoints = false
             // A play left unsettled when the phase changed isn't chased
@@ -1212,6 +1243,7 @@ extension CameraPipelineController {
             || card.energyCost > 0
             || card.powerCost > 0
             || card.kind == .unit || card.kind == .champion
+            || card.kind == .spell
             || !card.abilities.isEmpty
         guard owesSomething else { return }
         paymentNotice = progress
@@ -1223,11 +1255,17 @@ extension CameraPipelineController {
         // play: the answer there is "put it back", not "now pay for it".
         guard !progress.needsCorrection else { return }
         let mustExhaustCard = (card.kind == .unit || card.kind == .champion) && !card.entersReady
-        guard mustExhaustCard || card.energyCost > 0 || card.powerCost > 0 else { return }
+        // 150/556.2: a Spell has no board form — it resolves and goes to
+        // the Trash. It's laid in the Base while being paid for, which is
+        // how it's played at a table, so the play isn't finished until the
+        // card is swept away.
+        let mustGoToTrash = card.kind == .spell
+        guard mustExhaustCard || mustGoToTrash || card.energyCost > 0 || card.powerCost > 0 else { return }
 
         pendingPlay = PendingPlay(
             name: card.name,
             mustExhaustCard: mustExhaustCard,
+            mustGoToTrash: mustGoToTrash,
             energyCost: card.energyCost,
             powerCost: card.powerCost,
             eligibleDomains: card.eligibleDomains,
@@ -1243,11 +1281,13 @@ extension CameraPipelineController {
     /// old one — and the event that opened this play carried a `CardDefID`,
     /// not a `TrackedObjectID`.
     private func observation(of play: PendingPlay, in cards: [ObservedCard]) -> PendingPlay.Observation {
-        let onBoard = cards.first {
-            $0.name == play.name && ($0.zone == .base || $0.zone == .battlefield)
-        }
+        // Searched across the whole table, not just the board: a Spell's
+        // last step is reaching the Trash, and a search limited to Base and
+        // Battlefield would lose sight of it exactly when it matters.
+        let found = cards.first { $0.name == play.name }
         return PendingPlay.Observation(
-            cardStance: onBoard?.stance,
+            cardStance: found?.stance,
+            cardZone: found?.zone,
             exhaustedRunesNow: autoDetectRunes.filter { !$0.isReady }.count,
             runesInAreaNow: autoDetectRunes.count
         )
