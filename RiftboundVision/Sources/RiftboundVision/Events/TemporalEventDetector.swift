@@ -102,7 +102,25 @@ public final class TemporalEventDetector: @unchecked Sendable {
         let objectsByID = Dictionary(uniqueKeysWithValues: result.objects.map { ($0.id, $0) })
 
         for object in result.objects {
-            let rawRotationBucket = rotationBucket(object.rotation)
+            // `CoreMLCardDetector` only ever reports `rotation: 0` (YOLO
+            // gives axis-aligned boxes, no true angle) — feeding that
+            // straight in would mean `.objectRotated` can never fire, so
+            // Exhaust/Ready (591–593) could never be observed live. Reuse
+            // the same box-aspect heuristic `TrackedObject.stance` and
+            // `BoardStatePersistence` already rely on instead: a tapped
+            // card's box is wider than it is tall regardless of whether
+            // the detector can report a real angle. This only
+            // distinguishes Ready/Exhausted (0°/90°), not which of the 4
+            // rotational quadrants a card is in — that's all rules 591–593
+            // need. Known caveat: this is printing-unaware, so a
+            // naturally-landscape print (Battlefields) observed as a wide
+            // box would misread as Exhausted; `CardPrinting
+            // .isExhausted(observedBoundingBox:)` is the printing-aware
+            // version already used once a card is identified, but wiring
+            // that here needs a card-database dependency this layer
+            // doesn't have.
+            let effectiveRotation: CGFloat = object.stance == .exhausted ? .pi / 2 : 0
+            let rawRotationBucket = rotationBucket(effectiveRotation)
             let currentBoardZone = zoneMapper.boardZone(for: object.center)
 
             guard var record = history[object.id] else {

@@ -35,7 +35,19 @@ private struct Pipeline {
     var timestamp: TimeInterval = 0
 
     mutating func step(_ point: CGPoint, type: ObjectType = .card, rotation: CGFloat = 0, present: Bool = true) -> [VisionEvent] {
-        let detections = present ? [Detection(type: type, center: point, boundingBox: CGRect(x: point.x - 10, y: point.y - 15, width: 20, height: 30), rotation: rotation, confidence: 0.95)] : []
+        // `TemporalEventDetector` now derives rotation from `TrackedObject
+        // .stance` (bounding-box aspect ratio — see `CGRect.cardStance`),
+        // not from `Detection.rotation` directly (`CoreMLCardDetector`
+        // never reports a real angle). A non-zero `rotation` here has to
+        // produce a wide (Exhausted-shaped) box, or `.stance` stays
+        // `.ready` regardless of what `rotation` says, and no
+        // `.objectRotated` event ever fires. Ready's box is unchanged
+        // (20×30, same as before this existed) so every other test that
+        // doesn't pass `rotation` is unaffected.
+        let isExhausted = rotation != 0
+        let boxWidth: CGFloat = isExhausted ? 30 : 20
+        let boxHeight: CGFloat = isExhausted ? 20 : 30
+        let detections = present ? [Detection(type: type, center: point, boundingBox: CGRect(x: point.x - boxWidth / 2, y: point.y - boxHeight / 2, width: boxWidth, height: boxHeight), rotation: rotation, confidence: 0.95)] : []
         let previous = frame == 0 ? nil : timestamp
         frame += 1
         timestamp = Double(frame) / 30
