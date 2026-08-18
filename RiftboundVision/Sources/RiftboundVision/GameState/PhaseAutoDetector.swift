@@ -343,6 +343,33 @@ public struct PhaseAutoDetector: Sendable {
 
     private static let abilityZones: Set<Zone> = [.base, .battlefield, .legend, .champion]
 
+    // MARK: - Holding a play open until it's paid for
+
+    /// The Action Phase while a play is still being paid for.
+    ///
+    /// Everything else the player might do is blocked until this settles.
+    /// Not because two actions can't overlap in the rules, but because a
+    /// half-paid play is a board the engine and the table disagree about,
+    /// and every action stacked on top inherits that disagreement — by the
+    /// time it surfaces, there's no telling which move went wrong.
+    public func settlement(of play: PendingPlay, observing observation: PendingPlay.Observation) -> Progress {
+        let owed = play.outstanding(observation)
+
+        guard !owed.isEmpty else {
+            return Progress(
+                headline: "\(play.name) is paid for.",
+                detail: "Your move — play another card, move a unit, or end your turn.",
+                isComplete: true
+            )
+        }
+
+        return Progress(
+            headline: "Finish playing \(play.name): \(sentence(owed)).",
+            detail: "Nothing else counts until this is paid for (Rules 139.4, 157.2).",
+            needsCorrection: true
+        )
+    }
+
     // MARK: - Paying for a play (130.2/130.3)
 
     /// Checks a card just put down from hand against the Runes actually in

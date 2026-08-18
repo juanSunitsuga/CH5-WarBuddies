@@ -198,6 +198,12 @@ final class CameraPipelineController: ObservableObject {
     /// between frames.
     var abilitySummaryCache: [String: [String]] = [:]
 
+    /// A card on the board that hasn't been paid for yet. While this is
+    /// set, the Action Phase is held open: the bar keeps asking for the
+    /// outstanding steps and no further play is accepted. Cleared the
+    /// moment the table shows every obligation met.
+    @Published private(set) var pendingPlay: PendingPlay?
+
     /// Runes currently in the player's rune area, with their stances — the
     /// input to every affordability question (130.2/130.3).
     private(set) var autoDetectRunes: [ObservedRune] = []
@@ -1006,6 +1012,11 @@ extension CameraPipelineController {
                 handBaseline = observed.filter { $0.zone.isHand(for: .player1) }.count
             }
             hasAwardedHoldPoints = false
+            // A play left unsettled when the phase changed isn't chased
+            // into the next one. Ending the turn is the player asserting
+            // they're done, and holding last turn's obligation over them
+            // would make the app impossible to get out of.
+            pendingPlay = nil
         }
 
         let detector = PhaseAutoDetector(
@@ -1023,6 +1034,23 @@ extension CameraPipelineController {
         }
 
         let progress = detector.progress(for: gameState.phase, cards: observed, seat: .player1)
+
+        // An unsettled play outranks everything: until it's paid for, what
+        // the phase wants next is irrelevant.
+        if let play = pendingPlay {
+            let observation = observation(of: play, in: observed)
+            var settlement = detector.settlement(of: play, observing: observation)
+            settlement.steps = detector.abilitySteps(cards: observed, seat: .player1)
+
+            if settlement.isComplete {
+                // Paid. Drop the hold and let the next poll speak normally.
+                pendingPlay = nil
+                paymentNotice = nil
+                paymentNoticeRaisedAt = nil
+            }
+            phaseProgress = settlement
+            return
+        }
 
         // A payment notice replaces the *headline*, not the board. The
         // ability list is a standing property of what's in play, so it
@@ -1169,6 +1197,11 @@ extension CameraPipelineController {
             abilities: abilitySummaries(for: printing)
         )
 
+        // One play at a time. A second card landing while the first is
+        // still unpaid is the player getting ahead of themselves, and
+        // accepting it would bury the obligation they already owe.
+        guard pendingPlay == nil else { return }
+
         let progress = PhaseAutoDetector().paymentProgress(for: card, runes: autoDetectRunes)
         // Only speak up when there's something to say — a free card played
         // with a full rune area doesn't need narrating over the verdict the
@@ -1184,5 +1217,39 @@ extension CameraPipelineController {
         paymentNotice = progress
         paymentNoticeRaisedAt = Date()
         phaseProgress = progress
+
+        // Affordable and something is owed → hold the phase open until the
+        // table shows it paid. Unaffordable plays don't open a pending
+        // play: the answer there is "put it back", not "now pay for it".
+        guard !progress.needsCorrection else { return }
+        let mustExhaustCard = (card.kind == .unit || card.kind == .champion) && !card.entersReady
+        guard mustExhaustCard || card.energyCost > 0 || card.powerCost > 0 else { return }
+
+        pendingPlay = PendingPlay(
+            name: card.name,
+            mustExhaustCard: mustExhaustCard,
+            energyCost: card.energyCost,
+            powerCost: card.powerCost,
+            eligibleDomains: card.eligibleDomains,
+            exhaustedRunesAtPlay: autoDetectRunes.filter { !$0.isReady }.count,
+            runesInAreaAtPlay: autoDetectRunes.count
+        )
+    }
+
+    /// What the table currently says about an unsettled play.
+    ///
+    /// The card is found by name among the player's board zones, because
+    /// the played card arrives as a *new* track — picking it up ended the
+    /// old one — and the event that opened this play carried a `CardDefID`,
+    /// not a `TrackedObjectID`.
+    private func observation(of play: PendingPlay, in cards: [ObservedCard]) -> PendingPlay.Observation {
+        let onBoard = cards.first {
+            $0.name == play.name && ($0.zone == .base || $0.zone == .battlefield)
+        }
+        return PendingPlay.Observation(
+            cardStance: onBoard?.stance,
+            exhaustedRunesNow: autoDetectRunes.filter { !$0.isReady }.count,
+            runesInAreaNow: autoDetectRunes.count
+        )
     }
 }
