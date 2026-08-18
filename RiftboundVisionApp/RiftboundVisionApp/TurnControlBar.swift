@@ -48,7 +48,16 @@ struct TurnControlBar: View {
     }
 
     private func content(now: Date) -> some View {
-        let recent = instructions.filter { now.timeIntervalSince($0.timestamp) < Self.verdictLifetime }
+        // Rule 516.2: only the Action Phase's contents are the player's to
+        // choose, so it's the only phase where "was that allowed?" is a
+        // question worth answering. During Awaken, Beginning, Channel and
+        // Draw the player is carrying out a fixed script (515) — readying
+        // cards, dealing runes — and reporting a verdict on each card they
+        // touch while doing it buried the one line that told them what to
+        // do under things like "Nothing to do for Chaos Rune."
+        let recent = gameState.phase.validatesPlayerMoves
+            ? instructions.filter { now.timeIntervalSince($0.timestamp) < Self.verdictLifetime }
+            : []
         // Accepted and rejected are decisions about a move the player made;
         // the rest is commentary. Prefer a decision, then fall back to the
         // newest of anything.
@@ -115,17 +124,30 @@ struct TurnControlBar: View {
             .toggleStyle(.switch)
             .fixedSize()
 
-            Button("Next") {
-                gameState.advance()
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isAutoDetecting)
+            // Nothing follows the Action Phase (516.6), so "Next" there
+            // would do exactly what "End Turn" does. Two buttons with the
+            // same effect and different names read as two different
+            // choices, so only one is offered: step through the fixed
+            // phases, then end the turn.
+            if gameState.phase.validatesPlayerMoves {
+                Button("End Turn") {
+                    gameState.endTurn()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isAutoDetecting)
+            } else {
+                Button("Next") {
+                    gameState.advance()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isAutoDetecting)
 
-            Button("End Turn") {
-                gameState.endTurn()
+                Button("End Turn") {
+                    gameState.endTurn()
+                }
+                .buttonStyle(.bordered)
+                .disabled(isAutoDetecting)
             }
-            .buttonStyle(.bordered)
-            .disabled(isAutoDetecting)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 18)
