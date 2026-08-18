@@ -124,7 +124,10 @@ enum GameSessionBuilder {
     /// the six Domains (133) rather than a guessed default — a printing
     /// with an unrecognized Domain string is a data problem worth
     /// surfacing, not silently dropping into "domainless."
-    private static func domain(named raw: String) -> Domain? {
+    /// Not private: `CameraPipelineController` resolves domains for the
+    /// validator through this same helper, so both sides of the pipeline
+    /// read a printing's domain identically.
+    static func domain(named raw: String) -> Domain? {
         Domain(caseInsensitive: raw)
     }
 

@@ -678,7 +678,8 @@ final class CameraPipelineController: ObservableObject {
             return .init(
                 databaseID: printing?.id,
                 name: printing?.name,
-                printedText: printing?.text.plain
+                printedText: printing?.text.plain,
+                domains: printing?.classification.domain.compactMap(GameSessionBuilder.domain(named:)) ?? []
             )
         }
         // Written synchronously from inside `GameEngine.process`, read
