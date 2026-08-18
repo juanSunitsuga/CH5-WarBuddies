@@ -99,12 +99,9 @@ final class BoardStatePersistence {
     private func upsert(_ object: TrackedObject, in objects: [TrackedObject], zone: Zone) {
         let printing = printing(for: object.id, in: objects)
         let zoneRaw = zone.rawValue
-        // Prefer the printing-aware Exhaust check once the card is
-        // recognized: a Battlefield is printed landscape and would read as
-        // permanently tapped under the geometry-only fallback.
-        let stance: CardStance = printing.map {
-            $0.isExhausted(observedBoundingBox: object.boundingBox) ? .exhausted : .ready
-        } ?? object.stance
+        // Printing-aware once the card is recognized — see
+        // `TrackedObject.stance(knowing:)` for why shape alone isn't enough.
+        let stance = object.stance(knowing: printing)
         let orientationRaw = stance.rawValue
         let underlaid = object.underlaidCardIDs
 

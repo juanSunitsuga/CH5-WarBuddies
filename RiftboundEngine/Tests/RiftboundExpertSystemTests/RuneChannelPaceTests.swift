@@ -33,3 +33,31 @@ struct RuneChannelPaceTests {
         #expect(RuneChannelPace.expectedRunesChanneled(for: solo, turnOrder: [solo], completedTurns: 3) == 6)
     }
 }
+
+/// Rule 645.7 as the app's Channel Phase asks it: three runes on the second
+/// player's opening turn, two every turn after.
+struct SecondPlayerOpeningChannelTests {
+
+    @Test("The player going second channels 3 then 2 thereafter")
+    func secondPlayerChannelsThreeThenTwo() {
+        let first = PlayerID()
+        let second = PlayerID()
+        let order = [first, second]
+
+        #expect(RuneChannelPace.runesToChannel(for: second, turnOrder: order, completedTurns: 0) == 3)
+        #expect(RuneChannelPace.runesToChannel(for: second, turnOrder: order, completedTurns: 1) == 2)
+        #expect(RuneChannelPace.runesToChannel(for: second, turnOrder: order, completedTurns: 5) == 2)
+    }
+
+    /// The player going first never gets the bonus — 645.7 gives it to the
+    /// one going last, to offset the opening tempo they didn't get.
+    @Test("The player going first channels 2 every turn")
+    func firstPlayerAlwaysChannelsTwo() {
+        let first = PlayerID()
+        let second = PlayerID()
+        let order = [first, second]
+
+        #expect(RuneChannelPace.runesToChannel(for: first, turnOrder: order, completedTurns: 0) == 2)
+        #expect(RuneChannelPace.runesToChannel(for: first, turnOrder: order, completedTurns: 3) == 2)
+    }
+}

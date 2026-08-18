@@ -62,10 +62,34 @@ public enum LegalityValidator {
         /// OCR observed a player draw a card whose "when I enter play, draw
         /// a card" trigger hasn't actually resolved yet.
         case limitedActionNotAuthorized(GameAction)
+        /// Rule 516.1/140.1.a: this action belongs to the Action Phase, and
+        /// the turn hasn't reached it (or has left it). Everything before
+        /// the Action Phase — Awaken, Beginning, Channel, Draw — is fixed
+        /// and automatic (515), so a player physically playing a card
+        /// during it is acting out of turn structure, not merely early.
+        case notActionPhase(Phase)
+        /// Rule 140.4: a Standard Move's Destination is restricted to Base
+        /// → Battlefield and Battlefield → Base. Battlefield → Battlefield
+        /// requires Ganking (140.4.c/722), and Base → Base isn't a Move at
+        /// all.
+        case illegalMoveDestination(from: Location, to: Location)
+        /// Rule 594.3: a Recycle used as a cost has to be completable — the
+        /// player has no Rune of this Domain in their Rune Area to send
+        /// back to the Rune Deck, so the Power it would produce can't be
+        /// paid for.
+        case noRuneOfDomainAvailable(Domain)
+        /// Rule 633: the game is over. Nothing further is legal.
+        case gameAlreadyWon(PlayerID)
         case notImplemented
     }
 
     public static func validate(_ action: GameAction, in state: GameState, proposedBy player: PlayerID) -> Result<Void, Failure> {
+        // Rule 633: a player already won — the game ended immediately, so
+        // nothing after it is legal regardless of how plausible it looks.
+        if let winner = state.winner {
+            return .failure(.gameAlreadyWon(winner))
+        }
+
         switch action {
         case .play(let card, let destination, let additionalChoices, let observedExhaustedRuneCount):
             return validatePlay(card: card, destination: destination, additionalChoices: additionalChoices, observedExhaustedRuneCount: observedExhaustedRuneCount, in: state, player: player)
@@ -76,12 +100,43 @@ public enum LegalityValidator {
         case .pass:
             return validatePass(in: state, player: player)
 
+        // Rule 516.6: ending the Action Phase is the Turn Player's to
+        // declare, and only from within the Action Phase — there is
+        // nothing to end before it starts.
+        case .endTurn:
+            guard case .action = state.phase else {
+                return .failure(.notActionPhase(state.phase))
+            }
+            guard state.turnPlayer == player else {
+                return .failure(.notPlayersPriority)
+            }
+            return .success(())
+
         // Rule 589.2: Limited Actions are never player-initiated at will —
         // every one of them is legal only if something already authorized
         // it (see `GameState.pendingLimitedActions`). The check is
         // identical across all of them; only *application* differs per
         // case, and only `.draw` has that built out so far.
-        case .draw, .exhaust, .ready, .recycle, .recycleRune, .discard, .stun, .reveal,
+        case .recycleRune(let domain):
+            return validateRuneAbility(in: state, player: player) {
+                // 594.3: "the action must be able to be completed for the
+                // cost to be paid" — no matching Rune, no Power.
+                state.runes.values.contains { $0.controller == player && $0.domain == domain }
+                    ? nil
+                    : .noRuneOfDomainAvailable(domain)
+            }
+
+        case .exhaust(let objects):
+            // 157.2.a's `[T]: Add [1]` is likewise this Rune's own ability,
+            // so exhausting your own Runes is discretionary. Exhausting
+            // anything else stays a Limited Action (592) — an opponent's
+            // Unit doesn't exhaust because you decided so.
+            if !objects.isEmpty, objects.allSatisfy({ state.runes[$0]?.controller == player }) {
+                return validateRuneAbility(in: state, player: player) { nil }
+            }
+            return validateLimitedAction(action, in: state, player: player)
+
+        case .draw, .ready, .recycle, .discard, .stun, .reveal,
              .counter, .buff, .banish, .kill, .add, .channel, .burnOut:
             return validateLimitedAction(action, in: state, player: player)
 
@@ -131,6 +186,14 @@ public enum LegalityValidator {
         in state: GameState,
         player: PlayerID
     ) -> Result<Void, LegalityValidator.Failure> {
+        // 516.1/148: cards are played during the Action Phase. The four
+        // Start of Turn steps are fixed and automatic (515) and grant no
+        // window to act in, so a card played during them isn't early — it's
+        // out of structure. A Showdown is *inside* the Action Phase, so
+        // this doesn't block Reactions during one.
+        guard case .action = state.phase else {
+            return .failure(.notActionPhase(state.phase))
+        }
         guard state.playerWithPriority(for: player) else {
             return .failure(.notPlayersPriority)
         }
@@ -218,6 +281,45 @@ public enum LegalityValidator {
         return .success(())
     }
 
+    /// Rule 157.2 + 577: a Rune's two intrinsic abilities —
+    /// `[T]: Add [1]` and `Recycle this: Add [C]` — are **Activated
+    /// Abilities** (577.2 recognizes them by the `:`), whose costs happen
+    /// to be Exhausting and Recycling. Activating an ability is a
+    /// Discretionary Action (589.1), so these need Priority and a legal
+    /// window, *not* an entry in `pendingLimitedActions`.
+    ///
+    /// This distinction is why the pipeline could not produce Energy or
+    /// Power at all before: both actions were gated on 589.2 authorization
+    /// that nothing ever granted, so every observed rune turn or recycle
+    /// came back "nothing has called for that action yet." 594.2.a is
+    /// explicit that Recycling happens when instructed by effects **or
+    /// costs**, and paying for a card is a cost.
+    ///
+    /// Priority is the only timing gate, deliberately wider than 589.1.a's
+    /// "Neutral Open State": costs are paid *during* the process of playing
+    /// a card (560–561), including a Reaction played into a Chain or a
+    /// Showdown, so restricting rune payment to Neutral Open would make
+    /// those unplayable.
+    ///
+    /// 577.3 says Activated Abilities use the Chain. These two resolve
+    /// immediately instead — putting "add 1 energy" on the Chain would
+    /// require a full pass-around before the Energy existed to spend, and
+    /// physically the player just turns the rune as they pay. Noted here
+    /// rather than silently diverged from.
+    private static func validateRuneAbility(
+        in state: GameState,
+        player: PlayerID,
+        costCheck: () -> Failure?
+    ) -> Result<Void, LegalityValidator.Failure> {
+        guard state.playerWithPriority(for: player) else {
+            return .failure(.notPlayersPriority)
+        }
+        if let failure = costCheck() {
+            return .failure(failure)
+        }
+        return .success(())
+    }
+
     /// Rule 589.2: legal iff a rule or effect has already authorized this
     /// exact Limited Action for this player (`GameState.authorize(_:for:)`).
     private static func validateLimitedAction(
@@ -237,17 +339,29 @@ public enum LegalityValidator {
     ///   - 140.2: exhausting the unit(s) is the cost.
     ///   - 140.3: multiple units may move together to the *same*
     ///     Destination simultaneously; their Origins need not match.
+    ///   - 140.4: the Destination is restricted — Base → Battlefield and
+    ///     Battlefield → Base only, unless the Unit has Ganking (140.4.c/
+    ///     722), which additionally allows Battlefield → Battlefield.
     ///   - 140.4.a.1 / 610.2.a / 623.2: a Battlefield already occupied by
     ///     units from 2 *other* players is an invalid destination.
+    ///
+    /// One Move goes to one Destination (140.3.a), and `destination` being
+    /// a single value is what enforces that — a player cannot split a Move
+    /// across two Battlefields, which is why each Showdown is about exactly
+    /// one Battlefield.
     private static func validateStandardMove(
         _ unitIDs: [ObjectID],
         destination: Location,
         in state: GameState,
         player: PlayerID
     ) -> Result<Void, LegalityValidator.Failure> {
-        // 140.1.a/b/c: must be Neutral Open, and (for simplicity here) we
-        // require it be this player's turn — team-mode exceptions to
-        // "whose turn" are not yet modeled (see 516.2.b.1, 648.8.a).
+        // 140.1.a: only during the player's Action Phase.
+        guard case .action = state.phase else {
+            return .failure(.notActionPhase(state.phase))
+        }
+        // 140.1.b/c: not during a Closed State, and not during a Showdown —
+        // both of which `.neutralOpen` excludes in one check. This is why a
+        // Showdown is a real pause: you can't keep moving units into it.
         guard case .neutralOpen = state.turnState else {
             return .failure(.notPlayersPriority)
         }
@@ -261,6 +375,9 @@ public enum LegalityValidator {
             }
             guard !unit.isExhausted else {
                 return .failure(.unitAlreadyExhausted(unitID))
+            }
+            guard isLegalMove(from: unit.location, to: destination, unit: unit) else {
+                return .failure(.illegalMoveDestination(from: unit.location, to: destination))
             }
         }
 
@@ -277,6 +394,31 @@ public enum LegalityValidator {
         }
 
         return .success(())
+    }
+
+    /// Rule 140.4: which Origin → Destination pairs a Standard Move allows.
+    ///
+    ///   - 140.4.a: Base → Battlefield.
+    ///   - 140.4.b: Battlefield → Base.
+    ///   - 140.4.c.1: Battlefield → Battlefield, **only** with Ganking (722).
+    ///
+    /// Base → Base is absent from the rule and is not a Move at all. A Unit
+    /// moving to the Battlefield it is already at is likewise rejected: it
+    /// would pay the Exhaust cost (140.2) for no change of Location, and
+    /// in practice it means the camera saw a unit jitter rather than move.
+    private static func isLegalMove(from origin: Location, to destination: Location, unit: Unit) -> Bool {
+        switch (origin, destination) {
+        case (.base, .battlefield):
+            return true                                    // 140.4.a
+        case (.battlefield, .base):
+            return true                                    // 140.4.b
+        case (.battlefield(let from), .battlefield(let to)):
+            guard from != to else { return false }
+            return unit.printedKeywords.contains(.ganking)
+                || unit.grantedKeywords.contains(.ganking)  // 140.4.c.1
+        case (.base, .base):
+            return false
+        }
     }
 }
 

@@ -159,12 +159,35 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         }
     }
 
-    /// Stage 3b: card text → structured effects. `ActionTranslatingEngine`
-    /// doesn't implement ability parsing at all yet (it only infers *that*
-    /// a card was played, not what its ability does) — flagging this gap
-    /// rather than inventing behavior, per CLAUDE.md point 4.
+    /// Stage 3b: card text → structured effects (`CardAbilityParser`).
+    ///
+    /// Falls back to the card's own printed text when `rawText` is empty:
+    /// the caller often has only a `CardDefID`, and this package's database
+    /// knows the text for every printing it ships. Refusing to parse
+    /// because the *caller* didn't supply text would make the common path
+    /// the useless one.
+    ///
+    /// Targeted effects come back with `TargetSpec.placeholder`, because
+    /// that type is still a placeholder in the engine by design — until it
+    /// can express "a unit at a battlefield", the *summary* on
+    /// `ParsedAbility` is what carries the meaning, and
+    /// `abilitySummaries(for:)` is what the UI should show. What this does
+    /// give the engine today is the untargeted cases — Draw, Channel,
+    /// Discard — which are exactly the ones it can already apply.
     public func parseAbility(rawText: String, cardDefinitionID: CardDefID) async -> [EffectInstruction] {
-        []
+        CardAbilityParser.instructions(for: text(rawText, or: cardDefinitionID))
+    }
+
+    /// Player-facing reading of a card's abilities, each named by the Game
+    /// Action it resolves to (586–607). What the app puts on screen when a
+    /// card is played or selected.
+    public func abilitySummaries(for cardDefinitionID: CardDefID, rawText: String = "") -> [ParsedAbility] {
+        CardAbilityParser.read(text(rawText, or: cardDefinitionID)).abilities
+    }
+
+    private func text(_ rawText: String, or cardDefinitionID: CardDefID) -> String {
+        guard rawText.isEmpty else { return rawText }
+        return cardContext(cardDefinitionID)?.printedText ?? ""
     }
 
     // MARK: - Translation

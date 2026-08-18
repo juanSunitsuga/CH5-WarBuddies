@@ -430,6 +430,11 @@ struct PlayActionTests {
         let card = Self.handCard(owner: playerA, powerCost: 1, eligibleDomains: [.chaos])
         state.zones[playerA]?.hand.append(card)
 
+        // 594.3/157.2.b: a Rune has to actually be in the Rune Area to be
+        // Recycled — Recycling is returning that physical card to the Rune
+        // Deck, not conjuring Power from nothing.
+        TestFixtures.channelRunes([.fury, .chaos], for: playerA, into: &state)
+
         GameActionApplier.apply(.recycleRune(domain: .fury), to: &state, proposedBy: playerA)
         GameActionApplier.apply(.recycleRune(domain: .chaos), to: &state, proposedBy: playerA)
 
@@ -576,14 +581,3 @@ struct PlayActionTests {
     }
 }
 
-private extension Result where Success == Void, Failure == LegalityValidator.Failure {
-    var isSuccess: Bool {
-        if case .success = self { return true }
-        return false
-    }
-
-    var failureValue: LegalityValidator.Failure? {
-        if case .failure(let error) = self { return error }
-        return nil
-    }
-}

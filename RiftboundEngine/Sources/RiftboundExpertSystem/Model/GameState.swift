@@ -49,6 +49,12 @@ public struct GameState: Sendable {
 
     public var units: [ObjectID: Unit] = [:]
     public var gear: [ObjectID: Gear] = [:]
+    /// Rule 154/606.1: Runes that have been Channeled onto the board and
+    /// now sit in their controller's Rune Area. Keyed the same way as
+    /// `units` rather than grouped per player — a Rune knows its own
+    /// controller, and one flat table means "every Rune in the game" is a
+    /// single lookup for Awaken (515.1) and the vision layer's rune count.
+    public var runes: [ObjectID: Rune] = [:]
     public var battlefields: [BattlefieldID: Battlefield]
     public var battlefieldControl: [BattlefieldID: BattlefieldControl] = [:]
     /// Rule 106.4: at most one card per Battlefield's Facedown Zone.
@@ -70,6 +76,25 @@ public struct GameState: Sendable {
     /// not `totalRunesChanneled` alone (recycling removes a Rune from view
     /// without un-channeling it historically).
     public var totalRunesRecycled: [PlayerID: Int] = [:]
+
+    /// How many of their own turns each player has completed the Channel
+    /// Step of. Rule 646.6/647.7: the player going second Channels 3 on
+    /// their first turn instead of 2, so the Channel Step has to know which
+    /// turn this is for *this* player — a global turn counter can't answer
+    /// that. Read by `RuneChannelPace.runesToChannel(for:turnOrder:completedTurns:)`.
+    public var completedChannelSteps: [PlayerID: Int] = [:]
+
+    /// Rule 633: points needed to win, per the Mode of Play. 8 for the
+    /// standard 1v1 mode (645.5); carried on the state rather than hardcoded
+    /// in `Scoring` so team/multiplayer modes (646–648) can set their own
+    /// without the scoring rules needing to know which mode they're in.
+    public var victoryScore: Int = 8
+
+    /// Rule 633: set the moment a player reaches `victoryScore`. Nothing
+    /// beyond this point should be applied — the game ended immediately
+    /// ("they Win the Game immediately"), so this is checked rather than
+    /// inferred from `scores` by every caller in turn.
+    public var winner: PlayerID?
 
     /// Rule 589.2: a Limited Action "is only ever performed when a rule or
     /// effect explicitly calls for it" — never chosen freely by a player.

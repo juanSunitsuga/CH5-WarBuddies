@@ -87,7 +87,7 @@ struct ChainResolverTests {
 
         let resolved = ChainResolver.pass(by: playerA, in: &state)
 
-        #expect(resolved == nil)
+        #expect(resolved.isRecordedOnly)
         #expect(state.turnState.isClosed == false)
     }
 
@@ -98,7 +98,7 @@ struct ChainResolverTests {
 
         let resolved = ChainResolver.pass(by: playerB, in: &state)
 
-        #expect(resolved == nil)
+        #expect(resolved.isRecordedOnly)
         guard case .neutralClosed(let chain) = state.turnState else {
             Issue.record("Expected still Neutral Closed, got \(state.turnState)")
             return
@@ -112,10 +112,10 @@ struct ChainResolverTests {
         var (state, playerA, playerB, _) = TestFixtures.makeTwoPlayerState()
         ChainResolver.push(Self.spellItem(owner: playerA), proposedBy: playerA, to: &state)
 
-        #expect(ChainResolver.pass(by: playerB, in: &state) == nil)
+        #expect(ChainResolver.pass(by: playerB, in: &state).isRecordedOnly)
         let resolved = ChainResolver.pass(by: playerA, in: &state)
 
-        #expect(resolved != nil)
+        #expect(resolved.resolvedItem != nil)
         guard case .neutralOpen = state.turnState else {
             Issue.record("Expected the Chain to have closed back to Neutral Open, got \(state.turnState)")
             return
@@ -132,10 +132,10 @@ struct ChainResolverTests {
         ChainResolver.push(Self.spellItem(owner: playerB), proposedBy: playerB, to: &state)
 
         // Both pass on the top (playerB's) item.
-        #expect(ChainResolver.pass(by: playerA, in: &state) == nil)
+        #expect(ChainResolver.pass(by: playerA, in: &state).isRecordedOnly)
         let resolved = ChainResolver.pass(by: playerB, in: &state)
 
-        #expect(resolved != nil)
+        #expect(resolved.resolvedItem != nil)
         guard case .neutralClosed(let chain) = state.turnState else {
             Issue.record("Expected still Neutral Closed with one item left, got \(state.turnState)")
             return
@@ -157,7 +157,7 @@ struct ChainResolverTests {
         state.turnState = .showdownOpen(showdown)
         ChainResolver.push(Self.spellItem(owner: playerA), proposedBy: playerA, to: &state)
 
-        #expect(ChainResolver.pass(by: playerB, in: &state) == nil)
+        #expect(ChainResolver.pass(by: playerB, in: &state).isRecordedOnly)
         _ = ChainResolver.pass(by: playerA, in: &state)
 
         guard case .showdownOpen = state.turnState else {

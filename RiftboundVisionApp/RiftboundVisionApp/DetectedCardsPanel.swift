@@ -243,20 +243,16 @@ struct DetectedCardsPanel: View {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder
+    /// Thumbnails share `CardArtView` with the detail panel — the two had
+    /// grown separate copies, and both rendered a failed fetch as a dark
+    /// fill indistinguishable from one still loading.
     private func artwork(for printing: CardPrinting, width: CGFloat, height: CGFloat) -> some View {
-        Group {
-            if let url = printing.media.imageURL {
-                AsyncImage(url: url) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Color.black.opacity(0.55)
-                }
-            } else {
-                Color.black.opacity(0.55)
-            }
-        }
+        CardArtView(
+            printing: printing,
+            cornerRadius: 4,
+            contentMode: .fill,
+            showsFailureLabel: false
+        )
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }

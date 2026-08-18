@@ -90,14 +90,3 @@ struct LimitedActionAuthorizationTests {
     }
 }
 
-private extension Result where Success == Void, Failure == LegalityValidator.Failure {
-    var isSuccess: Bool {
-        if case .success = self { return true }
-        return false
-    }
-
-    var failureValue: LegalityValidator.Failure? {
-        if case .failure(let error) = self { return error }
-        return nil
-    }
-}

@@ -7,58 +7,60 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		25860385D3B34D4BAFFA269F /* RiftboundVisionAppApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8139118751494CA29BC83F55 /* RiftboundVisionAppApp.swift */; };
-		4383CFBB6B584A16B8AE027F /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A67FDE6B5FD54571BA3EE059 /* ContentView.swift */; };
-		6DE85F0742A246E596717150 /* CameraPipelineController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38DB5B31D91340FBAFB23CD8 /* CameraPipelineController.swift */; };
-		28BBE6A41DF542389F12D127 /* RiftboundVision in Frameworks */ = {isa = PBXBuildFile; productRef = BAF983D8D87248D98042BA4D /* RiftboundVision */; };
-		627F18754982492DAC803B7F /* CardDatabaseLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3331D3BCD484492BA4DC4050 /* CardDatabaseLoader.swift */; };
-		40EB822647F14E35A612999A /* annie.json in Resources */ = {isa = PBXBuildFile; fileRef = 40BF4C5F514846A583323984 /* annie.json */; };
-		AEAAA284B54A4B9493BD0940 /* lux.json in Resources */ = {isa = PBXBuildFile; fileRef = 27536C6BCCE545FA95F26D33 /* lux.json */; };
-		1DE850A028A146EF8CD2965A /* garen.json in Resources */ = {isa = PBXBuildFile; fileRef = 9840E86F98974947AB667FE5 /* garen.json */; };
+		0AF99833302F1923001D832C /* best-3.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 0AF99832302F1923001D832C /* best-3.mlpackage */; };
 		17EEFEABA0B94E61BA799EE9 /* master_yi.json in Resources */ = {isa = PBXBuildFile; fileRef = 4BAA057A479749368EAEF496 /* master_yi.json */; };
-		C65BD2D963D14E48BD280043 /* best.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = DBF6C0B24D384E309B541FB3 /* best.mlpackage */; };
-		C427EAAA0BF04C90A9681A5E /* CardDetectionModelLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B1739578D24342BFE1DCA0 /* CardDetectionModelLoader.swift */; };
-		93F14F27D8F144288BE9E603 /* GameStateBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3055869C4ECE495FA5A42260 /* GameStateBar.swift */; };
+		1DE850A028A146EF8CD2965A /* garen.json in Resources */ = {isa = PBXBuildFile; fileRef = 9840E86F98974947AB667FE5 /* garen.json */; };
+		25860385D3B34D4BAFFA269F /* RiftboundVisionAppApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8139118751494CA29BC83F55 /* RiftboundVisionAppApp.swift */; };
+		28BBE6A41DF542389F12D127 /* RiftboundVision in Frameworks */ = {isa = PBXBuildFile; productRef = BAF983D8D87248D98042BA4D /* RiftboundVision */; };
+		3017319CBC1F45C2A4AAC042 /* ScoreTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 251D5F4F0E7D46AA9AA7C612 /* ScoreTracker.swift */; };
+		40EB822647F14E35A612999A /* annie.json in Resources */ = {isa = PBXBuildFile; fileRef = 40BF4C5F514846A583323984 /* annie.json */; };
+		4383CFBB6B584A16B8AE027F /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A67FDE6B5FD54571BA3EE059 /* ContentView.swift */; };
+		60C3BF9F45FE4D8AA0EFFCE3 /* InstructionLogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */; };
+		627F18754982492DAC803B7F /* CardDatabaseLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3331D3BCD484492BA4DC4050 /* CardDatabaseLoader.swift */; };
+		690BCB3309B5473291FEE083 /* PipelineSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED891118FA894EA18345F333 /* PipelineSettingsView.swift */; };
+		6DE85F0742A246E596717150 /* CameraPipelineController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38DB5B31D91340FBAFB23CD8 /* CameraPipelineController.swift */; };
+		71EB87BDA66944C493D04B22 /* best-2.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = C80542A83A3C4765A9F7868D /* best-2.mlpackage */; };
 		76DA6F984DFB4D99A0C5E470 /* CardDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880B3B2F2F93462E90B88A3A /* CardDetailView.swift */; };
+		76DA6F984DFB4D99A0C5E471 /* CardArtView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880B3B2F2F93462E90B88A3B /* CardArtView.swift */; };
+		93F14F27D8F144288BE9E603 /* GameStateBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3055869C4ECE495FA5A42260 /* GameStateBar.swift */; };
 		A85A01502EB54B35B708A490 /* DetectedCardsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */; };
+		AEAAA284B54A4B9493BD0940 /* lux.json in Resources */ = {isa = PBXBuildFile; fileRef = 27536C6BCCE545FA95F26D33 /* lux.json */; };
+		C23F1F80285A40E1A5E4C4E1 /* TurnControlBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24E64947F63B40999CFAA66D /* TurnControlBar.swift */; };
+		C3AA581B11C8447994662CBF /* BoardStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */; };
+		C427EAAA0BF04C90A9681A5E /* CardDetectionModelLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3B1739578D24342BFE1DCA0 /* CardDetectionModelLoader.swift */; };
+		C65BD2D963D14E48BD280043 /* best.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = DBF6C0B24D384E309B541FB3 /* best.mlpackage */; };
+		CCCC6491D5C14229AAC7452C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D88B8B2034A14CA4A0D53DCE /* Assets.xcassets */; };
 		E16FF14ECC8F4448823BFD1F /* RiftboundExpertSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 1A78B4275C9F40C0A74AFCE8 /* RiftboundExpertSystem */; };
 		E9DDFFDCB8224BC3BC9ED19C /* RiftboundTextProcessing in Frameworks */ = {isa = PBXBuildFile; productRef = C060F6247F344B33BA6FE317 /* RiftboundTextProcessing */; };
 		FB1E6BC3244E442BAF1B7766 /* GameSessionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72026DCCA9ED4F599499A115 /* GameSessionBuilder.swift */; };
-		60C3BF9F45FE4D8AA0EFFCE3 /* InstructionLogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */; };
-		C23F1F80285A40E1A5E4C4E1 /* TurnControlBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24E64947F63B40999CFAA66D /* TurnControlBar.swift */; };
-		CCCC6491D5C14229AAC7452C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D88B8B2034A14CA4A0D53DCE /* Assets.xcassets */; };
-		3017319CBC1F45C2A4AAC042 /* ScoreTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 251D5F4F0E7D46AA9AA7C612 /* ScoreTracker.swift */; };
-		690BCB3309B5473291FEE083 /* PipelineSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED891118FA894EA18345F333 /* PipelineSettingsView.swift */; };
-		C3AA581B11C8447994662CBF /* BoardStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */; };
-		71EB87BDA66944C493D04B22 /* best-2.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = C80542A83A3C4765A9F7868D /* best-2.mlpackage */; };
-		0AF99833302F1923001D832C /* best-3.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 0AF99832302F1923001D832C /* best-3.mlpackage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		FF5C8EB31C364F5AAD701BF1 /* RiftboundVisionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RiftboundVisionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		8139118751494CA29BC83F55 /* RiftboundVisionAppApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiftboundVisionAppApp.swift; sourceTree = "<group>"; };
-		A67FDE6B5FD54571BA3EE059 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		38DB5B31D91340FBAFB23CD8 /* CameraPipelineController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPipelineController.swift; sourceTree = "<group>"; };
-		76363767637E4BB6B3E788C4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		3331D3BCD484492BA4DC4050 /* CardDatabaseLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDatabaseLoader.swift; sourceTree = "<group>"; };
-		40BF4C5F514846A583323984 /* annie.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = annie.json; sourceTree = "<group>"; };
-		27536C6BCCE545FA95F26D33 /* lux.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lux.json; sourceTree = "<group>"; };
-		9840E86F98974947AB667FE5 /* garen.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = garen.json; sourceTree = "<group>"; };
-		4BAA057A479749368EAEF496 /* master_yi.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = master_yi.json; sourceTree = "<group>"; };
-		DBF6C0B24D384E309B541FB3 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
-		C3B1739578D24342BFE1DCA0 /* CardDetectionModelLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetectionModelLoader.swift; sourceTree = "<group>"; };
-		3055869C4ECE495FA5A42260 /* GameStateBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameStateBar.swift; sourceTree = "<group>"; };
-		880B3B2F2F93462E90B88A3A /* CardDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailView.swift; sourceTree = "<group>"; };
-		B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectedCardsPanel.swift; sourceTree = "<group>"; };
-		24E64947F63B40999CFAA66D /* TurnControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnControlBar.swift; sourceTree = "<group>"; };
-		72026DCCA9ED4F599499A115 /* GameSessionBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSessionBuilder.swift; sourceTree = "<group>"; };
-		3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstructionLogEntry.swift; sourceTree = "<group>"; };
-		D88B8B2034A14CA4A0D53DCE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		251D5F4F0E7D46AA9AA7C612 /* ScoreTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreTracker.swift; sourceTree = "<group>"; };
-		ED891118FA894EA18345F333 /* PipelineSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineSettingsView.swift; sourceTree = "<group>"; };
-		7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardStatePersistence.swift; sourceTree = "<group>"; };
-		C80542A83A3C4765A9F7868D /* best-2.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best-2.mlpackage; sourceTree = "<group>"; };
 		0AF99832302F1923001D832C /* best-3.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = "best-3.mlpackage"; sourceTree = "<group>"; };
+		24E64947F63B40999CFAA66D /* TurnControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnControlBar.swift; sourceTree = "<group>"; };
+		251D5F4F0E7D46AA9AA7C612 /* ScoreTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreTracker.swift; sourceTree = "<group>"; };
+		27536C6BCCE545FA95F26D33 /* lux.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lux.json; sourceTree = "<group>"; };
+		3055869C4ECE495FA5A42260 /* GameStateBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameStateBar.swift; sourceTree = "<group>"; };
+		3331D3BCD484492BA4DC4050 /* CardDatabaseLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDatabaseLoader.swift; sourceTree = "<group>"; };
+		38DB5B31D91340FBAFB23CD8 /* CameraPipelineController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPipelineController.swift; sourceTree = "<group>"; };
+		3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstructionLogEntry.swift; sourceTree = "<group>"; };
+		40BF4C5F514846A583323984 /* annie.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = annie.json; sourceTree = "<group>"; };
+		4BAA057A479749368EAEF496 /* master_yi.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = master_yi.json; sourceTree = "<group>"; };
+		72026DCCA9ED4F599499A115 /* GameSessionBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSessionBuilder.swift; sourceTree = "<group>"; };
+		76363767637E4BB6B3E788C4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardStatePersistence.swift; sourceTree = "<group>"; };
+		8139118751494CA29BC83F55 /* RiftboundVisionAppApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiftboundVisionAppApp.swift; sourceTree = "<group>"; };
+		880B3B2F2F93462E90B88A3A /* CardDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetailView.swift; sourceTree = "<group>"; };
+		880B3B2F2F93462E90B88A3B /* CardArtView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardArtView.swift; sourceTree = "<group>"; };
+		9840E86F98974947AB667FE5 /* garen.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = garen.json; sourceTree = "<group>"; };
+		A67FDE6B5FD54571BA3EE059 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectedCardsPanel.swift; sourceTree = "<group>"; };
+		C3B1739578D24342BFE1DCA0 /* CardDetectionModelLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDetectionModelLoader.swift; sourceTree = "<group>"; };
+		C80542A83A3C4765A9F7868D /* best-2.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = "best-2.mlpackage"; sourceTree = "<group>"; };
+		D88B8B2034A14CA4A0D53DCE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		DBF6C0B24D384E309B541FB3 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
+		ED891118FA894EA18345F333 /* PipelineSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineSettingsView.swift; sourceTree = "<group>"; };
+		FF5C8EB31C364F5AAD701BF1 /* RiftboundVisionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RiftboundVisionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -87,6 +89,16 @@
 			);
 			sourceTree = "<group>";
 		};
+		534CBAAC54BE40A0A8292534 /* CardDetectionModel */ = {
+			isa = PBXGroup;
+			children = (
+				DBF6C0B24D384E309B541FB3 /* best.mlpackage */,
+				C80542A83A3C4765A9F7868D /* best-2.mlpackage */,
+				0AF99832302F1923001D832C /* best-3.mlpackage */,
+			);
+			path = CardDetectionModel;
+			sourceTree = "<group>";
+		};
 		82F90C7A49424A50982483D6 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -113,6 +125,7 @@
 				72026DCCA9ED4F599499A115 /* GameSessionBuilder.swift */,
 				3C45530B07994053A3EEE88E /* InstructionLogEntry.swift */,
 				880B3B2F2F93462E90B88A3A /* CardDetailView.swift */,
+				880B3B2F2F93462E90B88A3B /* CardArtView.swift */,
 				B2DBD986D1FC492CA4B260E1 /* DetectedCardsPanel.swift */,
 				91954CFFD8744AD891AB10D4 /* CardData */,
 				E30AC5E6649148CCA7C653DA /* Resources */,
@@ -138,16 +151,6 @@
 				534CBAAC54BE40A0A8292534 /* CardDetectionModel */,
 			);
 			path = Resources;
-			sourceTree = "<group>";
-		};
-		534CBAAC54BE40A0A8292534 /* CardDetectionModel */ = {
-			isa = PBXGroup;
-			children = (
-				DBF6C0B24D384E309B541FB3 /* best.mlpackage */,
-				C80542A83A3C4765A9F7868D /* best-2.mlpackage */,
-				0AF99832302F1923001D832C /* best-3.mlpackage */,
-			);
-			path = CardDetectionModel;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -252,6 +255,7 @@
 				FB1E6BC3244E442BAF1B7766 /* GameSessionBuilder.swift in Sources */,
 				60C3BF9F45FE4D8AA0EFFCE3 /* InstructionLogEntry.swift in Sources */,
 				76DA6F984DFB4D99A0C5E470 /* CardDetailView.swift in Sources */,
+				76DA6F984DFB4D99A0C5E471 /* CardArtView.swift in Sources */,
 				A85A01502EB54B35B708A490 /* DetectedCardsPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -321,6 +325,68 @@
 			};
 			name = Debug;
 		};
+		21E955D5056A4D3CB9889597 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "riftchamp icon";
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = RiftboundVisionApp/RiftboundVisionApp.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Q7PFUBX7QB;
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RiftboundVisionApp/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.riftbound.RiftboundVisionApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A0CDF38723024C0F99F4F274 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "riftchamp icon";
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = RiftboundVisionApp/RiftboundVisionApp.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Q7PFUBX7QB;
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RiftboundVisionApp/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.riftbound.RiftboundVisionApp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
 		C64A8761F307405E85BF2F0B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -375,80 +441,9 @@
 			};
 			name = Release;
 		};
-		A0CDF38723024C0F99F4F274 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "riftchamp icon";
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CODE_SIGN_IDENTITY = "-";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_ENTITLEMENTS = RiftboundVisionApp/RiftboundVisionApp.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = SSJH6446CA;
-				ENABLE_DEBUG_DYLIB = NO;
-				ENABLE_HARDENED_RUNTIME = NO;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = RiftboundVisionApp/Info.plist;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.riftbound.RiftboundVisionApp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Debug;
-		};
-		21E955D5056A4D3CB9889597 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "riftchamp icon";
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CODE_SIGN_IDENTITY = "-";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_ENTITLEMENTS = RiftboundVisionApp/RiftboundVisionApp.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = SSJH6446CA;
-				ENABLE_DEBUG_DYLIB = NO;
-				ENABLE_HARDENED_RUNTIME = NO;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = RiftboundVisionApp/Info.plist;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.riftbound.RiftboundVisionApp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		8F66E10C8CC94765B08CD136 /* Build configuration list for PBXProject "RiftboundVisionApp" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				161CEC55EDE44BC28FBEF7E9 /* Debug */,
-				C64A8761F307405E85BF2F0B /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		733B175B6A3847B8AF7956B3 /* Build configuration list for PBXNativeTarget "RiftboundVisionApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -458,31 +453,40 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		8F66E10C8CC94765B08CD136 /* Build configuration list for PBXProject "RiftboundVisionApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				161CEC55EDE44BC28FBEF7E9 /* Debug */,
+				C64A8761F307405E85BF2F0B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		EE3AAEDB0AA54C708EABCD87 /* XCLocalSwiftPackageReference "../RiftboundVision" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "../RiftboundVision";
-		};
 		6311E7571EEB4993B3A46B78 /* XCLocalSwiftPackageReference "../RiftboundEngine" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../RiftboundEngine";
+			relativePath = ../RiftboundEngine;
+		};
+		EE3AAEDB0AA54C708EABCD87 /* XCLocalSwiftPackageReference "../RiftboundVision" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../RiftboundVision;
 		};
 		FF5B29316FF740BF9C8CDC6D /* XCLocalSwiftPackageReference "../RiftboundTextProcessing" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../RiftboundTextProcessing";
+			relativePath = ../RiftboundTextProcessing;
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		BAF983D8D87248D98042BA4D /* RiftboundVision */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = RiftboundVision;
-		};
 		1A78B4275C9F40C0A74AFCE8 /* RiftboundExpertSystem */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = RiftboundExpertSystem;
+		};
+		BAF983D8D87248D98042BA4D /* RiftboundVision */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RiftboundVision;
 		};
 		C060F6247F344B33BA6FE317 /* RiftboundTextProcessing */ = {
 			isa = XCSwiftPackageProductDependency;

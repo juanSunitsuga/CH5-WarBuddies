@@ -171,6 +171,92 @@ final class CameraPipelineController: ObservableObject {
     /// implies it. (Cleanup *can* score a contested Battlefield in the
     /// engine, but this app's `GameState` has no opponent seat to score
     /// against, so the two aren't connected yet.)
+    /// What the current phase still needs from the player, recomputed each
+    /// poll. Drives the bar during the fixed phases, where there are no
+    /// verdicts to show (see `TurnControlBar`).
+    @Published private(set) var phaseProgress: PhaseAutoDetector.Progress?
+
+    /// The most recent "here's what this costs" / "put it back" message,
+    /// and when it was raised.
+    ///
+    /// Kept apart from `phaseProgress` because the two have different
+    /// lifetimes: `phaseProgress` is recomputed from scratch every poll,
+    /// so a payment message written into it would be overwritten by the
+    /// next frame's generic "Your move." — the player would see the
+    /// warning flash and vanish. This one is event-driven and persists
+    /// until it's stale or answered.
+    @Published private(set) var paymentNotice: PhaseAutoDetector.Progress?
+    private var paymentNoticeRaisedAt: Date?
+
+    /// How long a payment message stays up. Long enough to read and act
+    /// on, short enough that it can't be mistaken for a statement about a
+    /// later card — the same reasoning as `TurnControlBar.verdictLifetime`.
+    private static let paymentNoticeLifetime: TimeInterval = 12
+
+    /// Parsed-ability text per printing. The poll re-reads the same cards
+    /// several times a second; parsing is pure, so the answer can't change
+    /// between frames.
+    var abilitySummaryCache: [String: [String]] = [:]
+
+    /// A card on the board that hasn't been paid for yet. While this is
+    /// set, the Action Phase is held open: the bar keeps asking for the
+    /// outstanding steps and no further play is accepted. Cleared the
+    /// moment the table shows every obligation met.
+    @Published private(set) var pendingPlay: PendingPlay?
+
+    /// Runes currently in the player's rune area, with their stances — the
+    /// input to every affordability question (130.2/130.3).
+    private(set) var autoDetectRunes: [ObservedRune] = []
+
+    /// Rune-area occupancy at the moment the Channel Phase began. 515.3.b
+    /// asks for 2 *new* runes, and the area only fills up over a game, so
+    /// an absolute count would be satisfied permanently after turn one.
+    var channelBaseline = 0
+
+    /// Hand size when the Draw Phase began — 515.4.b draws exactly 1, so
+    /// only the change matters.
+    var handBaseline = 0
+
+    /// Rule 645.7: in 1v1 the player going **second** channels an extra
+    /// rune on their first Channel Phase. Defaults to true because that's
+    /// the seat this app is set up for — the single local player is the
+    /// one taking the second turn.
+    var playerGoesSecond = true
+
+    /// How many of this player's own Channel Phases have already run.
+    /// Rule 515.3.b needs "is this their first turn", which no global round
+    /// counter answers — `ManualGameState.round` counts cycles of turn
+    /// order, not this player's turns.
+    var completedChannelPhases = 0
+
+    /// Rule 515.3.b/645.7: 3 on the second player's opening turn, 2 every
+    /// turn after that.
+    ///
+    /// Delegated to the engine's `RuneChannelPace` rather than restating
+    /// the arithmetic here — it is the same rule the Expert System's own
+    /// Channel Step uses, and two copies of "3 then 2" is exactly the pair
+    /// that drifts. The turn order is synthesized because this app has one
+    /// seat and `GameState.turnOrder` therefore has one entry, which can't
+    /// express "there is another player and they went first"; 645.7 keys
+    /// off going *last*, so the local player is placed accordingly.
+    var runesToChannelThisTurn: Int {
+        let opponent = PlayerID()
+        return RuneChannelPace.runesToChannel(
+            for: localPlayerID,
+            turnOrder: playerGoesSecond ? [opponent, localPlayerID] : [localPlayerID, opponent],
+            completedTurns: completedChannelPhases
+        )
+    }
+
+    /// Phase as of the previous poll, so entering a phase can be
+    /// distinguished from sitting in it — the baseline and the hold points
+    /// are both once-per-phase, not per-frame.
+    var lastSeenPhase: GamePhase?
+
+    /// 631: Holding scores once per battlefield per turn, so the Beginning
+    /// Phase must not keep paying out for every frame it lasts.
+    var hasAwardedHoldPoints = false
+
     @Published var playerScore = 0
     @Published var opponentScore = 0
 
@@ -619,6 +705,7 @@ final class CameraPipelineController: ObservableObject {
         expertSystemEventLoop = Task {
             for await event in adapter.events() {
                 self.recordObservedEvent(event)
+                self.checkAffordability(of: event)
                 guard self.isStageActive(.nlpTranslation) else {
                     // Still log it, otherwise switching stage ③ off looks
                     // identical to the camera seeing nothing at all.
@@ -904,6 +991,12 @@ final class CameraPipelineController: ObservableObject {
             let offMat = cards.filter { $0.currentZone == .unknown }
             needsCalibration = cards.count >= 2 && offMat.count * 2 >= cards.count
 
+            // Auto-detect reads the same resolved objects as everything
+            // else — a second view of the table would be the duplicate
+            // source of truth CLAUDE.md warns about, and could disagree
+            // with the overlay the player is looking at.
+            updateAutoDetect(with: resolution.objects)
+
             // Durable board state runs off those same resolved objects, so
             // screen and disk agree on identity and z-order both.
             boardPersistence?.sync(
@@ -914,4 +1007,290 @@ final class CameraPipelineController: ObservableObject {
         }
     }
 
+}
+
+// MARK: - Auto-detect (rule 515)
+
+extension CameraPipelineController {
+
+    /// Turns the resolved tracks into the phase detector's vocabulary and,
+    /// when Auto-detect is on, advances the turn as each fixed phase is
+    /// satisfied.
+    ///
+    /// Only the four Start of Turn phases advance themselves. 516.2 gives
+    /// the Action Phase no completion condition — it ends when the player
+    /// says so (516.6) — so Auto-detect narrates it and nothing more.
+    func updateAutoDetect(with objects: [TrackedObject]) {
+        let observed = objects.compactMap { observedCard(from: $0) }
+        autoDetectRunes = observed.compactMap { card in
+            guard card.zone == .runeArea, let domain = card.domain else { return nil }
+            return ObservedRune(domain: domain, stance: card.stance)
+        }
+
+        // The baseline has to be taken as the phase *begins*, or "2 new
+        // runes" is measured against whatever happened to be there when
+        // the first frame after the change arrived.
+        if gameState.phase != lastSeenPhase {
+            lastSeenPhase = gameState.phase
+            if gameState.phase == .channel {
+                channelBaseline = observed.filter { $0.zone == .runeArea }.count
+            }
+            if gameState.phase == .draw {
+                handBaseline = observed.filter { $0.zone.isHand(for: .player1) }.count
+                // Leaving Channel for Draw is the Channel Phase completing.
+                // Counted on the way out rather than the way in, so the
+                // phase itself still sees `completedChannelPhases == 0` and
+                // asks for the opening three.
+                completedChannelPhases += 1
+            }
+            hasAwardedHoldPoints = false
+            // A play left unsettled when the phase changed isn't chased
+            // into the next one. Ending the turn is the player asserting
+            // they're done, and holding last turn's obligation over them
+            // would make the app impossible to get out of.
+            pendingPlay = nil
+        }
+
+        let detector = PhaseAutoDetector(
+            channelBaseline: channelBaseline,
+            runesToChannel: runesToChannelThisTurn,
+            handBaseline: handBaseline
+        )
+        // A payment message outranks the generic phase text while it's
+        // live — it's about a specific card the player is holding over the
+        // board right now.
+        if let raisedAt = paymentNoticeRaisedAt,
+           Date().timeIntervalSince(raisedAt) > Self.paymentNoticeLifetime {
+            paymentNotice = nil
+            paymentNoticeRaisedAt = nil
+        }
+
+        let progress = detector.progress(for: gameState.phase, cards: observed, seat: .player1)
+
+        // An unsettled play outranks everything: until it's paid for, what
+        // the phase wants next is irrelevant.
+        if let play = pendingPlay {
+            let observation = observation(of: play, in: observed)
+            var settlement = detector.settlement(of: play, observing: observation)
+            settlement.steps = detector.abilitySteps(cards: observed, seat: .player1)
+
+            if settlement.isComplete {
+                // Paid. Drop the hold and let the next poll speak normally.
+                pendingPlay = nil
+                paymentNotice = nil
+                paymentNoticeRaisedAt = nil
+            }
+            phaseProgress = settlement
+            return
+        }
+
+        // A payment notice replaces the *headline*, not the board. The
+        // ability list is a standing property of what's in play, so it
+        // carries across rather than blinking out for the twelve seconds a
+        // cost message is up.
+        if var notice = paymentNotice {
+            notice.steps = progress.steps
+            phaseProgress = notice
+        } else {
+            phaseProgress = progress
+        }
+
+        guard isAutoDetectingPhase else { return }
+
+        // 630.2: award the hold points once, on entering the Beginning
+        // Phase — not every frame it stays there.
+        if gameState.phase == .beginning, !hasAwardedHoldPoints {
+            hasAwardedHoldPoints = true
+            playerScore += progress.pointsToAward
+        }
+
+        guard progress.isComplete else { return }
+        gameState.advance()
+    }
+
+    /// Resolves one track into what the detector needs: where it is, which
+    /// way up, and — if the card database knows it — what it costs.
+    ///
+    /// Returns `nil` for a track that isn't on the mat at all. A card in
+    /// transit between zones isn't in the wrong place, it's between places,
+    /// and counting it would make Awaken flicker in and out of completion
+    /// as the player's hand crosses the mat.
+    private func observedCard(from object: TrackedObject) -> ObservedCard? {
+        let boardZone = zoneMapper.boardZone(for: object.center)
+        let zone = boardZone?.type ?? object.currentZone
+        guard zone != .unknown else { return nil }
+
+        let printing = object.recognizedLabel.flatMap { cardDatabase.printing(approximatelyNamed: $0) }
+        let domains = (printing?.classification.domain ?? []).compactMap(Domain.init(caseInsensitive:))
+
+        return ObservedCard(
+            id: object.id,
+            name: printing?.name ?? object.recognizedLabel ?? "Card #\(object.id)",
+            zone: zone,
+            battlefieldSlot: boardZone?.battlefieldSlot,
+            owner: boardZone?.owner,
+            stance: object.stance(knowing: printing),
+            kind: object.recognizedLabel.map { kind(forLabel: $0) } ?? .unknown,
+            domain: domains.first,
+            energyCost: printing?.attributes.energy ?? 0,
+            powerCost: printing?.attributes.power ?? 0,
+            eligibleDomains: domains,
+            entersReady: printing.map(Self.entersReady(_:)) ?? false,
+            abilities: printing.map { abilitySummaries(for: $0) } ?? []
+        )
+    }
+
+    /// Rule 139.4 vs 717: Units enter exhausted unless something says
+    /// otherwise. Accelerate is the keyword; some cards say it in words, so
+    /// both are checked. Read off the printed text rather than assumed,
+    /// because getting this wrong tells the player to turn a card sideways
+    /// that should stay upright — and they'll believe the app.
+    static func entersReady(_ printing: CardPrinting) -> Bool {
+        let text = printing.text.plain.lowercased()
+        return text.contains("[accelerate]")
+            || text.contains("accelerate")
+            || text.contains("enters play ready")
+            || text.contains("enters ready")
+    }
+
+    /// The card's abilities, already translated to Game Actions by the NLP
+    /// layer (`CardAbilityParser`). Memoized per printing: the poll runs
+    /// several times a second over the same handful of cards, and parsing
+    /// the same text each time would be pure waste.
+    func abilitySummaries(for printing: CardPrinting) -> [String] {
+        if let cached = abilitySummaryCache[printing.riftboundID] { return cached }
+        let summaries = CardAbilityParser.read(printing.text.plain).abilities.map { ability in
+            ability.timing.map { "\(ability.summary) (\($0.prefix(while: { $0 != " " })))" } ?? ability.summary
+        }
+        abilitySummaryCache[printing.riftboundID] = summaries
+        return summaries
+    }
+
+    /// Rule 130.2/130.3: a card leaving the hand for the board has to be
+    /// paid for, and the runes to pay with are sitting on the table where
+    /// the camera can count them.
+    ///
+    /// This is the check the player actually needs during the Action
+    /// Phase, and it's deliberately *not* the engine's `.insufficientEnergy`
+    /// — that one reads `RunePool`, which this app still seeds (see
+    /// `GameSessionBuilder`), so it can never say no. This reads the rune
+    /// area itself: how many runes are still upright to exhaust for
+    /// energy, and how many of an accepted domain could be recycled for
+    /// power.
+    ///
+    /// Only during the Action Phase (516.1). A card moving out of the hand
+    /// during Awaken or Channel is the player tidying up, not paying for
+    /// anything.
+    func checkAffordability(of event: RiftboundExpertSystem.ObservedTableEvent) {
+        guard gameState.phase.validatesPlayerMoves else { return }
+
+        // A play arrives as either shape, and assuming only the first is
+        // why this never fired. Picking a card up ends its track and
+        // putting it down starts a new one — `ExpertSystemAdapter`'s own
+        // doc comment says so — so the common signature for playing a card
+        // is `.cardAppeared` at the destination, *not* a `.cardMoved` that
+        // remembers the hand. Requiring the move meant the app watched for
+        // an event that mostly doesn't happen.
+        let destination: TableRegion
+        switch event.kind {
+        case .cardMoved(let from, let to):
+            guard from.isHandRegion else { return }
+            destination = to
+        case .cardAppeared(let region):
+            // A card appearing in hand is the camera catching up, not a
+            // play (and it's where cards come *from*).
+            guard !region.isHandRegion else { return }
+            destination = region
+        case .cardRemoved, .cardOrientationChanged:
+            return
+        }
+
+        // Rule 106: only a Location is somewhere a card gets played *to*.
+        // Hand → trash is a discard, not a play, and costs nothing.
+        guard destination.location != nil else { return }
+        guard let definitionID = event.card?.cardDefinitionID,
+              let printing = cardDatabase.printing(riftboundID: definitionID.rawValue) else { return }
+
+        let domains = printing.classification.domain.compactMap(Domain.init(caseInsensitive:))
+        let card = ObservedCard(
+            id: 0,
+            name: printing.name,
+            zone: .base,
+            kind: CardKind.from(
+                type: printing.classification.type,
+                supertype: printing.classification.supertype
+            ),
+            energyCost: printing.attributes.energy ?? 0,
+            powerCost: printing.attributes.power ?? 0,
+            eligibleDomains: domains,
+            entersReady: Self.entersReady(printing),
+            // The card's own text, translated to Game Actions by the NLP
+            // layer — what the player has to resolve now that it's down.
+            abilities: abilitySummaries(for: printing)
+        )
+
+        // One play at a time. A second card landing while the first is
+        // still unpaid is the player getting ahead of themselves, and
+        // accepting it would bury the obligation they already owe.
+        guard pendingPlay == nil else { return }
+
+        let progress = PhaseAutoDetector().paymentProgress(for: card, runes: autoDetectRunes)
+        // Only speak up when there's something to say — a free card played
+        // with a full rune area doesn't need narrating over the verdict the
+        // engine is about to give.
+        // A free Unit still needs saying: 139.4 makes it enter exhausted,
+        // and that's a physical step the player owes regardless of cost.
+        let owesSomething = progress.needsCorrection
+            || card.energyCost > 0
+            || card.powerCost > 0
+            || card.kind == .unit || card.kind == .champion
+            || card.kind == .spell
+            || !card.abilities.isEmpty
+        guard owesSomething else { return }
+        paymentNotice = progress
+        paymentNoticeRaisedAt = Date()
+        phaseProgress = progress
+
+        // Affordable and something is owed → hold the phase open until the
+        // table shows it paid. Unaffordable plays don't open a pending
+        // play: the answer there is "put it back", not "now pay for it".
+        guard !progress.needsCorrection else { return }
+        let mustExhaustCard = (card.kind == .unit || card.kind == .champion) && !card.entersReady
+        // 150/556.2: a Spell has no board form — it resolves and goes to
+        // the Trash. It's laid in the Base while being paid for, which is
+        // how it's played at a table, so the play isn't finished until the
+        // card is swept away.
+        let mustGoToTrash = card.kind == .spell
+        guard mustExhaustCard || mustGoToTrash || card.energyCost > 0 || card.powerCost > 0 else { return }
+
+        pendingPlay = PendingPlay(
+            name: card.name,
+            mustExhaustCard: mustExhaustCard,
+            mustGoToTrash: mustGoToTrash,
+            energyCost: card.energyCost,
+            powerCost: card.powerCost,
+            eligibleDomains: card.eligibleDomains,
+            exhaustedRunesAtPlay: autoDetectRunes.filter { !$0.isReady }.count,
+            runesInAreaAtPlay: autoDetectRunes.count
+        )
+    }
+
+    /// What the table currently says about an unsettled play.
+    ///
+    /// The card is found by name among the player's board zones, because
+    /// the played card arrives as a *new* track — picking it up ended the
+    /// old one — and the event that opened this play carried a `CardDefID`,
+    /// not a `TrackedObjectID`.
+    private func observation(of play: PendingPlay, in cards: [ObservedCard]) -> PendingPlay.Observation {
+        // Searched across the whole table, not just the board: a Spell's
+        // last step is reaching the Trash, and a search limited to Base and
+        // Battlefield would lose sight of it exactly when it matters.
+        let found = cards.first { $0.name == play.name }
+        return PendingPlay.Observation(
+            cardStance: found?.stance,
+            cardZone: found?.zone,
+            exhaustedRunesNow: autoDetectRunes.filter { !$0.isReady }.count,
+            runesInAreaNow: autoDetectRunes.count
+        )
+    }
 }

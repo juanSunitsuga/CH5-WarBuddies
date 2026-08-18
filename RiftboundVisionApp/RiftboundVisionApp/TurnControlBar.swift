@@ -20,6 +20,11 @@ struct TurnControlBar: View {
     /// needs to see is whether their move was allowed, so a real verdict
     /// outranks an incidental one within the same window.
     var instructions: [InstructionLogEntry] = []
+    /// What the current phase still needs from the player, from
+    /// `PhaseAutoDetector`. During the fixed phases this replaces the
+    /// static phase text with a live count — "1 of 2 runes channeled" —
+    /// so the player can see the app registering what they do.
+    var phaseProgress: PhaseAutoDetector.Progress?
     /// Cards sitting somewhere they can't be. Takes over the bar while any
     /// exist: the board and the engine have diverged, so telling the player
     /// what to put back matters more than the next turn step.
@@ -48,7 +53,16 @@ struct TurnControlBar: View {
     }
 
     private func content(now: Date) -> some View {
-        let recent = instructions.filter { now.timeIntervalSince($0.timestamp) < Self.verdictLifetime }
+        // Rule 516.2: only the Action Phase's contents are the player's to
+        // choose, so it's the only phase where "was that allowed?" is a
+        // question worth answering. During Awaken, Beginning, Channel and
+        // Draw the player is carrying out a fixed script (515) — readying
+        // cards, dealing runes — and reporting a verdict on each card they
+        // touch while doing it buried the one line that told them what to
+        // do under things like "Nothing to do for Chaos Rune."
+        let recent = gameState.phase.validatesPlayerMoves
+            ? instructions.filter { now.timeIntervalSince($0.timestamp) < Self.verdictLifetime }
+            : []
         // Accepted and rejected are decisions about a move the player made;
         // the rest is commentary. Prefer a decision, then fall back to the
         // newest of anything.
@@ -83,6 +97,22 @@ struct TurnControlBar: View {
                         .font(.body)
                         .foregroundStyle(.white.opacity(0.75))
                         .fixedSize(horizontal: false, vertical: true)
+                } else if let progress = phaseProgress, progress.needsCorrection {
+                    // Ranked above the engine's own verdict: this says the
+                    // card on the table can't be paid for and has to go
+                    // back, which the player must act on before anything
+                    // the engine goes on to say about it means much.
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                        Text(progress.headline)
+                            .font(.title3.bold())
+                            .foregroundStyle(.white)
+                    }
+                    Text(progress.detail ?? gameState.phase.instruction)
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if let latestInstruction = recentInstruction {
                     HStack(spacing: 6) {
                         Image(systemName: latestInstruction.verdict.iconName)
@@ -95,6 +125,26 @@ struct TurnControlBar: View {
                         .font(.body)
                         .foregroundStyle(.white.opacity(0.7))
                         .fixedSize(horizontal: false, vertical: true)
+                } else if let progress = phaseProgress {
+                    // Live phase feedback. `isComplete` is the app saying
+                    // it saw the player finish, which is worth a different
+                    // icon from a step still outstanding — with Auto-detect
+                    // on it's also the last frame before the phase moves.
+                    HStack(spacing: 6) {
+                        Image(systemName: progress.needsCorrection
+                              ? "exclamationmark.triangle.fill"
+                              : (progress.isComplete ? "checkmark.circle.fill" : "circle.dashed"))
+                            .foregroundStyle(progress.needsCorrection
+                                             ? .red
+                                             : (progress.isComplete ? .green : .yellow))
+                        Text(progress.headline)
+                            .font(.title3.bold())
+                            .foregroundStyle(.white)
+                    }
+                    Text(progress.detail ?? gameState.phase.instruction)
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("Next Step")
                         .font(.callout)
@@ -103,6 +153,24 @@ struct TurnControlBar: View {
                         .font(.title3)
                         .foregroundStyle(.white)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                // Abilities live on the board right now (base, battlefields,
+                // legend). Shown under whatever the bar is saying rather
+                // than instead of it — these are standing reminders, not
+                // the current step, and a card's text is easy to forget
+                // once it's been sitting there a few turns.
+                if let steps = phaseProgress?.steps, !steps.isEmpty {
+                    ForEach(steps.prefix(3), id: \.self) { step in
+                        Text("• \(step)")
+                            .font(.callout)
+                            .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(1)
+                    }
+                    if steps.count > 3 {
+                        Text("+ \(steps.count - 3) more in play")
+                            .font(.callout)
+                            .foregroundStyle(.white.opacity(0.45))
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -115,17 +183,36 @@ struct TurnControlBar: View {
             .toggleStyle(.switch)
             .fixedSize()
 
-            Button("Next") {
-                gameState.advance()
+            // Nothing follows the Action Phase (516.6), so "Next" there
+            // would do exactly what "End Turn" does. Two buttons with the
+            // same effect and different names read as two different
+            // choices, so only one is offered: step through the fixed
+            // phases, then end the turn.
+            // "Next" is what Auto-detect takes over, so it's the only
+            // button the toggle disables.
+            if !gameState.phase.validatesPlayerMoves {
+                Button("Next") {
+                    gameState.advance()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isAutoDetecting)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isAutoDetecting)
 
-            Button("End Turn") {
-                gameState.endTurn()
+            // **Never disabled.** 516.2 gives the Action Phase no
+            // completion condition and 516.6 says it ends when the player
+            // declares it, so nothing the camera sees can end a turn.
+            // Disabling this under Auto-detect left the only way out of the
+            // Action Phase greyed out — the turn could be started
+            // automatically but never finished.
+            // Styled prominently in the Action Phase, where it's the only
+            // way forward, and secondary elsewhere.
+            if gameState.phase.validatesPlayerMoves {
+                Button("End Turn") { gameState.endTurn() }
+                    .buttonStyle(.borderedProminent)
+            } else {
+                Button("End Turn") { gameState.endTurn() }
+                    .buttonStyle(.bordered)
             }
-            .buttonStyle(.bordered)
-            .disabled(isAutoDetecting)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 18)

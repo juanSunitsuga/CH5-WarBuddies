@@ -85,6 +85,7 @@ struct LegalityValidatorTests {
                 playerC: TestFixtures.makeZones(owner: playerC)
             ]
         )
+        state.phase = .action   // 140.1.a: a Standard Move is an Action Phase action.
 
         let unitB = TestFixtures.makeUnit(owner: playerB, location: .battlefield(battlefield.id))
         let unitC = TestFixtures.makeUnit(owner: playerC, location: .battlefield(battlefield.id))
@@ -103,14 +104,3 @@ struct LegalityValidatorTests {
     }
 }
 
-private extension Result where Success == Void, Failure == LegalityValidator.Failure {
-    var isSuccess: Bool {
-        if case .success = self { return true }
-        return false
-    }
-
-    var failureValue: LegalityValidator.Failure? {
-        if case .failure(let error) = self { return error }
-        return nil
-    }
-}

@@ -73,13 +73,33 @@ public actor GameEngine {
         case .success:
             // 615/519: apply the action, then Cleanup — both must run as
             // one atomic transform through the store (CLAUDE.md point 2/3).
-            let newState = await store.mutate { state in
-                GameActionApplier.apply(candidateAction, to: &state, proposedBy: proposer)
+            let consequences = ConsequenceBox()
+            _ = await store.mutate { state in
+                consequences.events = GameActionApplier.apply(candidateAction, to: &state, proposedBy: proposer)
                 state = Cleanup.run(state)
             }
-            _ = newState
+
+            // 632/633: an action can *cause* something the player needs
+            // told that isn't the action itself — a Conquer, a Hold, a win.
+            // Those outrank the bare acknowledgement: "you won the game"
+            // must not be reported as "move accepted."
+            if let win = consequences.events.first(where: { if case .gameWon = $0 { return true } else { return false } }) {
+                return win
+            }
+            if let scored = consequences.events.first(where: { if case .scored = $0 { return true } else { return false } }) {
+                return scored
+            }
             return .actionAccepted(candidateAction, followUp: nil)
         }
+    }
+
+    /// Carries the applier's events out of the `store.mutate` closure.
+    /// `mutate` yields only the new `GameState`, and these events are
+    /// deliberately *not* on `GameState` — they're a record of what just
+    /// happened, not part of the game's state, and putting them there would
+    /// mean every snapshot carried a growing log of past events.
+    private final class ConsequenceBox: @unchecked Sendable {
+        var events: [PlayerInstruction] = []
     }
 
     /// Attribution: whose action this physically was, derived from which

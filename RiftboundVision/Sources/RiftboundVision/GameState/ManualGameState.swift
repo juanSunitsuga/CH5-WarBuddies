@@ -12,10 +12,17 @@ public enum GamePhase: String, Sendable, Equatable, Codable, CaseIterable {
     case beginning   // 515.2: start-of-turn triggers, then Scoring/Holding
     case channel     // 515.3: channel 2 runes (+ any extra, e.g. first-turn rule)
     case draw        // 515.4: draw 1; Rune Pool empties at the end of this step
-    case action      // 516: unstructured; Discretionary Actions until player ends turn
-    case ending      // 517.1: end-of-turn triggers
-    case expiration  // 517.2: clear damage, expire "this turn" effects, empty Rune Pool
-    case cleanup     // 517.3: perform a Cleanup (rule 518-526)
+    case action      // 516: unstructured; Discretionary Actions until the player ends the turn
+
+    // Rule 517's Ending, Expiration and Cleanup steps are deliberately
+    // absent. They are real phases, but they contain nothing a player at
+    // the table *does* — no triggers to declare, no cards to touch — so
+    // presenting them as steps to click through asked the user to
+    // acknowledge three screens of bookkeeping every turn. Ending the
+    // Action Phase runs them and goes straight to the next Awaken, which
+    // is what a turn looks like from a chair. `RiftboundExpertSystem`
+    // still models all three properly in `TurnSequencer.endTurn`; this
+    // enum is the *player-facing* sequence, not the rules one.
 
     public var displayName: String {
         switch self {
@@ -24,25 +31,43 @@ public enum GamePhase: String, Sendable, Equatable, Codable, CaseIterable {
         case .channel: return "Channel"
         case .draw: return "Draw"
         case .action: return "Action"
-        case .ending: return "Ending"
-        case .expiration: return "Expiration"
-        case .cleanup: return "Cleanup"
         }
     }
 
-    /// Short player-facing instruction for the turn control bar — mirrors
-    /// this case's rule citation above rather than restating `displayName`.
+    /// What the player should physically do right now.
+    ///
+    /// Phrased as an instruction rather than a rules summary, because
+    /// during the four fixed phases this is the *only* thing the bar shows
+    /// — the app deliberately withholds verdicts about detected card
+    /// movement until the Action Phase (see `TurnControlBar`). Before then
+    /// the player is following a script, and commentary on each card they
+    /// touch while following it is noise.
     public var instruction: String {
         switch self {
-        case .awaken: return "Ready all Game Objects you control (Rule 515.1)."
-        case .beginning: return "Resolve any start-of-turn triggers, then Scoring and Holding (Rule 515.2)."
-        case .channel: return "Channel 2 Runes, plus any turn-one bonus (Rule 515.3)."
-        case .draw: return "Draw 1 card. The Rune Pool empties at the end of this step (Rule 515.4)."
-        case .action: return "Take Discretionary Actions until you're ready to end your turn (Rule 516)."
-        case .ending: return "Resolve any end-of-turn triggers (Rule 517.1)."
-        case .expiration: return "Damage clears, \"this turn\" effects expire, and the Rune Pool empties (Rule 517.2)."
-        case .cleanup: return "Perform Cleanup (Rule 518–526)."
+        case .awaken:
+            return "Turn every exhausted card you control upright — units, gear and runes (Rule 515.1)."
+        case .beginning:
+            return "Score 1 point for each battlefield you still control, then hit Next (Rule 515.2/630.2)."
+        case .channel:
+            return "Put 2 runes from your rune deck into your rune area, face up and ready (Rule 515.3)."
+        case .draw:
+            return "Draw 1 card. Any unspent energy and power is lost at the end of this step (Rule 515.4)."
+        case .action:
+            return "Your move — play cards, move units, attack, in any order. Every move is checked from here (Rule 516)."
         }
+    }
+
+    /// Whether the app should judge what it sees during this phase.
+    ///
+    /// Only the Action Phase, because it's the only phase whose contents
+    /// the player chooses (516.2). Everything the camera picks up during
+    /// Awaken, Beginning, Channel and Draw is the player carrying out a
+    /// fixed script — readying cards, dealing runes — and narrating that
+    /// back to them ("Nothing to do for Chaos Rune") is noise dressed as
+    /// feedback. Worse, it competes for the same line of screen with the
+    /// instruction telling them what to do.
+    public var validatesPlayerMoves: Bool {
+        self == .action
     }
 }
 
@@ -69,13 +94,20 @@ public struct ManualGameState: Sendable, Equatable {
         self.phase = phase
     }
 
-    private static let phaseOrder: [GamePhase] = [.awaken, .beginning, .channel, .draw, .action, .ending, .expiration, .cleanup]
+    private static let phaseOrder: [GamePhase] = [.awaken, .beginning, .channel, .draw, .action]
 
     /// Rule 506: the Turn Player changes once the current Turn Player
     /// reaches the end of all Phases of their Turn. Steps to the next
-    /// phase in sequence; past `.cleanup` it wraps to the other seat's
+    /// phase in sequence; past `.action` it wraps to the other seat's
     /// `.awaken` and, once play has cycled back to `.player1`, increments
     /// `round`.
+    ///
+    /// **Nothing follows the Action Phase.** 516.6 ends it when the player
+    /// says so, and 517's steps are automatic bookkeeping with nothing to
+    /// do in them, so advancing from `.action` hands the turn over
+    /// directly — the same thing `endTurn()` does, which is why the two
+    /// now agree rather than `advance()` taking three extra clicks to
+    /// reach the same place.
     public mutating func advance() {
         guard let index = Self.phaseOrder.firstIndex(of: phase) else { return }
         if index + 1 < Self.phaseOrder.count {

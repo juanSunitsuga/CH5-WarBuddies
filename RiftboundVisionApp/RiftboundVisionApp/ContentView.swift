@@ -106,6 +106,7 @@ struct ContentView: View {
                 gameState: $pipeline.gameState,
                 isAutoDetecting: $pipeline.isAutoDetectingPhase,
                 instructions: pipeline.instructions,
+                phaseProgress: pipeline.phaseProgress,
                 misplacedCards: pipeline.misplacedCards,
                 needsCalibration: pipeline.needsCalibration
             )

@@ -192,8 +192,36 @@ struct InstructionLogEntry: Identifiable {
             return "A showdown is open — only an Action or Reaction can start the chain."
         case .limitedActionNotAuthorized:
             return "Nothing has called for that action yet — it can't be taken freely."
+        case .notActionPhase(let phase):
+            return "You're still in \(name(phase)) — finish the start of your turn before playing."
+        case .illegalMoveDestination(let from, let to):
+            // 140.4: the two illegal shapes read very differently to a
+            // player, so name the one they actually attempted rather than
+            // reciting the whole rule.
+            switch (from, to) {
+            case (.battlefield, .battlefield):
+                return "Units can't move straight between battlefields — send \(card) back to your base first (only Ganking skips that)."
+            default:
+                return "\(card) can't move there from where it is."
+            }
+        case .noRuneOfDomainAvailable(let domain):
+            return "You have no \(domain.rawValue.capitalized) rune in your rune area to recycle."
+        case .gameAlreadyWon:
+            return "The game is already over."
         case .notImplemented:
             return "The engine doesn't handle that action yet."
+        }
+    }
+
+    /// Phase names as a player would say them (rule 514–517).
+    private static func name(_ phase: Phase) -> String {
+        switch phase {
+        case .startOfTurn(.awaken):    return "the awaken step"
+        case .startOfTurn(.beginning): return "the beginning phase"
+        case .startOfTurn(.channel):   return "the channel phase"
+        case .startOfTurn(.draw):      return "the draw phase"
+        case .action:                  return "the action phase"
+        case .endOfTurn:               return "the end of your turn"
         }
     }
 }
