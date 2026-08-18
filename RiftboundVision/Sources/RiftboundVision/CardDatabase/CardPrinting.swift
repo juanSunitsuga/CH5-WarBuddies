@@ -28,6 +28,34 @@ public struct CardPrinting: Sendable, Decodable, Equatable, Identifiable {
     public let media: CardMedia
     public let orientation: CardOrientation
 
+    /// Memberwise init isn't synthesized as `public` by default, so
+    /// callers outside this module (e.g. the app target building a
+    /// synthetic, non-printed `CardPrinting` for the vision pipeline's
+    /// "Token" class) couldn't otherwise construct one directly.
+    public init(
+        id: String,
+        name: String,
+        riftboundID: String,
+        collectorNumber: Int?,
+        attributes: Attributes,
+        classification: Classification,
+        text: CardText,
+        set: CardSet,
+        media: CardMedia,
+        orientation: CardOrientation
+    ) {
+        self.id = id
+        self.name = name
+        self.riftboundID = riftboundID
+        self.collectorNumber = collectorNumber
+        self.attributes = attributes
+        self.classification = classification
+        self.text = text
+        self.set = set
+        self.media = media
+        self.orientation = orientation
+    }
+
     public struct Attributes: Sendable, Decodable, Equatable {
         /// Rule 130.2: printed Energy cost.
         public let energy: Int?
@@ -35,6 +63,12 @@ public struct CardPrinting: Sendable, Decodable, Equatable, Identifiable {
         public let might: Int?
         /// Rule 130.3: printed Power symbol count.
         public let power: Int?
+
+        public init(energy: Int?, might: Int?, power: Int?) {
+            self.energy = energy
+            self.might = might
+            self.power = power
+        }
     }
 
     public struct Classification: Sendable, Decodable, Equatable {
@@ -43,11 +77,23 @@ public struct CardPrinting: Sendable, Decodable, Equatable, Identifiable {
         public let supertype: String?
         public let rarity: String?
         public let domain: [String]
+
+        public init(type: String, supertype: String?, rarity: String?, domain: [String]) {
+            self.type = type
+            self.supertype = supertype
+            self.rarity = rarity
+            self.domain = domain
+        }
     }
 
     public struct CardText: Sendable, Decodable, Equatable {
         public let plain: String
         public let flavour: String?
+
+        public init(plain: String, flavour: String?) {
+            self.plain = plain
+            self.flavour = flavour
+        }
     }
 
     public struct CardSet: Sendable, Decodable, Equatable {
@@ -58,6 +104,11 @@ public struct CardPrinting: Sendable, Decodable, Equatable, Identifiable {
             case setID = "set_id"
             case label
         }
+
+        public init(setID: String, label: String) {
+            self.setID = setID
+            self.label = label
+        }
     }
 
     public struct CardMedia: Sendable, Decodable, Equatable {
@@ -65,6 +116,10 @@ public struct CardPrinting: Sendable, Decodable, Equatable, Identifiable {
 
         enum CodingKeys: String, CodingKey {
             case imageURL = "image_url"
+        }
+
+        public init(imageURL: URL?) {
+            self.imageURL = imageURL
         }
     }
 

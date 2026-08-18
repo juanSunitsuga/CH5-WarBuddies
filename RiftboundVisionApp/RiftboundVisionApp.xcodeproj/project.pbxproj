@@ -31,6 +31,7 @@
 		690BCB3309B5473291FEE083 /* PipelineSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED891118FA894EA18345F333 /* PipelineSettingsView.swift */; };
 		C3AA581B11C8447994662CBF /* BoardStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */; };
 		71EB87BDA66944C493D04B22 /* best-2.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = C80542A83A3C4765A9F7868D /* best-2.mlpackage */; };
+		0AF99833302F1923001D832C /* best-3.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 0AF99832302F1923001D832C /* best-3.mlpackage */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -57,6 +58,7 @@
 		ED891118FA894EA18345F333 /* PipelineSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineSettingsView.swift; sourceTree = "<group>"; };
 		7D03C84279184306BBF0AC83 /* BoardStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardStatePersistence.swift; sourceTree = "<group>"; };
 		C80542A83A3C4765A9F7868D /* best-2.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best-2.mlpackage; sourceTree = "<group>"; };
+		0AF99832302F1923001D832C /* best-3.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = "best-3.mlpackage"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -143,6 +145,7 @@
 			children = (
 				DBF6C0B24D384E309B541FB3 /* best.mlpackage */,
 				C80542A83A3C4765A9F7868D /* best-2.mlpackage */,
+				0AF99832302F1923001D832C /* best-3.mlpackage */,
 			);
 			path = CardDetectionModel;
 			sourceTree = "<group>";
@@ -224,6 +227,7 @@
 				17EEFEABA0B94E61BA799EE9 /* master_yi.json in Resources */,
 				C65BD2D963D14E48BD280043 /* best.mlpackage in Resources */,
 				71EB87BDA66944C493D04B22 /* best-2.mlpackage in Resources */,
+				0AF99833302F1923001D832C /* best-3.mlpackage in Resources */,
 				CCCC6491D5C14229AAC7452C /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -374,11 +378,16 @@
 		A0CDF38723024C0F99F4F274 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "riftchamp icon";
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CODE_SIGN_IDENTITY = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_ENTITLEMENTS = RiftboundVisionApp/RiftboundVisionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SSJH6446CA;
+				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -400,11 +409,16 @@
 		21E955D5056A4D3CB9889597 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "riftchamp icon";
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CODE_SIGN_IDENTITY = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_ENTITLEMENTS = RiftboundVisionApp/RiftboundVisionApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SSJH6446CA;
+				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;

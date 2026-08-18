@@ -1,0 +1,317 @@
+{
+  "version": 3,
+  "classes": [
+    {
+      "class_id": 0,
+      "riftbound_id": "ogs-017-024",
+      "name": "Annie - Dark Child (Starter)",
+      "clean_name": "Annie Dark Child Starter",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 1,
+      "riftbound_id": "ogs-001-024",
+      "name": "Annie - Fiery",
+      "clean_name": "Annie Fiery",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 2,
+      "riftbound_id": "ogs-010-024",
+      "name": "Annie - Stubborn",
+      "clean_name": "Annie Stubborn",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 3,
+      "riftbound_id": "ogn-206-298",
+      "name": "Back to Back",
+      "clean_name": "Back to Back",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 4,
+      "riftbound_id": "ogn-126-298",
+      "name": "Body Rune",
+      "clean_name": "Body Rune",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 5,
+      "riftbound_id": "ogn-166-298",
+      "name": "Chaos Rune",
+      "clean_name": "Chaos Rune",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 6,
+      "riftbound_id": "ogn-129-298",
+      "name": "Confront",
+      "clean_name": "Confront",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 7,
+      "riftbound_id": "ogn-130-298",
+      "name": "Crackshot Corsair",
+      "clean_name": "Crackshot Corsair",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 8,
+      "riftbound_id": "ogn-210-298",
+      "name": "Daring Poro",
+      "clean_name": "Daring Poro",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 9,
+      "riftbound_id": "ogs-024-024",
+      "name": "Decisive Strike",
+      "clean_name": "Decisive Strike",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 10,
+      "riftbound_id": "ogn-005-298",
+      "name": "Disintegrate",
+      "clean_name": "Disintegrate",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 11,
+      "riftbound_id": "ogn-131-298",
+      "name": "Dune Drake",
+      "clean_name": "Dune Drake",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 12,
+      "riftbound_id": "ogn-211-298",
+      "name": "Faithful Manufactor",
+      "clean_name": "Faithful Manufactor",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 13,
+      "riftbound_id": "ogs-002-024",
+      "name": "Firestorm",
+      "clean_name": "Firestorm",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 14,
+      "riftbound_id": "ogn-132-298",
+      "name": "First Mate",
+      "clean_name": "First Mate",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 15,
+      "riftbound_id": "ogs-011-024",
+      "name": "Flash",
+      "clean_name": "Flash",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 16,
+      "riftbound_id": "ogn-007-298",
+      "name": "Fury Rune",
+      "clean_name": "Fury Rune",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 17,
+      "riftbound_id": "ogs-013-024",
+      "name": "Garen - Commander",
+      "clean_name": "Garen Commander",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 18,
+      "riftbound_id": "ogs-023-024",
+      "name": "Garen - Might of Demacia (Starter)",
+      "clean_name": "Garen Might of Demacia Starter",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 19,
+      "riftbound_id": "ogs-007-024",
+      "name": "Garen - Rugged",
+      "clean_name": "Garen Rugged",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 20,
+      "riftbound_id": "ogn-169-298",
+      "name": "Gust",
+      "clean_name": "Gust",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 21,
+      "riftbound_id": "ogs-003-024",
+      "name": "Incinerate",
+      "clean_name": "Incinerate",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 22,
+      "riftbound_id": "ogn-191-298",
+      "name": "Maddened Marauder",
+      "clean_name": "Maddened Marauder",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 23,
+      "riftbound_id": "ogn-170-298",
+      "name": "Morbid Return",
+      "clean_name": "Morbid Return",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 24,
+      "riftbound_id": "ogn-171-298",
+      "name": "Mystic Poro",
+      "clean_name": "Mystic Poro",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 25,
+      "riftbound_id": "ogn-222-298",
+      "name": "Noxian Drummer",
+      "clean_name": "Noxian Drummer",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 26,
+      "riftbound_id": "ogn-214-298",
+      "name": "Order Rune",
+      "clean_name": "Order Rune",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 27,
+      "riftbound_id": "ogn-215-298",
+      "name": "Petty Officer",
+      "clean_name": "Petty Officer",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 28,
+      "riftbound_id": "opp-013-298",
+      "name": "Pouty Poro",
+      "clean_name": "Pouty Poro",
+      "set_id": "OPP",
+      "synthetic": false
+    },
+    {
+      "class_id": 29,
+      "riftbound_id": "ogs-015-024",
+      "name": "Recruit the Vanguard",
+      "clean_name": "Recruit the Vanguard",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 30,
+      "riftbound_id": "ogn-174-298",
+      "name": "Sai Scout",
+      "clean_name": "Sai Scout",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 31,
+      "riftbound_id": "ogn-176-298",
+      "name": "Sneaky Deckhand",
+      "clean_name": "Sneaky Deckhand",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 32,
+      "riftbound_id": "ogs-018-024",
+      "name": "Tibbers",
+      "clean_name": "Tibbers",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 33,
+      "riftbound_id": "synthetic-token-unit",
+      "name": "Token",
+      "clean_name": "Token",
+      "set_id": "SYN",
+      "synthetic": true
+    },
+    {
+      "class_id": 34,
+      "riftbound_id": "ogn-185-298",
+      "name": "Traveling Merchant",
+      "clean_name": "Traveling Merchant",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 35,
+      "riftbound_id": "ogn-294-298",
+      "name": "Trifarian War Camp",
+      "clean_name": "Trifarian War Camp",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 36,
+      "riftbound_id": "ogs-016-024",
+      "name": "Vanguard Attendant",
+      "clean_name": "Vanguard Attendant",
+      "set_id": "OGS",
+      "synthetic": false
+    },
+    {
+      "class_id": 37,
+      "riftbound_id": "ogn-219-298",
+      "name": "Vanguard Sergeant",
+      "clean_name": "Vanguard Sergeant",
+      "set_id": "OGN",
+      "synthetic": false
+    },
+    {
+      "class_id": 38,
+      "riftbound_id": "ogn-296-298",
+      "name": "Void Gate",
+      "clean_name": "Void Gate",
+      "set_id": "OGN",
+      "synthetic": false
+    }
+  ]
+}

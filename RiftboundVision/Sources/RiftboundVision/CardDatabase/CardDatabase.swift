@@ -12,7 +12,15 @@ import Foundation
 public struct CardDatabase: Sendable {
     public let printingsByRiftboundID: [String: CardPrinting]
 
-    public init(deckFiles: [RiftboundDeckFile]) {
+    /// - Parameter synthetic: printings that didn't come from a
+    ///   `RiftboundDeckFile` export because they were never actually
+    ///   printed/sold (e.g. a spawned-unit token proxy) — merged in
+    ///   afterward so callers can identify them by name without a real
+    ///   card existing in the catalogue for them. Kept as a distinct
+    ///   parameter, not mixed into `deckFiles`, so it's always obvious at
+    ///   the call site which printings are real riftcodex.com exports and
+    ///   which are fabricated stand-ins.
+    public init(deckFiles: [RiftboundDeckFile], synthetic: [CardPrinting] = []) {
         var index: [String: CardPrinting] = [:]
         for file in deckFiles {
             let allEntries = file.legend + file.runes + file.battlefields + file.mainDeck
@@ -22,15 +30,18 @@ public struct CardDatabase: Sendable {
                 }
             }
         }
+        for printing in synthetic {
+            index[printing.riftboundID] = printing
+        }
         self.printingsByRiftboundID = index
     }
 
     /// Decodes and merges deck files directly from JSON `Data` — the usual
     /// entry point for an app bundling bundled `.json` deck exports.
-    public init(jsonDeckFiles: [Data]) throws {
+    public init(jsonDeckFiles: [Data], synthetic: [CardPrinting] = []) throws {
         let decoder = JSONDecoder()
         let files = try jsonDeckFiles.map { try decoder.decode(RiftboundDeckFile.self, from: $0) }
-        self.init(deckFiles: files)
+        self.init(deckFiles: files, synthetic: synthetic)
     }
 
     public func printing(riftboundID: String) -> CardPrinting? {

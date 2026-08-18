@@ -28,14 +28,11 @@ import CoreGraphics
 public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
     private let visionModel: VNCoreMLModel
     public var minimumConfidence: VNConfidence
-    /// Class labels the model can emit that aren't real cards.
-    ///
-    /// The v3 model adds a "Token" class whose entire purpose is to absorb
-    /// hard negatives — objects that used to be confidently misread as one
-    /// of the 38 real cards. Letting those through would defeat the point:
-    /// a Token would be tracked, given an ID, and reported as a card the
-    /// catalogue can't identify. Dropping them here keeps that knowledge
-    /// with the model that produced it.
+    /// Class labels the model can emit that aren't real cards, and should
+    /// be dropped rather than tracked. Empty by default — "Token" is a real
+    /// Riftbound card class (a spawned unit token, e.g. "Sprite unit
+    /// token"), not a hard negative, so it's tracked and saved like any
+    /// other card.
     public var nonCardLabels: Set<String>
     /// `max(width, height) / min(width, height)` of an accepted detection
     /// — every Riftbound card (including Rune cards; they're the same
@@ -70,7 +67,7 @@ public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
         model: MLModel,
         minimumConfidence: VNConfidence = 0.75,
         cardAspectRatioRange: ClosedRange<CGFloat> = 1.2...1.8,
-        nonCardLabels: Set<String> = ["Token"]
+        nonCardLabels: Set<String> = []
     ) throws {
         self.visionModel = try VNCoreMLModel(for: model)
         self.minimumConfidence = minimumConfidence
