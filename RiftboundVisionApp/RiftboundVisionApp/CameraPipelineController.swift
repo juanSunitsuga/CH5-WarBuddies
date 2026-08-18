@@ -171,6 +171,51 @@ final class CameraPipelineController: ObservableObject {
     /// implies it. (Cleanup *can* score a contested Battlefield in the
     /// engine, but this app's `GameState` has no opponent seat to score
     /// against, so the two aren't connected yet.)
+    /// What the current phase still needs from the player, recomputed each
+    /// poll. Drives the bar during the fixed phases, where there are no
+    /// verdicts to show (see `TurnControlBar`).
+    @Published private(set) var phaseProgress: PhaseAutoDetector.Progress?
+
+    /// The most recent "here's what this costs" / "put it back" message,
+    /// and when it was raised.
+    ///
+    /// Kept apart from `phaseProgress` because the two have different
+    /// lifetimes: `phaseProgress` is recomputed from scratch every poll,
+    /// so a payment message written into it would be overwritten by the
+    /// next frame's generic "Your move." — the player would see the
+    /// warning flash and vanish. This one is event-driven and persists
+    /// until it's stale or answered.
+    @Published private(set) var paymentNotice: PhaseAutoDetector.Progress?
+    private var paymentNoticeRaisedAt: Date?
+
+    /// How long a payment message stays up. Long enough to read and act
+    /// on, short enough that it can't be mistaken for a statement about a
+    /// later card — the same reasoning as `TurnControlBar.verdictLifetime`.
+    private static let paymentNoticeLifetime: TimeInterval = 12
+
+    /// Runes currently in the player's rune area, with their stances — the
+    /// input to every affordability question (130.2/130.3).
+    private(set) var autoDetectRunes: [ObservedRune] = []
+
+    /// Rune-area occupancy at the moment the Channel Phase began. 515.3.b
+    /// asks for 2 *new* runes, and the area only fills up over a game, so
+    /// an absolute count would be satisfied permanently after turn one.
+    var channelBaseline = 0
+
+    /// Rule 515.3.b/645.7: 2, or 3 on the first turn of the player going
+    /// last. Still a manual input — whose first turn it is is exactly what
+    /// this app can't see.
+    var runesToChannelThisTurn = 2
+
+    /// Phase as of the previous poll, so entering a phase can be
+    /// distinguished from sitting in it — the baseline and the hold points
+    /// are both once-per-phase, not per-frame.
+    var lastSeenPhase: GamePhase?
+
+    /// 631: Holding scores once per battlefield per turn, so the Beginning
+    /// Phase must not keep paying out for every frame it lasts.
+    var hasAwardedHoldPoints = false
+
     @Published var playerScore = 0
     @Published var opponentScore = 0
 
@@ -618,6 +663,7 @@ final class CameraPipelineController: ObservableObject {
         expertSystemEventLoop = Task {
             for await event in adapter.events() {
                 self.recordObservedEvent(event)
+                self.checkAffordability(of: event)
                 guard self.isStageActive(.nlpTranslation) else {
                     // Still log it, otherwise switching stage ③ off looks
                     // identical to the camera seeing nothing at all.
@@ -903,6 +949,12 @@ final class CameraPipelineController: ObservableObject {
             let offMat = cards.filter { $0.currentZone == .unknown }
             needsCalibration = cards.count >= 2 && offMat.count * 2 >= cards.count
 
+            // Auto-detect reads the same resolved objects as everything
+            // else — a second view of the table would be the duplicate
+            // source of truth CLAUDE.md warns about, and could disagree
+            // with the overlay the player is looking at.
+            updateAutoDetect(with: resolution.objects)
+
             // Durable board state runs off those same resolved objects, so
             // screen and disk agree on identity and z-order both.
             boardPersistence?.sync(
@@ -913,4 +965,137 @@ final class CameraPipelineController: ObservableObject {
         }
     }
 
+}
+
+// MARK: - Auto-detect (rule 515)
+
+extension CameraPipelineController {
+
+    /// Turns the resolved tracks into the phase detector's vocabulary and,
+    /// when Auto-detect is on, advances the turn as each fixed phase is
+    /// satisfied.
+    ///
+    /// Only the four Start of Turn phases advance themselves. 516.2 gives
+    /// the Action Phase no completion condition — it ends when the player
+    /// says so (516.6) — so Auto-detect narrates it and nothing more.
+    func updateAutoDetect(with objects: [TrackedObject]) {
+        let observed = objects.compactMap { observedCard(from: $0) }
+        autoDetectRunes = observed.compactMap { card in
+            guard card.zone == .runeArea, let domain = card.domain else { return nil }
+            return ObservedRune(domain: domain, stance: card.stance)
+        }
+
+        // The baseline has to be taken as the phase *begins*, or "2 new
+        // runes" is measured against whatever happened to be there when
+        // the first frame after the change arrived.
+        if gameState.phase != lastSeenPhase {
+            lastSeenPhase = gameState.phase
+            if gameState.phase == .channel {
+                channelBaseline = observed.filter { $0.zone == .runeArea }.count
+            }
+            hasAwardedHoldPoints = false
+        }
+
+        let detector = PhaseAutoDetector(
+            channelBaseline: channelBaseline,
+            runesToChannel: runesToChannelThisTurn
+        )
+        // A payment message outranks the generic phase text while it's
+        // live — it's about a specific card the player is holding over the
+        // board right now.
+        if let raisedAt = paymentNoticeRaisedAt,
+           Date().timeIntervalSince(raisedAt) > Self.paymentNoticeLifetime {
+            paymentNotice = nil
+            paymentNoticeRaisedAt = nil
+        }
+
+        let progress = detector.progress(for: gameState.phase, cards: observed, seat: .player1)
+        phaseProgress = paymentNotice ?? progress
+
+        guard isAutoDetectingPhase else { return }
+
+        // 630.2: award the hold points once, on entering the Beginning
+        // Phase — not every frame it stays there.
+        if gameState.phase == .beginning, !hasAwardedHoldPoints {
+            hasAwardedHoldPoints = true
+            playerScore += progress.pointsToAward
+        }
+
+        guard progress.isComplete else { return }
+        gameState.advance()
+    }
+
+    /// Resolves one track into what the detector needs: where it is, which
+    /// way up, and — if the card database knows it — what it costs.
+    ///
+    /// Returns `nil` for a track that isn't on the mat at all. A card in
+    /// transit between zones isn't in the wrong place, it's between places,
+    /// and counting it would make Awaken flicker in and out of completion
+    /// as the player's hand crosses the mat.
+    private func observedCard(from object: TrackedObject) -> ObservedCard? {
+        let boardZone = zoneMapper.boardZone(for: object.center)
+        let zone = boardZone?.type ?? object.currentZone
+        guard zone != .unknown else { return nil }
+
+        let printing = object.recognizedLabel.flatMap { cardDatabase.printing(approximatelyNamed: $0) }
+        let domains = (printing?.classification.domain ?? []).compactMap(Domain.init(caseInsensitive:))
+
+        return ObservedCard(
+            id: object.id,
+            name: printing?.name ?? object.recognizedLabel ?? "Card #\(object.id)",
+            zone: zone,
+            battlefieldSlot: boardZone?.battlefieldSlot,
+            owner: boardZone?.owner,
+            stance: object.stance,
+            kind: object.recognizedLabel.map { kind(forLabel: $0) } ?? .unknown,
+            domain: domains.first,
+            energyCost: printing?.attributes.energy ?? 0,
+            powerCost: printing?.attributes.power ?? 0,
+            eligibleDomains: domains
+        )
+    }
+
+    /// Rule 130.2/130.3: a card leaving the hand for the board has to be
+    /// paid for, and the runes to pay with are sitting on the table where
+    /// the camera can count them.
+    ///
+    /// This is the check the player actually needs during the Action
+    /// Phase, and it's deliberately *not* the engine's `.insufficientEnergy`
+    /// — that one reads `RunePool`, which this app still seeds (see
+    /// `GameSessionBuilder`), so it can never say no. This reads the rune
+    /// area itself: how many runes are still upright to exhaust for
+    /// energy, and how many of an accepted domain could be recycled for
+    /// power.
+    ///
+    /// Only during the Action Phase (516.1). A card moving out of the hand
+    /// during Awaken or Channel is the player tidying up, not paying for
+    /// anything.
+    func checkAffordability(of event: RiftboundExpertSystem.ObservedTableEvent) {
+        guard gameState.phase.validatesPlayerMoves else { return }
+        guard case .cardMoved(let from, let to) = event.kind, from.isHandRegion else { return }
+        // Rule 106: only a Location is somewhere a card gets played *to*.
+        // Hand → trash is a discard, not a play, and costs nothing.
+        guard to.location != nil else { return }
+        guard let definitionID = event.card?.cardDefinitionID,
+              let printing = cardDatabase.printing(riftboundID: definitionID.rawValue) else { return }
+
+        let domains = printing.classification.domain.compactMap(Domain.init(caseInsensitive:))
+        let card = ObservedCard(
+            id: 0,
+            name: printing.name,
+            zone: .base,
+            energyCost: printing.attributes.energy ?? 0,
+            powerCost: printing.attributes.power ?? 0,
+            eligibleDomains: domains
+        )
+
+        let progress = PhaseAutoDetector().paymentProgress(for: card, runes: autoDetectRunes)
+        // Only speak up when there's something to say — a free card played
+        // with a full rune area doesn't need narrating over the verdict the
+        // engine is about to give.
+        guard progress.needsCorrection || card.energyCost > 0 || card.powerCost > 0 else { return }
+        paymentNotice = progress
+        paymentNoticeRaisedAt = Date()
+        phaseProgress = progress
+    }
 }

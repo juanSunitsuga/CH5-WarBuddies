@@ -6,6 +6,16 @@ public enum Domain: String, Codable, Sendable, CaseIterable {
     case body   // orange, rule 133.2.d
     case chaos  // purple, rule 133.2.e
     case order  // yellow, rule 133.2.f
+
+    /// Parses a Domain from catalogue data, which spells them Title Case
+    /// ("Fury") while these raw values are lowercase.
+    ///
+    /// Returns `nil` for anything that isn't one of the six (133) rather
+    /// than guessing a default — an unrecognized Domain string is a data
+    /// problem worth seeing, not one to paper over with `.fury`.
+    public init?(caseInsensitive raw: String) {
+        self.init(rawValue: raw.lowercased())
+    }
 }
 
 /// Power produced by Runes has a Domain, OR is Universal and can pay for

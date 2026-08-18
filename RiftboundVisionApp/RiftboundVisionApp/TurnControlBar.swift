@@ -20,6 +20,11 @@ struct TurnControlBar: View {
     /// needs to see is whether their move was allowed, so a real verdict
     /// outranks an incidental one within the same window.
     var instructions: [InstructionLogEntry] = []
+    /// What the current phase still needs from the player, from
+    /// `PhaseAutoDetector`. During the fixed phases this replaces the
+    /// static phase text with a live count — "1 of 2 runes channeled" —
+    /// so the player can see the app registering what they do.
+    var phaseProgress: PhaseAutoDetector.Progress?
     /// Cards sitting somewhere they can't be. Takes over the bar while any
     /// exist: the board and the engine have diverged, so telling the player
     /// what to put back matters more than the next turn step.
@@ -92,6 +97,22 @@ struct TurnControlBar: View {
                         .font(.body)
                         .foregroundStyle(.white.opacity(0.75))
                         .fixedSize(horizontal: false, vertical: true)
+                } else if let progress = phaseProgress, progress.needsCorrection {
+                    // Ranked above the engine's own verdict: this says the
+                    // card on the table can't be paid for and has to go
+                    // back, which the player must act on before anything
+                    // the engine goes on to say about it means much.
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                        Text(progress.headline)
+                            .font(.title3.bold())
+                            .foregroundStyle(.white)
+                    }
+                    Text(progress.detail ?? gameState.phase.instruction)
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if let latestInstruction = recentInstruction {
                     HStack(spacing: 6) {
                         Image(systemName: latestInstruction.verdict.iconName)
@@ -103,6 +124,26 @@ struct TurnControlBar: View {
                     Text(latestInstruction.detail ?? gameState.phase.instruction)
                         .font(.body)
                         .foregroundStyle(.white.opacity(0.7))
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let progress = phaseProgress {
+                    // Live phase feedback. `isComplete` is the app saying
+                    // it saw the player finish, which is worth a different
+                    // icon from a step still outstanding — with Auto-detect
+                    // on it's also the last frame before the phase moves.
+                    HStack(spacing: 6) {
+                        Image(systemName: progress.needsCorrection
+                              ? "exclamationmark.triangle.fill"
+                              : (progress.isComplete ? "checkmark.circle.fill" : "circle.dashed"))
+                            .foregroundStyle(progress.needsCorrection
+                                             ? .red
+                                             : (progress.isComplete ? .green : .yellow))
+                        Text(progress.headline)
+                            .font(.title3.bold())
+                            .foregroundStyle(.white)
+                    }
+                    Text(progress.detail ?? gameState.phase.instruction)
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.75))
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("Next Step")

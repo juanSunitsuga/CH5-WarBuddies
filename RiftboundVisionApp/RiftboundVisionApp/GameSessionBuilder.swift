@@ -125,7 +125,7 @@ enum GameSessionBuilder {
     /// with an unrecognized Domain string is a data problem worth
     /// surfacing, not silently dropping into "domainless."
     private static func domain(named raw: String) -> Domain? {
-        Domain(rawValue: raw.lowercased())
+        Domain(caseInsensitive: raw)
     }
 
     /// Only Main Deck card types map onto `MainDeckCard` — Runes, Legends,
