@@ -119,8 +119,7 @@ struct TurnControlBar: View {
         let recentInstruction = recent.first { $0.verdict == .accepted || $0.verdict == .rejected } ?? recent.first
 
         return VStack(alignment: .leading, spacing: 14) {
-            statusStrip(recentInstruction)
-            phaseCards
+            phaseCards(recentInstruction)
             controlRow
         }
         .padding(.horizontal, 24)
@@ -244,14 +243,27 @@ struct TurnControlBar: View {
     /// Centre-aligned, not top-aligned: `RiftPanelCard` stretches every
     /// card to the row's height, so the connecting hairlines belong on the
     /// shared midline rather than at a hand-guessed `.top` offset.
-    private var phaseCards: some View {
+    /// The three stage cards, with whatever the app currently has to say
+    /// filling the space to the right of End Turn.
+    ///
+    /// That space was a bare `Spacer` and the status strip sat above the
+    /// cards, which pushed the whole row down whenever there was something
+    /// to report and moved it back up when the message aged out — the
+    /// bottom of the window shifted while a player was reading it. Putting
+    /// the message beside End Turn instead uses ground that was already
+    /// empty, and the row keeps one height whether or not anything is being
+    /// said.
+    private func phaseCards(_ recentInstruction: InstructionLogEntry?) -> some View {
         HStack(alignment: .center, spacing: 0) {
             StartOfTurnPhaseCard(progress: progress)
             RiftFlowConnector()
             DoYourTurnCard(progress: progress)
             RiftFlowConnector()
             EndTurnCard(progress: progress)
-            Spacer(minLength: 0)
+
+            statusStrip(recentInstruction)
+                .padding(.leading, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .fixedSize(horizontal: false, vertical: true)
     }

@@ -62,9 +62,9 @@ struct RiftboundVisionAppApp: App {
                 .preferredColorScheme(.dark)
         }
         .modelContainer(container)
-        // The reference is a fixed composition — a unified toolbar keeps
-        // the title bar from adding a second, differently-coloured band
-        // above the header bar.
+        // Load-bearing: `ContentView` draws its own top bar into this
+        // space (see `topBar`). Without this the system title bar would sit
+        // above it as a second, differently-coloured band.
         .windowStyle(.hiddenTitleBar)
     }
 }
