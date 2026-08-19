@@ -485,6 +485,11 @@ public final class ObjectTracker: @unchecked Sendable {
                 disappearedIDs.append(id)
                 tracked.removeValue(forKey: id)
                 labelVotes[id] = nil
+                // Was left behind: `discardStreaks` was only cleared on the
+                // discard path, so every track that instead timed out left
+                // one entry keyed by an ID that will never be seen again.
+                // Small each time, unbounded over a session.
+                discardStreaks[id] = nil
                 retire(track, atFrame: frameIndex)
             } else {
                 var occluded = track

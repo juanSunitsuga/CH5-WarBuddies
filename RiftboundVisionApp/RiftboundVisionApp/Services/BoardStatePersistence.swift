@@ -128,9 +128,22 @@ final class BoardStatePersistence {
             || card.orientationRaw != orientationRaw
             || card.zIndex != object.zIndex
             || card.underlaidTrackingIDs != underlaid
-        card.lastSeenFrame = object.lastSeenFrame
+        // **After** the guard, not before it.
+        //
+        // Assigning this on every poll wrote to a `@Model` for every card
+        // several times a second, which marks the object dirty in
+        // SwiftData's change tracking whether or not anything is saved —
+        // so the `changed` check below saved a disk write and bought
+        // nothing, because the mutation had already happened. The pending
+        // change set grew for as long as the app ran, which is what made a
+        // long session slower than a short one.
+        //
+        // Nothing reads `lastSeenFrame`; it's diagnostic. Updating it only
+        // when something else about the card actually changed keeps a
+        // still card completely inert.
         guard changed else { return }
 
+        card.lastSeenFrame = object.lastSeenFrame
         card.cardID = printing?.riftboundID
         card.displayName = printing?.name
         card.zoneRaw = zoneRaw
