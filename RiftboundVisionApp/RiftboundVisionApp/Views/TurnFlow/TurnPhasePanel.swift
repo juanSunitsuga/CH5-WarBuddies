@@ -8,8 +8,7 @@
 import SwiftUI
 import RiftboundVision
 
-/// The bottom row of V3: three linked cards that say where you are in the
-/// turn — "Start of Turn Phases", "Do Your Turn!", "End Turn".
+/// The bottom row of V3: three linked cards that say where you are in the turn — "Start of Turn Phases", "Do Your Turn!", "End Turn".
 ///
 /// Written against the *five*-phase `GamePhase`. Rule 517's Ending,
 /// Expiration and Cleanup steps were deliberately removed from that enum
