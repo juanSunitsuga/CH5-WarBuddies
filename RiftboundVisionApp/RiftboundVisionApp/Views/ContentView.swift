@@ -40,35 +40,71 @@ struct ContentView: View {
     }
 
     var body: some View {
-        // Top bar across the full width, then the two columns beneath it.
+        // The sidebar starts at the *toolbar*, not below the header.
         //
-        // `GameStateBar` is inside the left column rather than spanning the
-        // window, which is what puts the Score panel level with the turn
-        // banner instead of starting below it. The bottom bar is in that
-        // column too, so the sidebar runs unbroken to the bottom edge.
-        VStack(spacing: 0) {
-            topBar
+        // `GameStateBar` spanned the full width, so the blue column could
+        // only ever begin under it — in the reference the Score panel is
+        // level with the turn banner, both starting at the top of the
+        // content area. Putting the header inside the left column is what
+        // gets that: the `HStack` is now the outermost container.
+        HStack(alignment: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                GameStateBar(gameState: $pipeline.gameState)
 
-            HStack(alignment: .top, spacing: 0) {
-                VStack(spacing: 0) {
-                    GameStateBar(gameState: $pipeline.gameState)
-                    cameraStage
-                    TurnControlBar(
-                        gameState: $pipeline.gameState,
-                        isAutoDetecting: $pipeline.isAutoDetectingPhase,
-                        instructions: pipeline.instructions,
-                        phaseProgress: pipeline.phaseProgress,
-                        misplacedCards: pipeline.misplacedCards,
-                        needsCalibration: pipeline.needsCalibration
-                    )
-                }
-
-                DetectedCardsPanel(pipeline: pipeline, selection: $selectedCard)
+                // The phase cards sit under the feed *only* — the
+                // sidebar continues past them to the bottom edge, which
+                // is why the bottom bar lives inside this column rather
+                // than spanning the window.
+                cameraStage
+                TurnControlBar(
+                    gameState: $pipeline.gameState,
+                    isAutoDetecting: $pipeline.isAutoDetectingPhase,
+                    instructions: pipeline.instructions,
+                    phaseProgress: pipeline.phaseProgress,
+                    misplacedCards: pipeline.misplacedCards,
+                    needsCalibration: pipeline.needsCalibration
+                )
             }
+
+            DetectedCardsPanel(pipeline: pipeline, selection: $selectedCard)
         }
-        .ignoresSafeArea(.container, edges: .top)
         .background(RiftboundPalette.mainBackground)
         .frame(minWidth: 1160, minHeight: 675)
+        // `.primaryAction` on every item, not `.automatic`: with
+        // `.hiddenTitleBar` there is no title to sit beside, so the
+        // default placement collapsed the whole set against the left edge
+        // next to the traffic lights. The reference puts them at the
+        // trailing edge.
+        .toolbar {
+            // The window title is hidden (`.hiddenTitleBar` in the app
+            // entry point), so the name has to be drawn as a toolbar item.
+            // `.navigation` is the leading slot, just right of the traffic
+            // lights, which is where a document window's title would sit.
+            ToolbarItem(placement: .navigation) { appNameLabel }
+            ToolbarItem(placement: .primaryAction) {
+                cameraPicker
+            }
+            ToolbarItem(placement: .primaryAction) {
+                // Drag the 4 yellow corner handles onto the physical
+                // mat's actual corners as seen by the camera — a visual
+                // reference layer only now, not consulted by detection.
+                Toggle(isOn: $pipeline.isCalibrating) {
+                    Label("Calibrate Playmat", systemImage: "square.dashed")
+                }
+                .toggleStyle(.button)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                diagnosticsMenu
+            }
+            ToolbarItem(placement: .primaryAction) {
+                // Starts the *pipeline*, not the camera — the feed is
+                // already live so the mat can be calibrated first.
+                Button(pipeline.isPipelineRunning ? "Stop" : "Start Game") {
+                    pipeline.isPipelineRunning ? pipeline.stopPipeline() : pipeline.startPipeline()
+                }
+                .disabled(!pipeline.isCameraRunning)
+            }
+        }
         .onAppear {
             pipeline.refreshAvailableCameras()
             // First launch only. Set before presenting rather than on
@@ -287,73 +323,20 @@ struct ContentView: View {
                 pipeline.refreshAvailableCameras()
             }
         } label: {
-            // Icon only: the full "Camera: FaceTime HD Camera" is useful in
-            // the menu's own header but far too wide for a bar whose whole
-            // point is four compact controls.
             Label(cameraLabel, systemImage: selectedIsContinuityCamera ? "iphone" : "camera")
-                .labelStyle(.iconOnly)
         }
     }
 
-    // MARK: - Top bar
-
-    /// The window's own bar, drawn rather than handed to SwiftUI's
-    /// `.toolbar`.
-    ///
-    /// The reference puts the app name hard left and the four controls hard
-    /// right. `.toolbar` couldn't produce that here: under
-    /// `.hiddenTitleBar` there is no title for `.primaryAction` items to
-    /// sit opposite, so every item — whatever its placement — packed
-    /// against the leading edge next to the traffic lights. Two attempts at
-    /// steering it with placements and background modifiers both came out
-    /// left-aligned.
-    ///
-    /// An `HStack` with a `Spacer` is not a workaround for that, it's the
-    /// thing being asked for: a name, a gap, four controls. Drawing it
-    /// directly also means the name is plain text with no item container,
-    /// which is what the reference shows and what the platform's own
-    /// styling kept adding back.
-    ///
-    /// The leading inset clears the traffic lights, which the system still
-    /// draws on top of this view.
-    private var topBar: some View {
-        HStack(spacing: 10) {
-            Text("Riftchamps")
-                .font(RiftboundFont.heading)
-                .foregroundStyle(RiftboundPalette.regularText)
-                .accessibilityAddTraits(.isHeader)
-
-            Spacer(minLength: 20)
-
-            cameraPicker
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-
-            // Drag the 4 corner handles onto the physical mat's actual
-            // corners as seen by the camera — a visual reference layer
-            // only, not consulted by detection.
-            Toggle(isOn: $pipeline.isCalibrating) {
-                Label("Calibrate Playmat", systemImage: "square.dashed")
-                    .labelStyle(.iconOnly)
-            }
-            .toggleStyle(.button)
-
-            diagnosticsMenu
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-
-            // Starts the *pipeline*, not the camera — the feed is already
-            // live so the mat can be calibrated first.
-            Button(pipeline.isPipelineRunning ? "Stop" : "Start Game") {
-                pipeline.isPipelineRunning ? pipeline.stopPipeline() : pipeline.startPipeline()
-            }
-            .disabled(!pipeline.isCameraRunning)
-        }
-        .padding(.leading, 78)
-        .padding(.trailing, 16)
-        .frame(height: 52)
-        .frame(maxWidth: .infinity)
-        .background(RiftboundPalette.titleBar)
+    /// The app name. Styled by the platform along with everything else in
+    /// the bar — an earlier version opted it out of macOS 26's item
+    /// background so it wouldn't read as a button, and a hand-drawn bar
+    /// replaced the toolbar entirely to control the alignment. Both are
+    /// gone: the bar is native, and its chrome is the system's to decide.
+    private var appNameLabel: some View {
+        Text("Riftchamps")
+            .font(RiftboundFont.heading)
+            .foregroundStyle(RiftboundPalette.regularText)
+            .accessibilityAddTraits(.isHeader)
     }
 
     /// The three developer affordances, folded behind one control.
@@ -411,7 +394,6 @@ struct ContentView: View {
             }
         } label: {
             Label("Help & Diagnostics", systemImage: "questionmark.circle")
-                .labelStyle(.iconOnly)
         }
         .popover(isPresented: $isShowingPipelineSettings) {
             PipelineSettingsView(pipeline: pipeline)

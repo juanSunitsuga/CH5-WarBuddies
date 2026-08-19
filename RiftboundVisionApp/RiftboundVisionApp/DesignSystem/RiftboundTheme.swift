@@ -24,10 +24,6 @@ import CoreText
 /// Nothing here is invented: if a colour isn't on the board it isn't in
 /// this enum, which is what keeps a stray shade from creeping back in.
 enum RiftboundPalette {
-    /// #0B0B0D — the window's top bar. Near-black rather than a navy,
-    /// because it sits behind the system's own traffic lights and any
-    /// blue there reads as a second header stacked above the real one.
-    static let titleBar = Color(hex: 0x0B0B0D)
     /// #1D3145 — shadow/stroke for elements. Also the fill behind the
     /// Unit/Spell/Battlefield chip art, which is drawn on this blue.
     static let elementShadow = Color(hex: 0x1D3145)
