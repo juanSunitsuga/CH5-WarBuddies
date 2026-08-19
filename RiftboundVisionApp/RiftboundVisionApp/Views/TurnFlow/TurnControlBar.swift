@@ -186,6 +186,18 @@ struct TurnControlBar: View {
                 detail: progress.detail,
                 steps: progress.steps
             )
+        } else {
+            // Before Start Game there is no pipeline and so no progress to
+            // report, and this slot rendered as a blank rectangle of window
+            // beside the phase cards. Saying what the phase expects fills
+            // it with the one thing that's true either way, and means the
+            // area never looks broken.
+            strip(
+                icon: "circle.dashed",
+                tint: RiftboundPalette.elementStroke,
+                headline: gameState.phase.instruction,
+                detail: nil
+            )
         }
     }
 

@@ -125,7 +125,8 @@ public struct PendingPlay: Sendable, Equatable {
         var steps: [String] = []
 
         if !cardExhausted(observation) {
-            steps.append("turn \(name) sideways")
+            // "it": every caller names the card in the line above this one.
+            steps.append("turn it sideways")
         }
 
         let energyLeft = energyCost - energyPaid(observation)
