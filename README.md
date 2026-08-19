@@ -62,7 +62,7 @@ Four Swift packages, each independently buildable and tested:
 | **RiftboundEngine** (`RiftboundExpertSystem`) | Pure rules engine — legality, the Chain, Showdowns, Cleanup, turn structure. No UI, no camera, no ML. The source of truth for "is this move legal." |
 | **RiftboundVision** | Camera capture, YOLO detection, object tracking, playmat calibration, card database. A library with no app bundle of its own. |
 | **RiftboundTextProcessing** | Card text → game action. SwiftData cache over a SQLite card index, with on-device Foundation Models for cards the index doesn't know. |
-| **RiftboundVisionApp** | The runnable macOS app — camera picker, calibration, live overlays, card details, score tracking, and the instruction bar. Its design notes are `RiftboundVisionApp/design.md`. |
+| **RiftboundVisionApp** | The runnable macOS app — camera picker, calibration, live overlays, card details, score tracking, and the instruction bar. Its design notes live in `RiftboundVisionApp/design.md` — a local, gitignored doc like `CLAUDE.md`. |
 
 Dependencies point inward; the engine depends on nothing:
 
@@ -383,7 +383,7 @@ Challenge 5/
 │       ├── Adapter/        ExpertSystemTranslatorAdapter
 │       └── Resources/      RiftboundCardDatabase.db
 └── RiftboundVisionApp/
-    ├── design.md            palette, shared controls, UI traps — read first
+    ├── design.md            palette, shared controls, UI traps (gitignored)
     └── RiftboundVisionApp/
         ├── App/             entry point, SwiftData container
         ├── Controllers/     CameraPipelineController

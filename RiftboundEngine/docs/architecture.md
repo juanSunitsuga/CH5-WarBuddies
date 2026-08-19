@@ -321,7 +321,8 @@ Four types, none of which know anything about the Chain or `GameState`:
 The app layer that renders all of this has its own notes —
 `RiftboundVisionApp/design.md` — covering the palette, the shared control
 styles, and the UI traps that have already cost time. Read it before
-changing anything the player looks at.
+changing anything the player looks at. Like `CLAUDE.md` it's kept out of
+git, so it's there for whoever has it rather than shipped with a clone.
 
 **The turn shown to the player is five phases, not eight.** 517's Ending,
 Expiration and Cleanup are real, but a player does nothing in them, so
