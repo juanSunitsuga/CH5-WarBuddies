@@ -75,12 +75,12 @@ struct ContentView: View {
         // default placement collapsed the whole set against the left edge
         // next to the traffic lights. The reference puts them at the
         // trailing edge.
+        // No name in the bar. The window is a single fixed composition
+        // that only ever shows this app, so a title had nothing to
+        // disambiguate — and dropping the leading item leaves the bar with
+        // nothing pinned to that edge, which is the only thing
+        // `.primaryAction` needs to sit opposite.
         .toolbar {
-            // The window title is hidden (`.hiddenTitleBar` in the app
-            // entry point), so the name has to be drawn as a toolbar item.
-            // `.navigation` is the leading slot, just right of the traffic
-            // lights, which is where a document window's title would sit.
-            ToolbarItem(placement: .navigation) { appNameLabel }
             ToolbarItem(placement: .primaryAction) {
                 cameraPicker
             }
@@ -325,18 +325,6 @@ struct ContentView: View {
         } label: {
             Label(cameraLabel, systemImage: selectedIsContinuityCamera ? "iphone" : "camera")
         }
-    }
-
-    /// The app name. Styled by the platform along with everything else in
-    /// the bar — an earlier version opted it out of macOS 26's item
-    /// background so it wouldn't read as a button, and a hand-drawn bar
-    /// replaced the toolbar entirely to control the alignment. Both are
-    /// gone: the bar is native, and its chrome is the system's to decide.
-    private var appNameLabel: some View {
-        Text("Riftchamps")
-            .font(RiftboundFont.heading)
-            .foregroundStyle(RiftboundPalette.regularText)
-            .accessibilityAddTraits(.isHeader)
     }
 
     /// The three developer affordances, folded behind one control.
