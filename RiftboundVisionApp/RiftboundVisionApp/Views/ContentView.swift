@@ -34,32 +34,33 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            GameStateBar(gameState: $pipeline.gameState)
+        // The sidebar starts at the *toolbar*, not below the header.
+        //
+        // `GameStateBar` spanned the full width, so the blue column could
+        // only ever begin under it — in the reference the Score panel is
+        // level with the turn banner, both starting at the top of the
+        // content area. Putting the header inside the left column is what
+        // gets that: the `HStack` is now the outermost container.
+        HStack(alignment: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                GameStateBar(gameState: $pipeline.gameState)
 
-            // The right column runs the full height of the window, not
-            // just alongside the camera — in the reference the phase cards
-            // sit *under the feed only*, with the Score/Card Library
-            // column continuing past them to the bottom edge. Nesting the
-            // bottom bar inside the left column is what produces that;
-            // making it a sibling of the whole `HStack` (as it was) cut
-            // the sidebar off early and left a band of window background
-            // under it.
-            HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    cameraStage
-                    TurnControlBar(
-                        gameState: $pipeline.gameState,
-                        isAutoDetecting: $pipeline.isAutoDetectingPhase,
-                        instructions: pipeline.instructions,
-                        phaseProgress: pipeline.phaseProgress,
-                        misplacedCards: pipeline.misplacedCards,
-                        needsCalibration: pipeline.needsCalibration
-                    )
-                }
-
-                DetectedCardsPanel(pipeline: pipeline, selection: $selectedCard)
+                // The phase cards sit under the feed *only* — the
+                // sidebar continues past them to the bottom edge, which
+                // is why the bottom bar lives inside this column rather
+                // than spanning the window.
+                cameraStage
+                TurnControlBar(
+                    gameState: $pipeline.gameState,
+                    isAutoDetecting: $pipeline.isAutoDetectingPhase,
+                    instructions: pipeline.instructions,
+                    phaseProgress: pipeline.phaseProgress,
+                    misplacedCards: pipeline.misplacedCards,
+                    needsCalibration: pipeline.needsCalibration
+                )
             }
+
+            DetectedCardsPanel(pipeline: pipeline, selection: $selectedCard)
         }
         .background(RiftboundPalette.mainBackground)
         .frame(minWidth: 1160, minHeight: 675)
@@ -69,6 +70,16 @@ struct ContentView: View {
         // next to the traffic lights. The reference puts them at the
         // trailing edge.
         .toolbar {
+            // The window title is hidden (`.hiddenTitleBar` in the app
+            // entry point), so the name has to be drawn as a toolbar item.
+            // `.navigation` is the leading slot, just right of the traffic
+            // lights, which is where a document window's title would sit.
+            ToolbarItem(placement: .navigation) {
+                Text("BonBon")
+                    .font(RiftboundFont.heading)
+                    .foregroundStyle(RiftboundPalette.regularText)
+                    .accessibilityAddTraits(.isHeader)
+            }
             ToolbarItem(placement: .primaryAction) {
                 cameraPicker
             }

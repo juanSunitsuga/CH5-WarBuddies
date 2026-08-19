@@ -64,10 +64,10 @@ struct DetectedCardsPanel: View {
             }
             .padding(20)
         }
-        // `maxHeight: .infinity` so the blue column reaches the bottom of
-        // the window even when its content is short. Without it the
-        // `ScrollView` sized to its content and the background stopped
-        // partway down, leaving a band of window blue below the panel.
+        // The column now starts level with the header rather than below
+        // it, so its own top padding is what keeps "Score" aligned with
+        // "Current Turn" instead of riding up against the toolbar.
+        .scrollContentBackground(.hidden)
         .frame(width: 362)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(RiftboundPalette.secondaryBackground)
