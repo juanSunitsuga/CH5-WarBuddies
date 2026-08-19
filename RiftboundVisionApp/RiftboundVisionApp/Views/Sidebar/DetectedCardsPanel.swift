@@ -23,7 +23,6 @@ struct DetectedCardsPanel: View {
 
     @State private var searchText = ""
     @State private var isSearchFieldShown = false
-    @State private var isShowingSettings = false
     @FocusState private var isSearchFocused: Bool
 
     /// Typing searches the whole catalogue rather than only what's on
@@ -71,9 +70,6 @@ struct DetectedCardsPanel: View {
         .frame(width: 362)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(RiftboundPalette.secondaryBackground)
-        .popover(isPresented: $isShowingSettings) {
-            PipelineSettingsView(pipeline: pipeline)
-        }
     }
 
     // MARK: - Score
@@ -106,9 +102,11 @@ struct DetectedCardsPanel: View {
 
                 Spacer()
 
-                iconButton(systemName: "gearshape", label: "Pipeline settings") {
-                    isShowingSettings = true
-                }
+                // Only the magnifier here. Pipeline settings used to sit
+                // beside it, which put a developer control in the middle
+                // of a player-facing panel and gave this header two
+                // unrelated jobs. It lives in the toolbar's diagnostics
+                // menu now, with the other two developer affordances.
                 iconButton(systemName: "magnifyingglass", label: "Search the card catalogue") {
                     isSearchFieldShown.toggle()
                     if isSearchFieldShown {

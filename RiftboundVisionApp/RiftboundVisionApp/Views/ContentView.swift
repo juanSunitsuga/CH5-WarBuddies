@@ -75,25 +75,13 @@ struct ContentView: View {
             // `.navigation` is the leading slot, just right of the traffic
             // lights, which is where a document window's title would sit.
             ToolbarItem(placement: .navigation) {
-                Text("BonBon")
+                Text("Riftchamps")
                     .font(RiftboundFont.heading)
                     .foregroundStyle(RiftboundPalette.regularText)
                     .accessibilityAddTraits(.isHeader)
             }
             ToolbarItem(placement: .primaryAction) {
                 cameraPicker
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // Explicit action for the case passive discovery can't
-                // handle — an iPhone the user manually Disconnected on
-                // the phone side. This actively tries to open it, which
-                // is what triggers the reconnect/permission handshake,
-                // rather than waiting for it to reappear on its own.
-                Button {
-                    pipeline.useIPhoneCamera()
-                } label: {
-                    Label("Use iPhone Camera", systemImage: "iphone")
-                }
             }
             ToolbarItem(placement: .primaryAction) {
                 // Drag the 4 yellow corner handles onto the physical
@@ -105,31 +93,7 @@ struct ContentView: View {
                 .toggleStyle(.button)
             }
             ToolbarItem(placement: .primaryAction) {
-                // Debug settings overlay — per-stage toggles instead of one
-                // flat kill switch. Disabling an earlier stage cascades:
-                // everything downstream of it turns off too (enforced by
-                // `CameraPipelineController.setStage`/`isStageActive`), so
-                // there's no way to leave the pipeline in an inconsistent
-                // "stage 3 on, stage 2 off" state from this UI.
-                Button {
-                    isShowingPipelineSettings = true
-                } label: {
-                    Label("Pipeline Settings", systemImage: "gearshape")
-                }
-                .popover(isPresented: $isShowingPipelineSettings) {
-                    PipelineSettingsView(pipeline: pipeline)
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // Diagnostic for "Continuity Camera works elsewhere but
-                // this app doesn't see it" — dumps every video device
-                // macOS reports (all device types, plus the legacy
-                // enumeration API) to the console and the sheet below.
-                Button {
-                    pipeline.runCameraDiagnostic()
-                } label: {
-                    Label("Debug Cameras", systemImage: "ladybug")
-                }
+                diagnosticsMenu
             }
             ToolbarItem(placement: .primaryAction) {
                 // Starts the *pipeline*, not the camera — the feed is
@@ -347,6 +311,59 @@ struct ContentView: View {
             }
         } label: {
             Label(cameraLabel, systemImage: selectedIsContinuityCamera ? "iphone" : "camera")
+        }
+    }
+
+    /// The three developer affordances, folded behind one control.
+    ///
+    /// They used to be three separate toolbar buttons — an iPhone glyph, a
+    /// gear and a ladybug — which put six items across the top bar and made
+    /// the two a player actually needs (pick a camera, calibrate the mat)
+    /// hard to find among them. None of them is used during a game: two are
+    /// for when a camera won't appear, and one is a pipeline kill-switch
+    /// panel.
+    ///
+    /// Nothing is removed, only gathered. A menu also lets each item carry
+    /// its full name instead of a glyph that has to be guessed at.
+    private var diagnosticsMenu: some View {
+        Menu {
+            // Explicit action for the case passive discovery can't handle —
+            // an iPhone the user manually Disconnected on the phone side.
+            // This actively tries to open it, which is what triggers the
+            // reconnect/permission handshake, rather than waiting for it to
+            // reappear on its own.
+            Button {
+                pipeline.useIPhoneCamera()
+            } label: {
+                Label("Use iPhone Camera", systemImage: "iphone")
+            }
+
+            // Per-stage toggles instead of one flat kill switch. Disabling
+            // an earlier stage cascades: everything downstream turns off
+            // too (enforced by `CameraPipelineController.setStage`/
+            // `isStageActive`), so there's no way to leave the pipeline in
+            // an inconsistent "stage 3 on, stage 2 off" state from here.
+            Button {
+                isShowingPipelineSettings = true
+            } label: {
+                Label("Pipeline Settings…", systemImage: "gearshape")
+            }
+
+            Divider()
+
+            // Diagnostic for "Continuity Camera works elsewhere but this
+            // app doesn't see it" — dumps every video device macOS reports
+            // (all device types, plus the legacy enumeration API).
+            Button {
+                pipeline.runCameraDiagnostic()
+            } label: {
+                Label("Debug Cameras…", systemImage: "ladybug")
+            }
+        } label: {
+            Label("Help & Diagnostics", systemImage: "questionmark.circle")
+        }
+        .popover(isPresented: $isShowingPipelineSettings) {
+            PipelineSettingsView(pipeline: pipeline)
         }
     }
 
