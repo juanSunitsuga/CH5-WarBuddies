@@ -76,11 +76,19 @@ final class BoardStatePersistence {
             upsert(object, in: objects, zone: zone)
         }
 
+        // One save for the whole poll, and none when nothing changed —
+        // see `needsSave`.
+        flushPendingChanges()
     }
 
     /// Forgets this session's caches. The rows stay on disk — they're
     /// last-known board state, not scratch data.
     func reset() {
+        // Before dropping the caches: a poll's changes are now committed at
+        // the end of `sync(...)` rather than per card, so stopping the
+        // pipeline could otherwise walk away from a batch that was written
+        // to the context but never saved.
+        flushPendingChanges()
         persistedCards = [:]
         trashPollCounts = [:]
     }
@@ -118,7 +126,7 @@ final class BoardStatePersistence {
             )
             context.insert(inserted)
             persistedCards[object.id] = inserted
-            save()
+            needsSave = true
             return
         }
 
@@ -151,7 +159,7 @@ final class BoardStatePersistence {
         card.zIndex = object.zIndex
         card.underlaidTrackingIDs = underlaid
         card.updatedAt = .now
-        save()
+        needsSave = true
     }
 
     /// Cache first, then a fetch for rows written in an earlier session.
@@ -172,14 +180,27 @@ final class BoardStatePersistence {
     private func delete(trackingID: TrackedObjectID) {
         if let card = existingCard(for: trackingID) {
             context.delete(card)
-            save()
+            needsSave = true
         }
         persistedCards[trackingID] = nil
     }
 
+    /// Whether anything in this poll actually touched the store.
+    ///
+    /// `context.save()` is synchronous and this type is `@MainActor`, so
+    /// each one blocks the thread the camera preview publishes on. Saving
+    /// per *card* meant a full table's worth of writes every poll — the
+    /// store's own history shows bursts of ~376 writes a minute, about six
+    /// a second, matching the detection cadence. They're now coalesced into
+    /// at most one save per `sync(...)`, and none at all when the board is
+    /// unchanged, which with stable tracking is the ordinary case.
+    private var needsSave = false
+
     /// Board state is re-derived from the camera on the next poll, so a
     /// failed save costs one frame of durability, not correctness.
-    private func save() {
+    private func flushPendingChanges() {
+        guard needsSave else { return }
+        needsSave = false
         try? context.save()
     }
 }

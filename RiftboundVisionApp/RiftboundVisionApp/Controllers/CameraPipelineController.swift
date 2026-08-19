@@ -281,7 +281,19 @@ final class CameraPipelineController: ObservableObject {
     /// reconnected Object Tracking + Area of Region pipeline is really
     /// producing real events, and the seam a future GameEngine wiring
     /// would read from.
-    @Published private(set) var observedEvents: [RiftboundExpertSystem.ObservedTableEvent] = []
+    ///
+    /// Deliberately **not** `@Published`. This type is an
+    /// `ObservableObject`, whose change signal carries no information about
+    /// *which* property changed — so every mutation invalidates every view
+    /// observing it, which here is `ContentView` (the camera stage and all
+    /// three overlays) and `DetectedCardsPanel` (whose rows each fetch
+    /// full-size card art). Publishing this meant a full re-render of the
+    /// camera and the sidebar on every table event, to keep a diagnostic
+    /// count up to date and nothing else. The count still tracks live in
+    /// practice: the settings popover is re-rendered by the genuinely
+    /// published per-poll properties (`detections`, `trackedObjects`)
+    /// anyway, and re-reads this when it does.
+    private(set) var observedEvents: [RiftboundExpertSystem.ObservedTableEvent] = []
 
 
     /// The tracker's own view of the table — stable IDs and centroids,
