@@ -21,6 +21,12 @@ import RiftboundVision
 struct ContentView: View {
     @StateObject private var pipeline: CameraPipelineController
     @State private var isShowingPipelineSettings = false
+    @State private var isShowingOnboarding = false
+    /// Whether the welcome sheet has already been shown. Persisted, so it
+    /// greets a new player once and then stays out of the way — a modal
+    /// that appears every launch is one people learn to dismiss without
+    /// reading. It stays reachable from the Help menu.
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     /// The card being inspected. Lives here rather than in the panel so the
     /// camera view and the sidebar agree on what's selected — tapping a box
     /// is what usually sets it.
@@ -104,7 +110,19 @@ struct ContentView: View {
                 .disabled(!pipeline.isCameraRunning)
             }
         }
-        .onAppear { pipeline.refreshAvailableCameras() }
+        .onAppear {
+            pipeline.refreshAvailableCameras()
+            // First launch only. Set before presenting rather than on
+            // dismiss, so a player who closes the window with the sheet
+            // still open isn't greeted by it again next time.
+            if !hasSeenOnboarding {
+                hasSeenOnboarding = true
+                isShowingOnboarding = true
+            }
+        }
+        .sheet(isPresented: $isShowingOnboarding) {
+            OnboardingView { isShowingOnboarding = false }
+        }
         // Bring the camera up as soon as the window opens, prompting for
         // access the first time. Calibration needs a live picture, and
         // aligning the mat after starting detection is what put cards in
@@ -332,6 +350,14 @@ struct ContentView: View {
             // This actively tries to open it, which is what triggers the
             // reconnect/permission handshake, rather than waiting for it to
             // reappear on its own.
+            Button {
+                isShowingOnboarding = true
+            } label: {
+                Label("How to Play…", systemImage: "questionmark.circle")
+            }
+
+            Divider()
+
             Button {
                 pipeline.useIPhoneCamera()
             } label: {
