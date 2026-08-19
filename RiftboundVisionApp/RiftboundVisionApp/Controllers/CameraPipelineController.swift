@@ -204,6 +204,14 @@ final class CameraPipelineController: ObservableObject {
     /// moment the table shows every obligation met.
     @Published private(set) var pendingPlay: PendingPlay?
 
+    /// The landing event `pendingPlay` opened — held so it can be
+    /// resubmitted to the engine once payment settles. The engine
+    /// re-translates this itself (`GameEngine.resolveDeferredPlay`), same
+    /// as it would have immediately; this app layer doesn't re-derive the
+    /// card or destination from it. `nil` exactly when `pendingPlay` is
+    /// `nil`; the two are set and cleared together.
+    private var pendingPlayEvent: RiftboundExpertSystem.ObservedTableEvent?
+
     /// Runes currently in the player's rune area, with their stances — the
     /// input to every affordability question (130.2/130.3).
     private(set) var autoDetectRunes: [ObservedRune] = []
@@ -705,13 +713,20 @@ final class CameraPipelineController: ObservableObject {
         expertSystemEventLoop = Task {
             for await event in adapter.events() {
                 self.recordObservedEvent(event)
-                self.checkAffordability(of: event)
+                let deferredToSettlement = self.checkAffordability(of: event)
                 guard self.isStageActive(.nlpTranslation) else {
                     // Still log it, otherwise switching stage ③ off looks
                     // identical to the camera seeing nothing at all.
                     self.recordUnprocessed(event)
                     continue
                 }
+                // This landing just opened a `pendingPlay` — its real
+                // submission (with the physically observed Rune count)
+                // happens later, from `updateAutoDetect`, once payment
+                // settles. Asking the translator to accept it now, with no
+                // observation to check, would register the Play (and
+                // deduct its cost) before the player has paid anything.
+                guard !deferredToSettlement else { continue }
                 let instruction = await engine.process(event)
                 self.recordInstruction(instruction, for: event)
             }
@@ -1047,8 +1062,12 @@ extension CameraPipelineController {
             // A play left unsettled when the phase changed isn't chased
             // into the next one. Ending the turn is the player asserting
             // they're done, and holding last turn's obligation over them
-            // would make the app impossible to get out of.
+            // would make the app impossible to get out of. Its Play was
+            // never submitted (that only happens on settlement), so
+            // abandoning it here is correct, not lossy — the card simply
+            // never became official, same as it never having paid.
             pendingPlay = nil
+            pendingPlayEvent = nil
         }
 
         let detector = PhaseAutoDetector(
@@ -1075,8 +1094,27 @@ extension CameraPipelineController {
             settlement.steps = detector.abilitySteps(cards: observed, seat: .player1)
 
             if settlement.isComplete {
-                // Paid. Drop the hold and let the next poll speak normally.
+                // Paid — this is the first moment `observedExhaustedRuneCount`
+                // is actually known, so this is where the Play the landing
+                // event opened finally reaches the engine, not before. The
+                // engine re-translates `event` itself (same NLP layer
+                // `process(_:)` uses), so this app layer doesn't re-derive
+                // the card or destination — only the observed count is new.
+                if let event = pendingPlayEvent, let engine = gameEngine {
+                    let observedExhaustedRuneCount = play.energyPaid(observation)
+                    Task { [weak self] in
+                        guard let self else { return }
+                        let instruction = await engine.resolveDeferredPlay(
+                            for: event,
+                            observedExhaustedRuneCount: observedExhaustedRuneCount,
+                            proposedBy: self.localPlayerID
+                        )
+                        self.recordInstruction(instruction, for: event)
+                    }
+                }
+                // Drop the hold and let the next poll speak normally.
                 pendingPlay = nil
+                pendingPlayEvent = nil
                 paymentNotice = nil
                 paymentNoticeRaisedAt = nil
             }
@@ -1181,8 +1219,17 @@ extension CameraPipelineController {
     /// Only during the Action Phase (516.1). A card moving out of the hand
     /// during Awaken or Channel is the player tidying up, not paying for
     /// anything.
-    func checkAffordability(of event: RiftboundExpertSystem.ObservedTableEvent) {
-        guard gameState.phase.validatesPlayerMoves else { return }
+    ///
+    /// Returns whether this event's Play should be held back from
+    /// `engine.process(_:)` — true exactly when it just opened a
+    /// `pendingPlay`, whose real submission (with the physically observed
+    /// Rune count) happens later, once `updateAutoDetect` sees it settle.
+    /// Every other outcome here (nothing owed, unaffordable, wrong phase,
+    /// not a play at all) is unchanged from before and should still reach
+    /// the engine immediately.
+    @discardableResult
+    func checkAffordability(of event: RiftboundExpertSystem.ObservedTableEvent) -> Bool {
+        guard gameState.phase.validatesPlayerMoves else { return false }
 
         // A play arrives as either shape, and assuming only the first is
         // why this never fired. Picking a card up ends its track and
@@ -1191,25 +1238,25 @@ extension CameraPipelineController {
         // is `.cardAppeared` at the destination, *not* a `.cardMoved` that
         // remembers the hand. Requiring the move meant the app watched for
         // an event that mostly doesn't happen.
-        let destination: TableRegion
+        let destinationRegion: TableRegion
         switch event.kind {
         case .cardMoved(let from, let to):
-            guard from.isHandRegion else { return }
-            destination = to
+            guard from.isHandRegion else { return false }
+            destinationRegion = to
         case .cardAppeared(let region):
             // A card appearing in hand is the camera catching up, not a
             // play (and it's where cards come *from*).
-            guard !region.isHandRegion else { return }
-            destination = region
+            guard !region.isHandRegion else { return false }
+            destinationRegion = region
         case .cardRemoved, .cardOrientationChanged:
-            return
+            return false
         }
 
         // Rule 106: only a Location is somewhere a card gets played *to*.
         // Hand → trash is a discard, not a play, and costs nothing.
-        guard destination.location != nil else { return }
+        guard destinationRegion.location != nil else { return false }
         guard let definitionID = event.card?.cardDefinitionID,
-              let printing = cardDatabase.printing(riftboundID: definitionID.rawValue) else { return }
+              let printing = cardDatabase.printing(riftboundID: definitionID.rawValue) else { return false }
 
         let domains = printing.classification.domain.compactMap(Domain.init(caseInsensitive:))
         let card = ObservedCard(
@@ -1231,8 +1278,10 @@ extension CameraPipelineController {
 
         // One play at a time. A second card landing while the first is
         // still unpaid is the player getting ahead of themselves, and
-        // accepting it would bury the obligation they already owe.
-        guard pendingPlay == nil else { return }
+        // accepting it would bury the obligation they already owe. That
+        // second card still isn't tracked here, so it reaches the engine
+        // immediately (unaffected by this function) — same as before.
+        guard pendingPlay == nil else { return false }
 
         let progress = PhaseAutoDetector().paymentProgress(for: card, runes: autoDetectRunes)
         // Only speak up when there's something to say — a free card played
@@ -1246,23 +1295,26 @@ extension CameraPipelineController {
             || card.kind == .unit || card.kind == .champion
             || card.kind == .spell
             || !card.abilities.isEmpty
-        guard owesSomething else { return }
+        guard owesSomething else { return false }
         paymentNotice = progress
         paymentNoticeRaisedAt = Date()
         phaseProgress = progress
 
         // Affordable and something is owed → hold the phase open until the
         // table shows it paid. Unaffordable plays don't open a pending
-        // play: the answer there is "put it back", not "now pay for it".
-        guard !progress.needsCorrection else { return }
+        // play: the answer there is "put it back", not "now pay for it" —
+        // and the engine's own abstract-pool check rejects it immediately,
+        // same as before this function deferred anything.
+        guard !progress.needsCorrection else { return false }
         let mustExhaustCard = (card.kind == .unit || card.kind == .champion) && !card.entersReady
         // 150/556.2: a Spell has no board form — it resolves and goes to
         // the Trash. It's laid in the Base while being paid for, which is
         // how it's played at a table, so the play isn't finished until the
         // card is swept away.
         let mustGoToTrash = card.kind == .spell
-        guard mustExhaustCard || mustGoToTrash || card.energyCost > 0 || card.powerCost > 0 else { return }
+        guard mustExhaustCard || mustGoToTrash || card.energyCost > 0 || card.powerCost > 0 else { return false }
 
+        pendingPlayEvent = event
         pendingPlay = PendingPlay(
             name: card.name,
             mustExhaustCard: mustExhaustCard,
@@ -1273,6 +1325,7 @@ extension CameraPipelineController {
             exhaustedRunesAtPlay: autoDetectRunes.filter { !$0.isReady }.count,
             runesInAreaAtPlay: autoDetectRunes.count
         )
+        return true
     }
 
     /// What the table currently says about an unsettled play.

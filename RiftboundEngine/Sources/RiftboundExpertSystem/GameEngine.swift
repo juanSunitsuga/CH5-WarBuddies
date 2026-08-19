@@ -66,16 +66,68 @@ public actor GameEngine {
             return .unrecognizedEvent(event)
         }
 
-        switch LegalityValidator.validate(candidateAction, in: snapshot, proposedBy: proposer) {
+        return await runValidated(candidateAction, in: snapshot, proposedBy: proposer, fallbackEvent: event)
+    }
+
+    /// The landing event `process(_:)` would otherwise have run — held
+    /// back and resubmitted once the caller has watched a Play's payment
+    /// settle. `observedExhaustedRuneCount` is only known at that point
+    /// (`RiftboundVision.PendingPlay` watches Energy/Power get paid over
+    /// several frames *after* the card lands), well after the moment
+    /// `process(_:)` would normally fire.
+    ///
+    /// This still asks `translator` to classify `event` — same SQLite/
+    /// on-device-model/regex resolution `process(_:)` uses, so a deferred
+    /// Play gets exactly the same card-type and ability intelligence an
+    /// immediate one would have, not a re-implementation of it here. Only
+    /// the physically observed Rune count, which the translator has no way
+    /// to know, is patched onto the result before validating.
+    public func resolveDeferredPlay(
+        for event: ObservedTableEvent,
+        observedExhaustedRuneCount: Int?,
+        proposedBy player: PlayerID
+    ) async -> PlayerInstruction {
+        let snapshot = await store.currentState
+
+        guard let candidateAction = await translator.inferAction(
+            from: event, in: snapshot, proposedBy: player
+        ) else {
+            return .unrecognizedEvent(event)
+        }
+
+        // The translator gets the final say on what this event means —
+        // if it no longer reads as a Play (e.g. the card's since been
+        // reclassified), trust that rather than forcing one.
+        guard case .play(let card, let destination, let additionalChoices, _) = candidateAction else {
+            return await runValidated(candidateAction, in: snapshot, proposedBy: player, fallbackEvent: event)
+        }
+        let action = GameAction.play(
+            card: card,
+            destination: destination,
+            additionalChoices: additionalChoices,
+            observedExhaustedRuneCount: observedExhaustedRuneCount
+        )
+        return await runValidated(action, in: snapshot, proposedBy: player, fallbackEvent: event)
+    }
+
+    /// Shared tail of `process(_:)`/`submitPlay(...)`: validate, and if
+    /// legal, apply + Cleanup as one atomic transform through the store
+    /// (CLAUDE.md point 2/3), then report whichever consequence outranks a
+    /// bare acknowledgement.
+    private func runValidated(
+        _ action: GameAction,
+        in snapshot: GameState,
+        proposedBy proposer: PlayerID,
+        fallbackEvent event: ObservedTableEvent
+    ) async -> PlayerInstruction {
+        switch LegalityValidator.validate(action, in: snapshot, proposedBy: proposer) {
         case .failure(let reason):
             return .actionRejected(observed: event, reason: reason)
 
         case .success:
-            // 615/519: apply the action, then Cleanup — both must run as
-            // one atomic transform through the store (CLAUDE.md point 2/3).
             let consequences = ConsequenceBox()
             _ = await store.mutate { state in
-                consequences.events = GameActionApplier.apply(candidateAction, to: &state, proposedBy: proposer)
+                consequences.events = GameActionApplier.apply(action, to: &state, proposedBy: proposer)
                 state = Cleanup.run(state)
             }
 
@@ -89,7 +141,7 @@ public actor GameEngine {
             if let scored = consequences.events.first(where: { if case .scored = $0 { return true } else { return false } }) {
                 return scored
             }
-            return .actionAccepted(candidateAction, followUp: nil)
+            return .actionAccepted(action, followUp: nil)
         }
     }
 
