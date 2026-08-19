@@ -318,6 +318,11 @@ Four types, none of which know anything about the Chain or `GameState`:
 | `RunePayment` | Can the runes on the table cover this card? |
 | `PendingPlay` | What does this played card still owe? |
 
+The app layer that renders all of this has its own notes —
+`RiftboundVisionApp/design.md` — covering the palette, the shared control
+styles, and the UI traps that have already cost time. Read it before
+changing anything the player looks at.
+
 **The turn shown to the player is five phases, not eight.** 517's Ending,
 Expiration and Cleanup are real, but a player does nothing in them, so
 `GamePhase` stops at `.action` and ending the Action Phase hands over
@@ -419,6 +424,8 @@ so "whose turn" is strict.
 | 10 | Instruction / feedback UI | — | ✅ live (instruction bar + card details) |
 | 11 | Play flow at the table | 515–516, 139.4, 157.2 | ✅ `PhaseAutoDetector`, `RunePayment`, `PendingPlay` — see §4b |
 | 12 | Auto-detect of the fixed phases | 515 | ✅ Awaken, Beginning, Channel, Draw; Action never auto-completes (516.2) |
+| 13 | Onboarding | — | ✅ first-launch sheet, reachable later from Help |
+| 14 | Long-session stability | — | ✅ diagnostic buffers capped; no per-poll `@Model` writes |
 
 Items 8–12 run end to end in `RiftboundVisionApp`: `GameEngine` is constructed
 per session, driven from the adapter's event stream, and its
