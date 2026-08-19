@@ -40,71 +40,35 @@ struct ContentView: View {
     }
 
     var body: some View {
-        // The sidebar starts at the *toolbar*, not below the header.
+        // Top bar across the full width, then two columns beneath it.
         //
-        // `GameStateBar` spanned the full width, so the blue column could
-        // only ever begin under it — in the reference the Score panel is
-        // level with the turn banner, both starting at the top of the
-        // content area. Putting the header inside the left column is what
-        // gets that: the `HStack` is now the outermost container.
-        HStack(alignment: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                GameStateBar(gameState: $pipeline.gameState)
+        // `GameStateBar` and the bottom bar both live *inside* the left
+        // column rather than spanning the window: that's what puts the
+        // Score panel level with the turn banner, and lets the sidebar run
+        // unbroken to the bottom edge.
+        VStack(spacing: 0) {
+            topBar
 
-                // The phase cards sit under the feed *only* — the
-                // sidebar continues past them to the bottom edge, which
-                // is why the bottom bar lives inside this column rather
-                // than spanning the window.
-                cameraStage
-                TurnControlBar(
-                    gameState: $pipeline.gameState,
-                    isAutoDetecting: $pipeline.isAutoDetectingPhase,
-                    instructions: pipeline.instructions,
-                    phaseProgress: pipeline.phaseProgress,
-                    misplacedCards: pipeline.misplacedCards,
-                    needsCalibration: pipeline.needsCalibration
-                )
+            HStack(alignment: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    GameStateBar(gameState: $pipeline.gameState)
+                    cameraStage
+                    TurnControlBar(
+                        gameState: $pipeline.gameState,
+                        isAutoDetecting: $pipeline.isAutoDetectingPhase,
+                        instructions: pipeline.instructions,
+                        phaseProgress: pipeline.phaseProgress,
+                        misplacedCards: pipeline.misplacedCards,
+                        needsCalibration: pipeline.needsCalibration
+                    )
+                }
+
+                DetectedCardsPanel(pipeline: pipeline, selection: $selectedCard)
             }
-
-            DetectedCardsPanel(pipeline: pipeline, selection: $selectedCard)
         }
+        .ignoresSafeArea(.container, edges: .top)
         .background(RiftboundPalette.mainBackground)
         .frame(minWidth: 1160, minHeight: 675)
-        // `.primaryAction` on every item, not `.automatic`: with
-        // `.hiddenTitleBar` there is no title to sit beside, so the
-        // default placement collapsed the whole set against the left edge
-        // next to the traffic lights. The reference puts them at the
-        // trailing edge.
-        // No name in the bar. The window is a single fixed composition
-        // that only ever shows this app, so a title had nothing to
-        // disambiguate — and dropping the leading item leaves the bar with
-        // nothing pinned to that edge, which is the only thing
-        // `.primaryAction` needs to sit opposite.
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                cameraPicker
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // Drag the 4 yellow corner handles onto the physical
-                // mat's actual corners as seen by the camera — a visual
-                // reference layer only now, not consulted by detection.
-                Toggle(isOn: $pipeline.isCalibrating) {
-                    Label("Calibrate Playmat", systemImage: "square.dashed")
-                }
-                .toggleStyle(.button)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                diagnosticsMenu
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // Starts the *pipeline*, not the camera — the feed is
-                // already live so the mat can be calibrated first.
-                Button(pipeline.isPipelineRunning ? "Stop" : "Start Game") {
-                    pipeline.isPipelineRunning ? pipeline.stopPipeline() : pipeline.startPipeline()
-                }
-                .disabled(!pipeline.isCameraRunning)
-            }
-        }
         .onAppear {
             pipeline.refreshAvailableCameras()
             // First launch only. Set before presenting rather than on
@@ -325,6 +289,55 @@ struct ContentView: View {
         } label: {
             Label(cameraLabel, systemImage: selectedIsContinuityCamera ? "iphone" : "camera")
         }
+    }
+
+    // MARK: - Top bar
+
+    /// The four controls, held against the trailing edge.
+    ///
+    /// `.toolbar` could not put them there. Under `.hiddenTitleBar` there is
+    /// nothing pinned to the leading edge for `.primaryAction` to sit
+    /// opposite, so items pack left whatever placement they are given —
+    /// tried with a leading title item, and again with none, and both came
+    /// out left. A `Spacer` in an `HStack` states the position directly
+    /// instead of asking for it.
+    ///
+    /// Only the *placement* is hand-made. The buttons keep their default
+    /// styling and the bar has no fill of its own, so its chrome is still
+    /// the system's — the window background shows through, and nothing here
+    /// re-paints the title bar.
+    ///
+    /// The leading inset clears the traffic lights, which the system draws
+    /// on top of this view.
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            Spacer(minLength: 0)
+
+            cameraPicker
+                .fixedSize()
+
+            // Drag the 4 corner handles onto the physical mat's actual
+            // corners as seen by the camera — a visual reference layer
+            // only, not consulted by detection.
+            Toggle(isOn: $pipeline.isCalibrating) {
+                Label("Calibrate Playmat", systemImage: "square.dashed")
+                    .labelStyle(.iconOnly)
+            }
+            .toggleStyle(.button)
+
+            diagnosticsMenu
+                .fixedSize()
+
+            // Starts the *pipeline*, not the camera — the feed is already
+            // live so the mat can be calibrated first.
+            Button(pipeline.isPipelineRunning ? "Stop" : "Start Game") {
+                pipeline.isPipelineRunning ? pipeline.stopPipeline() : pipeline.startPipeline()
+            }
+            .disabled(!pipeline.isCameraRunning)
+        }
+        .padding(.leading, 78)
+        .padding(.trailing, 14)
+        .frame(height: 52)
     }
 
     /// The three developer affordances, folded behind one control.
