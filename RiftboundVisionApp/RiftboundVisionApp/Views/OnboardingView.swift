@@ -15,6 +15,21 @@ import SwiftUI
 /// and the callout arrows only make sense against the composition they were
 /// drawn over. The cost is that it needs re-exporting when the layout
 /// changes, which is the honest trade.
+///
+/// **Why the PNG and not `Frame 131.svg`.** The SVG in the app folder is
+/// the same design and renders sharper — its title and disclaimer are real
+/// vector paths and the screenshot it embeds is 1512×1037, against this
+/// PNG's 882×584 overall. It is not used because **it is missing all four
+/// callout labels**: its content stops at x≈874 of an 882-wide viewBox, so
+/// "Playmat", "Score Input", "Card Library" and "Track Steps" and their
+/// descriptions are simply absent, and every arrow points at nothing. A
+/// crisper picture that has lost its labels is worse than a soft one that
+/// explains itself.
+///
+/// If that layer gets re-exported, the SVG is the better asset and this
+/// should switch to it — note that it also contains the heading and the
+/// disclaimer, so `header` and `disclaimer` below would become duplicates
+/// and should go at the same time.
 struct OnboardingView: View {
     /// Dismisses the sheet. Held by the caller so the "seen it" flag and
     /// the presentation live in one place rather than being written from
@@ -56,16 +71,28 @@ struct OnboardingView: View {
         .background(RiftboundPalette.mainBackground)
     }
 
+    /// Title on the left, Close on the right — the same shape and the same
+    /// Escape shortcut `CardDetailView` uses, so the two dismissable
+    /// surfaces in the app behave identically rather than each inventing
+    /// their own way out.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Play with BonBon!")
-                .font(RiftboundFont.iconic2)
-                .foregroundStyle(RiftboundPalette.iconicText)
-                .fixedSize()
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Play with BonBon!")
+                    .font(RiftboundFont.iconic2)
+                    .foregroundStyle(RiftboundPalette.iconicText)
+                    .fixedSize()
 
-            Text("Learn Riftbound with me and your opponent!")
-                .font(RiftboundFont.heading)
-                .foregroundStyle(RiftboundPalette.regularText)
+                Text("Learn Riftbound with me and your opponent!")
+                    .font(RiftboundFont.heading)
+                    .foregroundStyle(RiftboundPalette.regularText)
+            }
+
+            Spacer(minLength: 16)
+
+            Button("Close", action: onDismiss)
+                .buttonStyle(RiftSecondaryButtonStyle())
+                .keyboardShortcut(.cancelAction)
         }
     }
 

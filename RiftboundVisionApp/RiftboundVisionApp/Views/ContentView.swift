@@ -80,11 +80,18 @@ struct ContentView: View {
             // entry point), so the name has to be drawn as a toolbar item.
             // `.navigation` is the leading slot, just right of the traffic
             // lights, which is where a document window's title would sit.
-            ToolbarItem(placement: .navigation) {
-                Text("Riftchamps")
-                    .font(RiftboundFont.heading)
-                    .foregroundStyle(RiftboundPalette.regularText)
-                    .accessibilityAddTraits(.isHeader)
+            // macOS 26 gives every toolbar item its own capsule
+            // background. That's right for the four controls trailing the
+            // bar and wrong for the app name — a name in a button-shaped
+            // container reads as something to click. The modifier that
+            // opts out only exists on 26, and this app still targets 14,
+            // so it's applied behind an availability check rather than
+            // raising the floor of the whole app for one piece of chrome.
+            if #available(macOS 26.0, *) {
+                ToolbarItem(placement: .navigation) { appNameLabel }
+                    .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .navigation) { appNameLabel }
             }
             ToolbarItem(placement: .primaryAction) {
                 cameraPicker
@@ -330,6 +337,15 @@ struct ContentView: View {
         } label: {
             Label(cameraLabel, systemImage: selectedIsContinuityCamera ? "iphone" : "camera")
         }
+    }
+
+    /// The app name — a label, not a control. See the toolbar builder for
+    /// why it needs an explicit opt-out of the item background.
+    private var appNameLabel: some View {
+        Text("Riftchamps")
+            .font(RiftboundFont.heading)
+            .foregroundStyle(RiftboundPalette.regularText)
+            .accessibilityAddTraits(.isHeader)
     }
 
     /// The three developer affordances, folded behind one control.
