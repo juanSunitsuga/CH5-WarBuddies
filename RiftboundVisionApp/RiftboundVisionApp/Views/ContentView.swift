@@ -199,8 +199,26 @@ struct ContentView: View {
                         .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                         .allowsHitTesting(false)
 
-                    VStack {
+                    VStack(spacing: 8) {
                         detectionCountBadge
+                        // Only ever visible when the trained model didn't
+                        // load. Sits under the card count rather than in
+                        // the transient error slot at the bottom because
+                        // it's true for the whole session, not a passing
+                        // camera condition — and because an app that
+                        // detects cards but names none of them otherwise
+                        // looks like it's simply working badly.
+                        if let warning = pipeline.detectorFallbackWarning {
+                            Text("Card recognition unavailable — \(warning)")
+                                .font(RiftboundFont.body)
+                                .foregroundStyle(RiftboundPalette.regularText)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 520)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(RiftboundPalette.primaryButton, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
                         Spacer()
                     }
                     .padding(.top, 12)
