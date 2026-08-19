@@ -99,6 +99,13 @@ struct TurnControlBar: View {
         // come back on the next turn already showing End Turn as live.
         .onChange(of: gameState.phase) { _, newPhase in
             if newPhase != .action { hasDeclaredActions = false }
+            // Auto-detect advances the phase without anyone pressing
+            // "Start Turn", and `stage` was gated on that button alone —
+            // so with the toggle on, the phase reached `.action` while the
+            // panel still showed START and the button still read "Start
+            // Turn". Being past Awaken *is* having started the turn,
+            // whoever moved it.
+            if newPhase != .awaken { hasStartedTurn = true }
         }
     }
 
@@ -313,11 +320,15 @@ struct TurnControlBar: View {
                     .buttonStyle(RiftPrimaryButtonStyle())
 
             case .startOfTurn:
-                // Auto-detect drives exactly this button, so it's the only
-                // one the toggle disables.
+                // **Not disabled under Auto-detect.** Auto-detect drives
+                // this step, but it can only advance a phase it can
+                // actually confirm — and a hand fanned over the mat is
+                // countable only sometimes, so Draw is the step most likely
+                // to sit there. Greying this out made a stall unrecoverable
+                // without hunting for the toggle. The assist should never
+                // be the thing standing between a player and their turn.
                 Button("Next") { gameState.advance() }
                     .buttonStyle(RiftPrimaryButtonStyle())
-                    .disabled(isAutoDetecting)
 
             case .doYourTurn:
                 Button("Done Playing") { hasDeclaredActions = true }
