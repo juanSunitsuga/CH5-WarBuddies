@@ -46,21 +46,32 @@ struct ContentView: View {
         // column rather than spanning the window: that's what puts the
         // Score panel level with the turn banner, and lets the sidebar run
         // unbroken to the bottom edge.
+        // Left column is the board — the cards on the table, the camera,
+        // and what BonBon is saying about it. Right column is everything
+        // the player operates. Nothing that is only *shown* sits on the
+        // right, and nothing you press sits on the left.
         HStack(alignment: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                GameStateBar(gameState: $pipeline.gameState)
+            VStack(spacing: 12) {
+                TableCardStrip(cards: pipeline.cardsOnTable, selection: $selectedCard)
                 cameraStage
-                TurnControlBar(
-                    gameState: $pipeline.gameState,
-                    isAutoDetecting: $pipeline.isAutoDetectingPhase,
+                MascotInstructionPanel(
                     instructions: pipeline.instructions,
-                    phaseProgress: pipeline.phaseProgress,
+                    progress: pipeline.phaseProgress,
                     misplacedCards: pipeline.misplacedCards,
-                    needsCalibration: pipeline.needsCalibration
+                    needsCalibration: pipeline.needsCalibration,
+                    validatesPlayerMoves: pipeline.gameState.phase.validatesPlayerMoves,
+                    fallback: pipeline.isPipelineRunning ? pipeline.gameState.phase.instruction : "Ready to play?"
                 )
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
             }
 
-            DetectedCardsPanel(pipeline: pipeline, selection: $selectedCard)
+            TurnControlColumn(
+                gameState: $pipeline.gameState,
+                isAutoAdvancing: $pipeline.isAutoDetectingPhase,
+                playerScore: $pipeline.playerScore,
+                opponentScore: $pipeline.opponentScore
+            )
         }
         .background(RiftboundPalette.mainBackground)
         .frame(minWidth: 1160, minHeight: 675)

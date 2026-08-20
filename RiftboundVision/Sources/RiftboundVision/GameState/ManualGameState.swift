@@ -121,6 +121,30 @@ public struct ManualGameState: Sendable, Equatable {
         }
     }
 
+    /// Steps back one phase, for correcting a mis-advance.
+    ///
+    /// Nothing in the rules moves a turn backwards — 515's steps are
+    /// one-way — so this is explicitly an *undo of the app's own
+    /// bookkeeping*, not a game action. It exists because the phase is
+    /// asserted by a human (and now sometimes guessed by Auto-advance), and
+    /// both can be wrong; without it the only correction was ending the
+    /// turn and losing the rest of it.
+    ///
+    /// Stops at `.awaken` rather than wrapping to the previous player.
+    /// Wrapping would hand the turn back to someone who has already
+    /// finished, which is a far worse state to land in by mistake than
+    /// simply not moving.
+    public mutating func back() {
+        guard let index = Self.phaseOrder.firstIndex(of: phase), index > 0 else { return }
+        phase = Self.phaseOrder[index - 1]
+    }
+
+    /// Whether `back()` would do anything — for disabling the control at
+    /// the start of a turn rather than offering a button that no-ops.
+    public var canGoBack: Bool {
+        (Self.phaseOrder.firstIndex(of: phase) ?? 0) > 0
+    }
+
     /// Rule 506: jumps straight to the next Turn Player's Awaken phase
     /// regardless of which phase is currently active — the "I'm done, end
     /// my turn now" fast path, as opposed to `advance()`'s one-step-at-a-

@@ -819,6 +819,26 @@ final class CameraPipelineController: ObservableObject {
         }.value
     }
 
+    /// Distinct printings behind the current detections, in the order they
+    /// were detected.
+    ///
+    /// Deduped because several boxes can resolve to the same printing (two
+    /// copies of the same rune) and a list should name a card once. Lives
+    /// here rather than in a view because two now need it — the card strip
+    /// and the sidebar — and two copies of "what's on the table" could
+    /// disagree about what the player is looking at.
+    var cardsOnTable: [CardPrinting] {
+        var seen = Set<String>()
+        var result: [CardPrinting] = []
+        for detection in detections {
+            guard let label = detection.recognizedLabel,
+                  let printing = cardDatabase.printing(approximatelyNamed: label),
+                  seen.insert(printing.id).inserted else { continue }
+            result.append(printing)
+        }
+        return result
+    }
+
     /// What kind of card a recognizer label names, resolved once per label.
     ///
     /// `CardDatabase.printing(approximatelyNamed:)` normalizes and scans the
