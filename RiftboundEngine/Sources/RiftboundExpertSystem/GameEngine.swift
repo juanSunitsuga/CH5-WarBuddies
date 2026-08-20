@@ -114,6 +114,14 @@ public actor GameEngine {
     /// legal, apply + Cleanup as one atomic transform through the store
     /// (CLAUDE.md point 2/3), then report whichever consequence outranks a
     /// bare acknowledgement.
+    ///
+    /// For a `.play`, the played card's ability is parsed *before* that
+    /// mutation — `GameActionApplier` stays pure/synchronous and never
+    /// talks to `translator` itself (CLAUDE.md point 3), so this is the
+    /// one seam that does. A Unit executes its ability immediately inside
+    /// the same mutation; a Spell carries it on the `ChainItem` it pushes
+    /// and executes it later, whenever that item resolves — either way,
+    /// exactly one `store.mutate` call, no separate pass needed afterward.
     private func runValidated(
         _ action: GameAction,
         in snapshot: GameState,
@@ -125,11 +133,17 @@ public actor GameEngine {
             return .actionRejected(observed: event, reason: reason)
 
         case .success:
+            let abilityInstructions = await abilityInstructions(for: action, in: snapshot, proposedBy: proposer)
+
             let consequences = ConsequenceBox()
+            var abilitySummaries: [String] = []
             _ = await store.mutate { state in
-                consequences.events = GameActionApplier.apply(action, to: &state, proposedBy: proposer)
+                consequences.events = GameActionApplier.apply(action, to: &state, proposedBy: proposer, abilityInstructions: abilityInstructions)
                 state = Cleanup.run(state)
+                abilitySummaries = state.abilityOutcomeSummaries
+                state.abilityOutcomeSummaries = []
             }
+            let followUp = abilitySummaries.isEmpty ? nil : FollowUp(description: abilitySummaries.joined(separator: " "))
 
             // 632/633: an action can *cause* something the player needs
             // told that isn't the action itself — a Conquer, a Hold, a win.
@@ -141,8 +155,21 @@ public actor GameEngine {
             if let scored = consequences.events.first(where: { if case .scored = $0 { return true } else { return false } }) {
                 return scored
             }
-            return .actionAccepted(action, followUp: nil)
+            return .actionAccepted(action, followUp: followUp)
         }
+    }
+
+    /// `.play`'s card, parsed — `[]` for every other `GameAction` (nothing
+    /// else in this vocabulary triggers an ability) and for a `.play`
+    /// whose card can't be found in `snapshot` (shouldn't happen; caught
+    /// as `.cardNotInHand` moments later by `LegalityValidator` regardless,
+    /// so this just declines to guess rather than duplicating that check).
+    private func abilityInstructions(for action: GameAction, in snapshot: GameState, proposedBy player: PlayerID) async -> [EffectInstruction] {
+        guard case .play(let cardID, _, _, _) = action,
+              let definitionID = snapshot.zones[player]?.hand.first(where: { $0.id == cardID })?.definitionID else {
+            return []
+        }
+        return await translator.parseAbility(cardDefinitionID: definitionID)
     }
 
     /// Carries the applier's events out of the `store.mutate` closure.

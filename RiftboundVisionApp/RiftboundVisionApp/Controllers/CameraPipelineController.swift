@@ -343,6 +343,31 @@ final class CameraPipelineController: ObservableObject {
 
     let cardDatabase = CardDatabaseLoader.loadBundled()
 
+    /// `RiftboundTextProcessing`'s SQLite catalogue — a second source for
+    /// the same cards, joined to `cardDatabase`'s by `CardPrinting.id`
+    /// (this database's `card_id`, both the catalogue's own hex id — see
+    /// `printedText(for:)`'s doc comment). Consulted for rules text
+    /// specifically because its `plain_text` column has already had the
+    /// bundled JSON's icon shortcodes (`:rb_might:`, `:rb_rune_rainbow:`)
+    /// resolved to words; `cardDatabase`'s `text.plain` still has them raw.
+    let textDatabase = CardDatabaseService()
+
+    /// Rules text for `printing`, cascading through three sources from
+    /// most to least reader-friendly: `textDatabase`'s `simple_text` (a
+    /// first-timer-friendly one-sentence rewrite, keyed by id or name —
+    /// see `CardDatabaseService.simplifiedText(for:name:)`'s doc comment
+    /// for why both are passed), then its tag-resolved `plain_text`, then
+    /// `printing.text.plain`'s raw copy (which still has the bundled
+    /// JSON's icon shortcodes like `:rb_might:` unresolved). Each step
+    /// only exists for what the step before it doesn't carry — the
+    /// synthetic Token entry, or a printing outside either catalogue's
+    /// coverage, still shows *something* rather than nothing.
+    func description(for printing: CardPrinting) -> String {
+        textDatabase.simplifiedText(for: printing.id, name: printing.name)
+            ?? textDatabase.printedText(for: printing.id)
+            ?? printing.text.plain
+    }
+
     /// Overlaps the rules forbid (currently Unit-on-Unit), recomputed each
     /// detection poll by `UnderlayResolver` — surfaced so the UI can warn
     /// the player instead of silently mis-modeling an illegal stack.

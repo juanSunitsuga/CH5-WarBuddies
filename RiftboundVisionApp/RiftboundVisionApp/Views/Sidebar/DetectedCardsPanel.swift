@@ -191,8 +191,9 @@ struct DetectedCardsPanel: View {
                     if let might = printing.attributes.might {
                         attribute("Might", "\(might)")
                     }
-                    if !printing.text.plain.isEmpty {
-                        attribute("Ability", printing.text.plain, isMultiline: true)
+                    let description = pipeline.description(for: printing)
+                    if !description.isEmpty {
+                        attribute("Ability", description, isMultiline: true)
                     }
                 }
             }

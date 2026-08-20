@@ -23,7 +23,7 @@ struct LegalityValidatorTests {
         var (state, playerA, playerB, _) = TestFixtures.makeTwoPlayerState()
         let card = MainDeckCard(definitionID: CardDefID(rawValue: "spell"), owner: playerA, name: "Test Spell", type: .spell)
         state.turnState = .neutralClosed(Chain(
-            firstItem: .spell(card, targets: []),
+            firstItem: .spell(card, targets: [], instructions: []),
             activePlayer: playerA,
             relevantPlayers: [playerA, playerB]
         ))

@@ -5,18 +5,27 @@ import Foundation
 /// (534.1); new items are always added to the existing one if present
 /// (534.2), never spawn a second Chain.
 public enum ChainItem: Sendable, Identifiable {
-    case spell(MainDeckCard, targets: [ObjectID])
+    /// `instructions` is the Spell's ability, already parsed — resolved
+    /// once, at Play time (`GameActionApplier.applyPlay`, the only
+    /// producer), and carried with the item rather than re-parsed when it
+    /// resolves. Parsing needs `ActionTranslating`, which lives at the
+    /// `GameEngine` actor level; a Chain item is pure data, so it holds the
+    /// *result* of that lookup, not a way to repeat it.
+    case spell(MainDeckCard, targets: [ObjectID], instructions: [EffectInstruction])
     /// An Activated Ability has no associated card once on the Chain (577.3.a.1) —
-    /// only its source object and the effect to execute.
-    case activatedAbility(source: ObjectID, effectID: EffectID, targets: [ObjectID])
+    /// only its source object and the effect to execute. `proposedBy` is
+    /// carried explicitly (rather than derived from `source`) because an
+    /// ability's controller and its source object's owner can differ
+    /// (e.g. a stolen/controlled permanent).
+    case activatedAbility(source: ObjectID, effectID: EffectID, proposedBy: PlayerID, targets: [ObjectID], instructions: [EffectInstruction])
     /// A Triggered Ability, added when its condition is met (583.3).
-    case triggeredAbility(source: ObjectID, effectID: EffectID, targets: [ObjectID])
+    case triggeredAbility(source: ObjectID, effectID: EffectID, proposedBy: PlayerID, targets: [ObjectID], instructions: [EffectInstruction])
 
     public var id: EffectID {
         switch self {
-        case .spell(let card, _): return EffectID(rawValue: card.id.rawValue)
-        case .activatedAbility(_, let effectID, _): return effectID
-        case .triggeredAbility(_, let effectID, _): return effectID
+        case .spell(let card, _, _): return EffectID(rawValue: card.id.rawValue)
+        case .activatedAbility(_, let effectID, _, _, _): return effectID
+        case .triggeredAbility(_, let effectID, _, _, _): return effectID
         }
     }
 }

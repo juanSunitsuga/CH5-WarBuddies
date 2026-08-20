@@ -15,11 +15,19 @@ public struct ParsedAbility: Sendable, Equatable {
     /// keyword opens, which is the difference between "I can do this now"
     /// and "I can do this during a showdown."
     public let timing: String?
+    /// Who/what this ability reaches, read off the same sentence the verb
+    /// came from — "me", "a unit", "each enemy unit", "up to two units".
+    /// `.unresolved` for an ability with no target of its own (Draw,
+    /// Channel, Discard) or a target shape this reader doesn't recognize
+    /// yet; `instruction(for:)` still emits the effect either way; a
+    /// caller just can't auto-resolve `.unresolved`'s target.
+    public let target: EffectInstruction.TargetSpec
 
-    public init(action: String, summary: String, timing: String? = nil) {
+    public init(action: String, summary: String, timing: String? = nil, target: EffectInstruction.TargetSpec = .unresolved) {
         self.action = action
         self.summary = summary
         self.timing = timing
+        self.target = target
     }
 }
 
@@ -74,12 +82,11 @@ public enum CardAbilityParser {
         return Reading(abilities: abilities, unparsed: unparsed)
     }
 
-    /// The `EffectInstruction`s the Expert System can consume. Only the
-    /// cases that don't need a `TargetSpec` are produced with real
-    /// arguments — `TargetSpec`/`LocationSpec` are still placeholders in
-    /// the engine (deliberately, until real card texts settle their shape),
-    /// so a targeted effect resolves to `.placeholder` and the *summary* is
-    /// what carries the meaning for now.
+    /// The `EffectInstruction`s the Expert System can consume, using each
+    /// ability's own `target` — real `TargetSpec` cases where the sentence
+    /// resolved one, `.unresolved` where it didn't (the *summary* still
+    /// carries the meaning for a human in that case; nothing auto-resolves
+    /// it, but nothing invents a wrong target for it either).
     public static func instructions(for text: String) -> [EffectInstruction] {
         read(text).abilities.compactMap(instruction(for:))
     }
@@ -92,26 +99,28 @@ public enum CardAbilityParser {
             return .channelRune(count: ability.count ?? 1, exhausted: ability.summary.lowercased().contains("exhausted"))
         case "Discard":
             return .discard(count: ability.count ?? 1)
+        case "Deal damage":
+            return .dealDamage(amount: ability.count ?? 0, targets: ability.target)
         case "Kill":
-            return .killUnit(targets: .placeholder)
+            return .killUnit(targets: ability.target)
         case "Stun":
-            return .stunUnit(targets: .placeholder)
+            return .stunUnit(targets: ability.target)
         case "Banish":
-            return .banishCard(targets: .placeholder)
+            return .banishCard(targets: ability.target)
         case "Counter":
-            return .counterSpell(targets: .placeholder)
+            return .counterSpell(targets: ability.target)
         case "Ready":
-            return .readyObject(targets: .placeholder)
+            return .readyObject(targets: ability.target)
         case "Exhaust":
-            return .exhaustObject(targets: .placeholder)
+            return .exhaustObject(targets: ability.target)
         case "Buff":
-            return .buff(targets: .placeholder)
+            return .buff(targets: ability.target)
         case "Recycle":
-            return .recycleCard(targets: .placeholder, destination: .mainDeck)
+            return .recycleCard(targets: ability.target, destination: .mainDeck)
         default:
-            // Keywords and damage don't map onto a single Game Action —
-            // Assault/Shield modulate Might (625.1.b), and damage has no
-            // `EffectInstruction` case that works without a TargetSpec.
+            // Keywords (Assault/Shield modulate Might per 625.1.b, Tank/
+            // Ganking/etc. are passive, not a resolved effect) don't map
+            // onto a single Game Action.
             return nil
         }
     }
@@ -135,34 +144,74 @@ public enum CardAbilityParser {
         if let n = number(after: #"discard\s+"#, in: lower) {
             return ParsedAbility(action: "Discard", summary: "Discard \(n) card\(n == 1 ? "" : "s").", timing: timing)
         }
-        if let n = number(after: #"deal\s+"#, in: lower), lower.contains("damage") {
-            return ParsedAbility(action: "Deal damage", summary: "Deal \(n) damage.", timing: timing)
+        // Printed text says "Deal 6 to a unit at a battlefield" — the word
+        // "damage" itself rarely appears. Requiring it (as an earlier
+        // version of this pattern did) meant this branch never actually
+        // fired against real card text; "deal N" alone is specific enough
+        // in a rules-text context that dropping the requirement doesn't
+        // risk false positives.
+        if let n = number(after: #"deal\s+"#, in: lower) {
+            return ParsedAbility(action: "Deal damage", summary: "Deal \(n) damage.", timing: timing, target: target(in: sentence))
         }
         if let n = number(after: #"recycle\s+"#, in: lower) {
             return ParsedAbility(action: "Recycle", summary: "Recycle \(n) card\(n == 1 ? "" : "s").", timing: timing)
         }
         if lower.contains("kill ") {
-            return ParsedAbility(action: "Kill", summary: "Kill a unit.", timing: timing)
+            return ParsedAbility(action: "Kill", summary: "Kill a unit.", timing: timing, target: target(in: sentence))
         }
         if lower.contains("stun ") {
-            return ParsedAbility(action: "Stun", summary: "Stun a unit.", timing: timing)
+            return ParsedAbility(action: "Stun", summary: "Stun a unit.", timing: timing, target: target(in: sentence))
         }
         if lower.contains("banish ") {
-            return ParsedAbility(action: "Banish", summary: "Banish a card.", timing: timing)
+            return ParsedAbility(action: "Banish", summary: "Banish a card.", timing: timing, target: target(in: sentence))
         }
         if lower.contains("counter ") {
             return ParsedAbility(action: "Counter", summary: "Counter a spell or ability.", timing: timing)
         }
         if lower.contains("ready ") {
-            return ParsedAbility(action: "Ready", summary: "Ready a game object.", timing: timing)
+            return ParsedAbility(action: "Ready", summary: "Ready a game object.", timing: timing, target: target(in: sentence))
         }
         if lower.contains("exhaust ") {
-            return ParsedAbility(action: "Exhaust", summary: "Exhaust a game object.", timing: timing)
+            return ParsedAbility(action: "Exhaust", summary: "Exhaust a game object.", timing: timing, target: target(in: sentence))
         }
         if let boost = mightBoost(in: sentence) {
-            return ParsedAbility(action: "Buff", summary: "Give +\(boost) Might.", timing: timing)
+            return ParsedAbility(action: "Buff", summary: "Give +\(boost) Might.", timing: timing, target: target(in: sentence))
         }
         return nil
+    }
+
+    /// Reads who/what a sentence's effect reaches. Checked in order from
+    /// most to least specific, since e.g. "each enemy unit" would also
+    /// match a looser "unit" scan if checked second.
+    ///
+    /// "me" is checked as the *object* of the verb ("give me", "deal 3
+    /// damage to me") — a bare "me" appearing earlier in the sentence for
+    /// some other reason is deliberately not enough on its own, so this
+    /// doesn't misread a self-reference that wasn't actually the target.
+    private static func target(in sentence: String) -> EffectInstruction.TargetSpec {
+        let lower = sentence.lowercased()
+
+        if lower.range(of: #"\b(give|deal(?:s)?\s+\d+(?:\s+to)?)\s+me\b"#, options: .regularExpression) != nil {
+            return .source
+        }
+
+        let filter: EffectInstruction.UnitFilter = lower.contains("friendly") ? .friendly : (lower.contains("enemy") ? .enemy : .any)
+
+        // Checked before the "each"/"all" scan below: "each of up to two
+        // units" contains both "each " and "up to" — it means the bounded
+        // count, not an unbounded "every unit," so the more specific
+        // pattern has to win the race.
+        if let n = number(afterSpelledOutOrDigit: #"up to\s+"#, in: lower) {
+            return .upToUnits(maximum: n, filter: filter)
+        }
+        if (lower.contains("each ") || lower.contains("all ")), lower.contains("unit") {
+            return .allUnits(filter)
+        }
+        if lower.contains(" a unit") || lower.contains(" an enemy unit") || lower.contains(" a friendly unit") {
+            return .chosenUnit(filter)
+        }
+
+        return .unresolved
     }
 
     /// Rules 717–729. Reported as abilities because that is what they are —
@@ -226,7 +275,7 @@ public enum CardAbilityParser {
     /// shape. Used to surface parser gaps instead of silently dropping text.
     private static func mentionsAGameVerb(_ sentence: String) -> Bool {
         let verbs = ["draw", "kill", "stun", "banish", "counter", "channel",
-                     "recycle", "discard", "damage", "buff", "move", "ready", "exhaust"]
+                     "recycle", "discard", "damage", "deal", "buff", "move", "ready", "exhaust"]
         let lower = sentence.lowercased()
         return verbs.contains { lower.contains($0) }
     }
@@ -234,6 +283,19 @@ public enum CardAbilityParser {
     private static func number(after prefix: String, in text: String) -> Int? {
         guard let range = text.range(of: prefix + #"\d+"#, options: .regularExpression) else { return nil }
         return Int(text[range].filter(\.isNumber))
+    }
+
+    private static let spelledOutNumbers = [
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    ]
+
+    /// Same as `number(after:in:)`, but also reads "two"/"three"/etc. —
+    /// needed for "up to two units," where a digit never appears at all.
+    private static func number(afterSpelledOutOrDigit prefix: String, in text: String) -> Int? {
+        if let n = number(after: prefix, in: text) { return n }
+        guard let range = text.range(of: prefix + #"[a-z]+"#, options: .regularExpression) else { return nil }
+        let word = text[range].replacingOccurrences(of: prefix, with: "", options: .regularExpression)
+        return spelledOutNumbers[word]
     }
 
     private static func mightBoost(in text: String) -> Int? {

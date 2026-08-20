@@ -12,6 +12,15 @@ public enum GameActionApplier {
     /// having already confirmed legality via `LegalityValidator` — this
     /// performs no validation of its own.
     ///
+    /// `abilityInstructions` is only meaningful for `.play`: the played
+    /// card's ability, already parsed by the caller (`GameEngine`, via
+    /// `ActionTranslating.parseAbility`) *before* calling this function —
+    /// this layer stays pure/synchronous and never talks to the NLP layer
+    /// itself (CLAUDE.md point 3). A Unit executes it immediately; a Spell
+    /// carries it on the `ChainItem` it pushes, for `applyResolvedChainItem`
+    /// to execute once the item actually resolves. Every other action
+    /// ignores this parameter — defaulted so they don't need to pass one.
+    ///
     /// Returns any `PlayerInstruction`s the application produced. Most
     /// actions produce none; the ones that do are the ones that reach
     /// scoring — ending a Showdown resolves a Combat, which can Conquer a
@@ -19,11 +28,18 @@ public enum GameActionApplier {
     /// runs the next player's Beginning Phase, which Holds (630.2). Those
     /// are consequences of the action rather than the action itself, so
     /// they can't be derived by the caller from the `GameAction` alone.
+    /// An ability's own outcome (e.g. "Drew 1 card") is a separate channel
+    /// — see `GameState.abilityOutcomeSummaries`.
     @discardableResult
-    public static func apply(_ action: GameAction, to state: inout GameState, proposedBy player: PlayerID) -> [PlayerInstruction] {
+    public static func apply(
+        _ action: GameAction,
+        to state: inout GameState,
+        proposedBy player: PlayerID,
+        abilityInstructions: [EffectInstruction] = []
+    ) -> [PlayerInstruction] {
         switch action {
         case .play(let card, let destination, let additionalChoices, _):
-            applyPlay(card: card, destination: destination, additionalChoices: additionalChoices, to: &state, proposedBy: player)
+            applyPlay(card: card, destination: destination, additionalChoices: additionalChoices, abilityInstructions: abilityInstructions, to: &state, proposedBy: player)
         case .standardMove(let units, let destination):
             applyStandardMove(units: units, destination: destination, to: &state, proposedBy: player)
         case .draw(let count):
@@ -90,6 +106,7 @@ public enum GameActionApplier {
         card cardID: ObjectID,
         destination: PlayDestination,
         additionalChoices: [ObjectID],
+        abilityInstructions: [EffectInstruction],
         to state: inout GameState,
         proposedBy player: PlayerID
     ) {
@@ -126,18 +143,25 @@ public enum GameActionApplier {
                 state.battlefieldControl[battlefieldID] = control
             }
 
+            state.zones[player] = zones
+            // 563.1.c: a Unit resolves the moment it's Played — its
+            // "when you play me" ability (if any) runs right here, not
+            // through the Chain (Units have no ChainItem shape).
+            let outcomes = EffectExecutor.run(abilityInstructions, source: unit.id, resolvedTargets: additionalChoices, to: &state, proposedBy: player)
+            state.abilityOutcomeSummaries.append(contentsOf: outcomes.map(\.summary))
+
         case .gear:
             let gear = Gear(owner: player, cardDefinitionID: card.definitionID, name: card.name)
             state.gear[gear.id] = gear
+            state.zones[player] = zones
 
         case .spell:
-            break  // handled below, after `zones` (Hand/cost) is committed.
-        }
-
-        state.zones[player] = zones
-
-        if case .spell = card.type {
-            ChainResolver.push(.spell(card, targets: additionalChoices), proposedBy: player, to: &state)
+            state.zones[player] = zones
+            // 556.2/563.2.b/534: a Spell has no board form and doesn't
+            // resolve immediately — its parsed ability travels with the
+            // Chain item (`instructions:`) rather than running now, so a
+            // Reaction gets a real window against it (509.1.a) first.
+            ChainResolver.push(.spell(card, targets: additionalChoices, instructions: abilityInstructions), proposedBy: player, to: &state)
         }
     }
 
@@ -166,20 +190,26 @@ public enum GameActionApplier {
     }
 
     /// Rule 563.2.b: what happens when a Chain item actually resolves.
-    /// Ability/Triggered effect execution doesn't exist yet
-    /// (architecture.md item 7 — `EffectInstruction` is defined but
-    /// nothing runs it), so the only case with real behavior is a Spell:
-    /// it goes to its owner's Trash — the same terminal state `applyPlay`
-    /// used to assign immediately, before the Chain existed to delay it
-    /// through. Ability items are flagged rather than silently dropped.
+    /// A Spell goes to its owner's Trash — the same terminal state
+    /// `applyPlay` used to assign immediately, before the Chain existed to
+    /// delay it through — then executes the ability it carried since Play
+    /// (see `ChainItem.spell`'s doc comment), with `source: nil` since a
+    /// resolved Spell leaves no board permanent behind to be the source of
+    /// its own effect. Activated/Triggered Abilities carry their own
+    /// `source`/`proposedBy` already, so they execute the same way.
     private static func applyResolvedChainItem(_ item: ChainItem, to state: inout GameState) {
         switch item {
-        case .spell(let card, _):
+        case .spell(let card, let targets, let instructions):
             guard var zones = state.zones[card.owner] else { return }
             zones.trash.append(card)
             state.zones[card.owner] = zones
-        case .activatedAbility, .triggeredAbility:
-            break  // TODO: needs the Effects pipeline (architecture.md item 7).
+            let outcomes = EffectExecutor.run(instructions, source: nil, resolvedTargets: targets, to: &state, proposedBy: card.owner)
+            state.abilityOutcomeSummaries.append(contentsOf: outcomes.map(\.summary))
+
+        case .activatedAbility(let source, _, let proposedBy, let targets, let instructions),
+             .triggeredAbility(let source, _, let proposedBy, let targets, let instructions):
+            let outcomes = EffectExecutor.run(instructions, source: source, resolvedTargets: targets, to: &state, proposedBy: proposedBy)
+            state.abilityOutcomeSummaries.append(contentsOf: outcomes.map(\.summary))
         }
     }
 

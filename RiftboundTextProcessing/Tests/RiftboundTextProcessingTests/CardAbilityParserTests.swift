@@ -101,15 +101,82 @@ struct CardAbilityParserTests {
         #expect(exhausted)
     }
 
-    /// `TargetSpec` is still a placeholder in the engine by design, so a
-    /// targeted effect can be *named* but not yet aimed. It's produced
-    /// anyway — the summary is what carries the meaning to the player until
-    /// targeting exists.
-    @Test("A targeted effect is produced with a placeholder target")
-    func targetedEffectUsesPlaceholder() {
-        guard case .killUnit? = CardAbilityParser.instructions(for: "Kill a unit.").first else {
+    @Test("A generic 'a unit' target resolves to chosenUnit(.any)")
+    func genericUnitTargetResolves() {
+        guard case .killUnit(let target)? = CardAbilityParser.instructions(for: "Kill a unit.").first else {
             Issue.record("Expected a .killUnit instruction")
             return
         }
+        #expect(target == .chosenUnit())
+    }
+
+    // MARK: - Real printed-text patterns (pressure-tested against the
+    // bundled card sample, not invented shapes)
+
+    /// "Deal 6 to a unit at a battlefield." — Falling Comet's actual
+    /// printed text. The literal word "damage" never appears; an earlier
+    /// version of this pattern required it and so never actually matched
+    /// real Riftbound text at all.
+    @Test("Deal N to a unit is read as damage with no literal 'damage' required")
+    func damageWithoutTheWordDamage() {
+        guard case .dealDamage(let amount, let target)? =
+                CardAbilityParser.instructions(for: "Deal 6 to a unit at a battlefield.").first else {
+            Issue.record("Expected a .dealDamage instruction")
+            return
+        }
+        #expect(amount == 6)
+        #expect(target == .chosenUnit())
+    }
+
+    /// "Deal 3 to all enemy units at a battlefield." — Firestorm's text.
+    @Test("'all enemy units' resolves to allUnits(.enemy)")
+    func allEnemyUnitsTarget() {
+        guard case .dealDamage(_, let target)? =
+                CardAbilityParser.instructions(for: "Deal 3 to all enemy units at a battlefield.").first else {
+            Issue.record("Expected a .dealDamage instruction")
+            return
+        }
+        #expect(target == .allUnits(.enemy))
+    }
+
+    /// "When you play a spell, give me +1 Might this turn." — Ravenbloom
+    /// Student's text. "give me" is the self-reference this reads.
+    @Test("'give me' resolves to .source")
+    func selfReferenceResolvesToSource() {
+        guard case .buff(let target)? = CardAbilityParser.instructions(for: "Give me +1 Might this turn.").first else {
+            Issue.record("Expected a .buff instruction")
+            return
+        }
+        #expect(target == .source)
+    }
+
+    /// "Give two friendly units each +2 Might this turn." — Back to
+    /// Back's text. This reader doesn't disambiguate "N units, each..."
+    /// (a bounded count) from "each enemy unit" (unbounded) — both share
+    /// the word "each" — so it reads as the broader `.allUnits(.friendly)`
+    /// rather than the exact count of 2. Flagged here as a known
+    /// imprecision (could over-apply on a board with more than 2 friendly
+    /// units) rather than silently assumed correct.
+    @Test("'N units, each ...' is read as allUnits — a known imprecision, not a crash or a guess at the exact count")
+    func countedEachPhrasingReadsAsAllUnits() {
+        guard case .buff(let target)? = CardAbilityParser.instructions(for: "Give two friendly units each +2 Might this turn.").first else {
+            Issue.record("Expected a .buff instruction")
+            return
+        }
+        #expect(target == .allUnits(.friendly))
+    }
+
+    /// "up to two units" — Singularity's text — spells the count out
+    /// rather than using a digit, which `number(after:in:)` alone can't
+    /// read; this is the pattern `number(afterSpelledOutOrDigit:in:)`
+    /// exists for.
+    @Test("'up to N units' resolves to upToUnits(maximum:), including a spelled-out N")
+    func upToNUnitsResolvesSpelledOut() {
+        guard case .dealDamage(_, let target)? =
+                CardAbilityParser.instructions(for: "Deal 6 to each of up to two units.").first else {
+            Issue.record("Expected a .dealDamage instruction")
+            return
+        }
+        #expect(target == .upToUnits(maximum: 2))
     }
 }

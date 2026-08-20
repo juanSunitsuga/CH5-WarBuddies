@@ -209,6 +209,87 @@ struct GameEngineTests {
         }
         #expect(acceptedAction.isStandardMove)
     }
+
+    // MARK: - Ability resolution end to end
+
+    /// The full loop this session's work exists for: a Unit is Played,
+    /// `GameActionApplier` queues its ability, `GameEngine` asks the
+    /// translator to parse it, and `EffectExecutor` actually runs the
+    /// result — a card's printed text changing `GameState`, not just
+    /// being recognized. Mirrors real cards like "Lecturing Yordle"
+    /// ("When you play me, draw 1").
+    @Test("Playing a Unit resolves its parsed ability and reports it in followUp")
+    func playingAUnitResolvesItsAbility() async {
+        var (state, playerA, _, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = MainDeckCard(
+            definitionID: CardDefID(rawValue: "card-Test Unit"),
+            owner: playerA,
+            name: "Test Unit",
+            type: .unit(isChampion: false),
+            cost: Cost(energy: 0, powerCost: 0, eligibleDomains: []),
+            might: 3
+        )
+        state.zones[playerA]?.hand.append(card)
+        state.zones[playerA]?.mainDeck = [TestFixtures.makeMainDeckCard(owner: playerA, name: "Top Deck Card")]
+        let startingHandCount = state.zones[playerA]?.hand.count ?? 0
+
+        let store = GameStateStore(initialState: state)
+        let playAction = GameAction.play(card: card.id, destination: .battlefield(battlefieldID), additionalChoices: [])
+        let translator = FixedActionTranslator(action: playAction, abilityInstructions: [.draw(count: 1)])
+        let engine = GameEngine(store: store, observer: NeverObserving(), translator: translator)
+        let event = ObservedTableEvent(
+            kind: .cardAppeared(region: TableRegion(owner: playerA, location: .battlefield(battlefieldID), isHandRegion: false)),
+            card: nil,
+            observedAt: 0
+        )
+
+        let instruction = await engine.process(event)
+
+        guard case .actionAccepted(_, let followUp) = instruction else {
+            Issue.record("Expected the Play to be accepted, got \(instruction)")
+            return
+        }
+        #expect(followUp?.description.contains("Drew 1 card") == true)
+        let finalState = await store.currentState
+        // -1 for the Unit leaving Hand, +1 for the ability's own Draw.
+        #expect(finalState.zones[playerA]?.hand.count == startingHandCount)
+        #expect(finalState.zones[playerA]?.mainDeck.isEmpty == true)
+    }
+
+    /// Same loop, but the target is one the proposer already declared via
+    /// `additionalChoices` (559.3) rather than a targetless effect —
+    /// confirms `AbilityResolution.targets` actually reaches
+    /// `EffectExecutor` from the original `GameAction.play`.
+    @Test("Playing a Unit whose ability targets an already-declared unit damages that unit")
+    func playingAUnitResolvesATargetedAbility() async {
+        var (state, playerA, playerB, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = MainDeckCard(
+            definitionID: CardDefID(rawValue: "card-Test Unit"),
+            owner: playerA,
+            name: "Test Unit",
+            type: .unit(isChampion: false),
+            cost: Cost(energy: 0, powerCost: 0, eligibleDomains: []),
+            might: 3
+        )
+        state.zones[playerA]?.hand.append(card)
+        let victim = TestFixtures.makeUnit(owner: playerB, location: .battlefield(battlefieldID))
+        state.units[victim.id] = victim
+
+        let store = GameStateStore(initialState: state)
+        let playAction = GameAction.play(card: card.id, destination: .battlefield(battlefieldID), additionalChoices: [victim.id])
+        let translator = FixedActionTranslator(action: playAction, abilityInstructions: [.dealDamage(amount: 4, targets: .chosenUnit())])
+        let engine = GameEngine(store: store, observer: NeverObserving(), translator: translator)
+        let event = ObservedTableEvent(
+            kind: .cardAppeared(region: TableRegion(owner: playerA, location: .battlefield(battlefieldID), isHandRegion: false)),
+            card: nil,
+            observedAt: 0
+        )
+
+        _ = await engine.process(event)
+
+        let finalState = await store.currentState
+        #expect(finalState.units[victim.id]?.damage == 4)
+    }
 }
 
 private extension GameAction {
