@@ -353,7 +353,22 @@ final class CameraPipelineController: ObservableObject {
     let battlefieldSlotIDs: [Int: BattlefieldID] = [0: BattlefieldID()]
 
     private let camera = AVFoundationCameraCapture()
-    private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
+    private let loadedDetector = CardDetectionModelLoader.loadDetector()
+    private var detector: any ObjectDetecting { loadedDetector.detector }
+
+    /// Set when the trained Core ML model couldn't be loaded and the app
+    /// is running on the geometric fallback detector, which finds cards
+    /// but can't say which card each one is.
+    ///
+    /// Separate from `errorMessage` on purpose: that one is for transient
+    /// camera conditions and gets cleared when they resolve (a reconnect,
+    /// an interruption ending). This is a condition fixed for the whole
+    /// session — the model either loaded at launch or it didn't — so it
+    /// must not be cleared by an unrelated camera event. Surfacing it at
+    /// all is the point: the fallback used to be a `print` nobody reads,
+    /// so a mis-filed model looked exactly like a working app that had
+    /// stopped recognizing anything.
+    var detectorFallbackWarning: String? { loadedDetector.fallbackReason }
     private let ciContext = CIContext()
 
     /// Preview refresh ceiling. The picture cannot usefully update faster
