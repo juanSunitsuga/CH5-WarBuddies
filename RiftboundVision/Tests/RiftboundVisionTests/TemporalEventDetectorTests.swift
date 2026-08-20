@@ -98,14 +98,21 @@ struct TemporalEventDetectorTests {
         #expect(moves.first?.currentZone == .runeArea)
     }
 
+    // Rune Area, not Battlefield: `TrackedObject.stance` is hardcoded to
+    // `.ready` in the Battlefield zone (a Unit moved there to fight isn't
+    // Exhaust/Ready-tracked at all — see its doc comment), so these two
+    // tests exercise the rotation-confirmation *mechanism* itself from a
+    // zone where stance still reflects the observed box shape. Runes
+    // legitimately get exhausted to pay costs, so it's a fitting stand-in.
+
     @Test("A 90° rotation confirms as objectRotated (Exhaust signature)")
     func rotationConfirmsAsExhaust() {
         var pipeline = Pipeline()
         var allEvents: [VisionEvent] = []
-        allEvents += pipeline.step(battlefieldPoint, rotation: 0)
-        allEvents += pipeline.step(battlefieldPoint, rotation: 0)
-        allEvents += pipeline.step(battlefieldPoint, rotation: .pi / 2)
-        allEvents += pipeline.step(battlefieldPoint, rotation: .pi / 2)
+        allEvents += pipeline.step(runeAreaPoint, rotation: 0)
+        allEvents += pipeline.step(runeAreaPoint, rotation: 0)
+        allEvents += pipeline.step(runeAreaPoint, rotation: .pi / 2)
+        allEvents += pipeline.step(runeAreaPoint, rotation: .pi / 2)
 
         let rotations = allEvents.filter { $0.type == .objectRotated }
         #expect(rotations.count == 1)
@@ -116,17 +123,29 @@ struct TemporalEventDetectorTests {
     func rotationBackConfirmsAsReady() {
         var pipeline = Pipeline()
         // Establish Exhausted (90°).
-        _ = pipeline.step(battlefieldPoint, rotation: 0)
-        _ = pipeline.step(battlefieldPoint, rotation: .pi / 2)
-        _ = pipeline.step(battlefieldPoint, rotation: .pi / 2)
+        _ = pipeline.step(runeAreaPoint, rotation: 0)
+        _ = pipeline.step(runeAreaPoint, rotation: .pi / 2)
+        _ = pipeline.step(runeAreaPoint, rotation: .pi / 2)
 
         // Now Ready (back to 0°).
         var readyEvents: [VisionEvent] = []
-        readyEvents += pipeline.step(battlefieldPoint, rotation: 0)
-        readyEvents += pipeline.step(battlefieldPoint, rotation: 0)
+        readyEvents += pipeline.step(runeAreaPoint, rotation: 0)
+        readyEvents += pipeline.step(runeAreaPoint, rotation: 0)
 
         let rotations = readyEvents.filter { $0.type == .objectRotated }
         #expect(rotations.count == 1)
+    }
+
+    @Test("A card in the Battlefield zone is always Ready, even when the box shape says Exhausted")
+    func battlefieldStanceIsAlwaysReady() {
+        var pipeline = Pipeline()
+        var allEvents: [VisionEvent] = []
+        allEvents += pipeline.step(battlefieldPoint, rotation: 0)
+        allEvents += pipeline.step(battlefieldPoint, rotation: 0)
+        allEvents += pipeline.step(battlefieldPoint, rotation: .pi / 2)
+        allEvents += pipeline.step(battlefieldPoint, rotation: .pi / 2)
+
+        #expect(allEvents.filter { $0.type == .objectRotated }.isEmpty)
     }
 
     /// Scenario 6: picking a card up and returning it to the same zone
