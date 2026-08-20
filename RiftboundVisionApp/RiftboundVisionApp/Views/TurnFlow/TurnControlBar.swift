@@ -1,3 +1,10 @@
+//
+//  TurnControlBar.swift
+//  RiftboundVisionApp
+//
+//  Created by Anthony Martin Hasurungan on 19/08/26.
+//
+
 import SwiftUI
 import RiftboundVision
 
@@ -48,6 +55,24 @@ struct TurnControlBar: View {
     /// changes, so the next player starts from START.
     @State private var hasStartedTurn = false
 
+    /// Set when the player presses "Done Playing" — the declaration that
+    /// arms End Turn.
+    ///
+    /// Like `hasStartedTurn` this is view-local and carries no rules
+    /// meaning: 516.2 gives the Action Phase no completion condition, so
+    /// nothing in `ManualGameState` or the Expert System can tell whether
+    /// a player is finished. It exists so the bottom row reads as three
+    /// sequential steps instead of two that light at once.
+    @State private var hasDeclaredActions = false
+
+    private var progress: RiftboundPhaseCopy.Progress {
+        RiftboundPhaseCopy.Progress(
+            hasStartedTurn: hasStartedTurn,
+            phase: gameState.phase,
+            hasDeclaredActions: hasDeclaredActions
+        )
+    }
+
     /// How long a verdict stays on screen before the strip returns to the
     /// phase instruction.
     ///
@@ -67,6 +92,20 @@ struct TurnControlBar: View {
         }
         .onChange(of: gameState.turnPlayer) { _, _ in
             hasStartedTurn = false
+            hasDeclaredActions = false
+        }
+        // Stepping back out of the Action Phase (a new turn, or an
+        // Auto-detect correction) un-declares — otherwise the row would
+        // come back on the next turn already showing End Turn as live.
+        .onChange(of: gameState.phase) { _, newPhase in
+            if newPhase != .action { hasDeclaredActions = false }
+            // Auto-detect advances the phase without anyone pressing
+            // "Start Turn", and `stage` was gated on that button alone —
+            // so with the toggle on, the phase reached `.action` while the
+            // panel still showed START and the button still read "Start
+            // Turn". Being past Awaken *is* having started the turn,
+            // whoever moved it.
+            if newPhase != .awaken { hasStartedTurn = true }
         }
     }
 
@@ -87,8 +126,7 @@ struct TurnControlBar: View {
         let recentInstruction = recent.first { $0.verdict == .accepted || $0.verdict == .rejected } ?? recent.first
 
         return VStack(alignment: .leading, spacing: 14) {
-            statusStrip(recentInstruction)
-            phaseCards
+            phaseCards(recentInstruction)
             controlRow
         }
         .padding(.horizontal, 24)
@@ -155,6 +193,18 @@ struct TurnControlBar: View {
                 detail: progress.detail,
                 steps: progress.steps
             )
+        } else {
+            // Before Start Game there is no pipeline and so no progress to
+            // report, and this slot rendered as a blank rectangle of window
+            // beside the phase cards. Saying what the phase expects fills
+            // it with the one thing that's true either way, and means the
+            // area never looks broken.
+            strip(
+                icon: "circle.dashed",
+                tint: RiftboundPalette.elementStroke,
+                headline: gameState.phase.instruction,
+                detail: nil
+            )
         }
     }
 
@@ -212,14 +262,27 @@ struct TurnControlBar: View {
     /// Centre-aligned, not top-aligned: `RiftPanelCard` stretches every
     /// card to the row's height, so the connecting hairlines belong on the
     /// shared midline rather than at a hand-guessed `.top` offset.
-    private var phaseCards: some View {
+    /// The three stage cards, with whatever the app currently has to say
+    /// filling the space to the right of End Turn.
+    ///
+    /// That space was a bare `Spacer` and the status strip sat above the
+    /// cards, which pushed the whole row down whenever there was something
+    /// to report and moved it back up when the message aged out — the
+    /// bottom of the window shifted while a player was reading it. Putting
+    /// the message beside End Turn instead uses ground that was already
+    /// empty, and the row keeps one height whether or not anything is being
+    /// said.
+    private func phaseCards(_ recentInstruction: InstructionLogEntry?) -> some View {
         HStack(alignment: .center, spacing: 0) {
-            StartOfTurnPhaseCard(phase: gameState.phase, hasStartedTurn: hasStartedTurn)
+            StartOfTurnPhaseCard(progress: progress)
             RiftFlowConnector()
-            DoYourTurnCard(phase: gameState.phase, hasStartedTurn: hasStartedTurn)
+            DoYourTurnCard(progress: progress)
             RiftFlowConnector()
-            EndTurnCard(phase: gameState.phase, hasStartedTurn: hasStartedTurn)
-            Spacer(minLength: 0)
+            EndTurnCard(progress: progress)
+
+            statusStrip(recentInstruction)
+                .padding(.leading, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -240,47 +303,58 @@ struct TurnControlBar: View {
             .toggleStyle(RiftSwitchToggleStyle())
             .fixedSize()
 
-            // Nothing follows the Action Phase (516.6), so "Next" there
-            // would do exactly what "End Turn" does. Two buttons with the
-            // same effect and different names read as two different
-            // choices, so only one is offered: step through the fixed
-            // phases, then end the turn.
+            // One live button at a time, matching the three cards above.
             //
-            // "Next" is what Auto-detect takes over, so it's the only
-            // button the toggle disables — and it's also unavailable
-            // before the turn has been started.
-            if !gameState.phase.validatesPlayerMoves {
-                Button("Next") {
-                    gameState.advance()
-                }
-                .buttonStyle(RiftPrimaryButtonStyle())
-                .disabled(isAutoDetecting || !hasStartedTurn)
-            }
+            //   before the turn   → Start Turn
+            //   A→B→C→D           → Next
+            //   Action Phase      → Done Playing
+            //   actions declared  → End Turn
+            //
+            // "Next" used to sit alongside End Turn during the Action
+            // Phase doing exactly what End Turn did (516.6 puts nothing
+            // after Action), which read as two different choices. Now each
+            // step offers only the action that advances it.
+            switch progress.stage {
+            case .startOfTurn where !hasStartedTurn:
+                Button("Start Turn") { hasStartedTurn = true }
+                    .buttonStyle(RiftPrimaryButtonStyle())
 
-            // **Never disabled once the turn is running.** 516.2 gives the
-            // Action Phase no completion condition and 516.6 says it ends
-            // when the player declares it, so nothing the camera sees can
-            // end a turn. Disabling this under Auto-detect left the only
-            // way out of the Action Phase greyed out — the turn could be
-            // started automatically but never finished.
-            //
-            // Before the turn starts, this same slot is the "Start Turn"
-            // affordance from the mockup; it doesn't touch `gameState`,
-            // only lights the first pip.
-            if hasStartedTurn {
+            case .startOfTurn:
+                // **Not disabled under Auto-detect.** Auto-detect drives
+                // this step, but it can only advance a phase it can
+                // actually confirm — and a hand fanned over the mat is
+                // countable only sometimes, so Draw is the step most likely
+                // to sit there. Greying this out made a stall unrecoverable
+                // without hunting for the toggle. The assist should never
+                // be the thing standing between a player and their turn.
+                Button("Next") { gameState.advance() }
+                    .buttonStyle(RiftPrimaryButtonStyle())
+
+            case .doYourTurn:
+                Button("Done Playing") { hasDeclaredActions = true }
+                    .buttonStyle(RiftPrimaryButtonStyle())
+
+            case .endTurn:
+                // **Never disabled.** 516.2 gives the Action Phase no
+                // completion condition and 516.6 says it ends when the
+                // player declares it, so nothing the camera sees can end a
+                // turn. Greying this out under Auto-detect left the only
+                // way out of the Action Phase unavailable.
                 Button("End Turn") {
                     gameState.endTurn()
                     // `endTurn()` flips the seat, which fires the
-                    // `onChange` above — set it here too so the label is
+                    // `onChange` above — set both here too so the row is
                     // right on this render pass rather than one frame later.
                     hasStartedTurn = false
+                    hasDeclaredActions = false
                 }
-                .buttonStyle(gameState.phase.validatesPlayerMoves
-                             ? AnyButtonStyle(RiftPrimaryButtonStyle())
-                             : AnyButtonStyle(RiftSecondaryButtonStyle()))
-            } else {
-                Button("Start Turn") { hasStartedTurn = true }
-                    .buttonStyle(RiftPrimaryButtonStyle())
+                .buttonStyle(RiftPrimaryButtonStyle())
+
+                // An escape hatch: declaring "done" is a UI-only claim, so
+                // taking it back has to be possible or a misclick strands
+                // the player with no way to play the card they forgot.
+                Button("Keep Playing") { hasDeclaredActions = false }
+                    .buttonStyle(RiftSecondaryButtonStyle())
             }
 
             Spacer(minLength: 0)
@@ -306,20 +380,5 @@ struct TurnControlBar: View {
         case .champion: return "Champion zone"
         case .unknown: return "off-mat area"
         }
-    }
-}
-
-/// `ButtonStyle` is a protocol with an associated type, so the two styles
-/// can't be picked between inline without erasing them first. Small enough
-/// to keep next to its only use.
-struct AnyButtonStyle: ButtonStyle {
-    private let makeBodyClosure: (Configuration) -> AnyView
-
-    init<S: ButtonStyle>(_ style: S) {
-        makeBodyClosure = { AnyView(style.makeBody(configuration: $0)) }
-    }
-
-    func makeBody(configuration: Configuration) -> some View {
-        makeBodyClosure(configuration)
     }
 }

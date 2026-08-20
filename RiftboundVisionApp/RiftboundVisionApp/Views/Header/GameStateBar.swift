@@ -35,18 +35,18 @@ struct GameStateBar: View {
         gameState.turnPlayer == .player1 ? "P1 Turn" : "P2 Turn"
     }
 
-    /// The mockup's "Observe & React accordingly." is the *opponent's*-turn
-    /// line. On your own turn that sentence would be wrong, so the other
-    /// half of the pair is spelled out here rather than showing the same
-    /// string for both seats.
+    /// Two lines, one per seat. The mockup draws both: "Do your phases and
+    /// actions." on your own turn, "Observe & React accordingly." on the
+    /// opponent's. Showing either string for both seats would be wrong half
+    /// the time, so the pair is spelled out rather than picking one.
     private var subtitle: String {
-        isLocalTurn ? "Your move — take your turn." : "Observe & React accordingly."
+        isLocalTurn ? "Do your phases and actions." : "Observe & React accordingly."
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 40) {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Current Turn")
+                Text("Currently")
                     .font(RiftboundFont.subheading)
                     .foregroundStyle(RiftboundPalette.highlightOverlay)
 

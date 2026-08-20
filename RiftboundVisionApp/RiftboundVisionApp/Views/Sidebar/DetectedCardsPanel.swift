@@ -23,7 +23,6 @@ struct DetectedCardsPanel: View {
 
     @State private var searchText = ""
     @State private var isSearchFieldShown = false
-    @State private var isShowingSettings = false
     @FocusState private var isSearchFocused: Bool
 
     /// Typing searches the whole catalogue rather than only what's on
@@ -37,15 +36,35 @@ struct DetectedCardsPanel: View {
         !searchText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    /// Distinct printings behind the current detections, in the order they
-    /// were detected. Deduped because several boxes can resolve to the
-    /// same printing (two copies of the same rune) and the library should
-    /// list a card once.
+    /// Distinct printings behind the currently-*tracked* cards, oldest
+    /// track first. Deduped because several boxes can resolve to the same
+    /// printing (two copies of the same rune) and the library should list
+    /// a card once.
+    ///
+    /// Reads `pipeline.trackedObjects`, not `pipeline.detections`, on
+    /// purpose. `detections` is the raw, per-poll detector output — no
+    /// identity, no occlusion tolerance, and (by design, for the live
+    /// on-camera overlay) not run through `ObjectTracker`'s label-vote
+    /// stabilization at all. Building this list from it meant every card's
+    /// row flickered in and out, and renamed itself, at the raw detector's
+    /// own noise level — several times a second, even for a card lying
+    /// dead still — because that's exactly what `detections` is supposed
+    /// to expose for the overlay. `trackedObjects` is the stabilized
+    /// output of the same poll: a card keeps its row through brief
+    /// occlusion (a hand passing over it) and its name only changes when
+    /// the evidence for a different card is actually decisive, not on
+    /// every ambiguous frame.
+    ///
+    /// Sorted by `TrackedObjectID` rather than relying on the underlying
+    /// dictionary's iteration order, which Swift doesn't guarantee stable
+    /// across mutations — IDs are assigned in increasing order as cards
+    /// first appear, so this reproduces "in detection order" deterministically
+    /// instead of by accident.
     private var cardsOnTable: [CardPrinting] {
         var seen = Set<String>()
         var result: [CardPrinting] = []
-        for detection in pipeline.detections {
-            guard let label = detection.recognizedLabel,
+        for object in pipeline.trackedObjects.sorted(by: { $0.id < $1.id }) {
+            guard let label = object.recognizedLabel,
                   let printing = pipeline.cardDatabase.printing(approximatelyNamed: label),
                   seen.insert(printing.id).inserted else { continue }
             result.append(printing)
@@ -64,16 +83,13 @@ struct DetectedCardsPanel: View {
             }
             .padding(20)
         }
-        // `maxHeight: .infinity` so the blue column reaches the bottom of
-        // the window even when its content is short. Without it the
-        // `ScrollView` sized to its content and the background stopped
-        // partway down, leaving a band of window blue below the panel.
+        // The column now starts level with the header rather than below
+        // it, so its own top padding is what keeps "Score" aligned with
+        // "Current Turn" instead of riding up against the toolbar.
+        .scrollContentBackground(.hidden)
         .frame(width: 362)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(RiftboundPalette.secondaryBackground)
-        .popover(isPresented: $isShowingSettings) {
-            PipelineSettingsView(pipeline: pipeline)
-        }
     }
 
     // MARK: - Score
@@ -106,9 +122,11 @@ struct DetectedCardsPanel: View {
 
                 Spacer()
 
-                iconButton(systemName: "gearshape", label: "Pipeline settings") {
-                    isShowingSettings = true
-                }
+                // Only the magnifier here. Pipeline settings used to sit
+                // beside it, which put a developer control in the middle
+                // of a player-facing panel and gave this header two
+                // unrelated jobs. It lives in the toolbar's diagnostics
+                // menu now, with the other two developer affordances.
                 iconButton(systemName: "magnifyingglass", label: "Search the card catalogue") {
                     isSearchFieldShown.toggle()
                     if isSearchFieldShown {

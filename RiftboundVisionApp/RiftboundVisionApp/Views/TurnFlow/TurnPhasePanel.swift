@@ -8,7 +8,8 @@
 import SwiftUI
 import RiftboundVision
 
-/// The bottom row of V3: three linked cards that say where you are in the turn — "Start of Turn Phases", "Do Your Turn!", "End Turn".
+/// The bottom row of V3: three linked cards that say where you are in the
+/// turn — "Start of Turn Phases", "Do Your Turn!", "End Turn".
 ///
 /// Written against the *five*-phase `GamePhase`. Rule 517's Ending,
 /// Expiration and Cleanup steps were deliberately removed from that enum
@@ -34,10 +35,42 @@ import RiftboundVision
 /// `TurnControlBar` whenever there's no live `PhaseAutoDetector` progress
 /// to show instead.
 enum RiftboundPhaseCopy {
-    /// Which of the three cards is lit for a phase.
+    /// Which of the three cards is lit.
+    ///
+    /// Not derivable from `GamePhase` alone. The five phases end at
+    /// `.action`, but the row draws *three* stages, because "End Turn" is
+    /// a thing the player does at the end of the Action Phase rather than
+    /// a phase of its own (516.6). So the last two share `.action` and are
+    /// told apart by `hasDeclaredActions` — see `Progress` below.
     enum Stage {
         case startOfTurn
         case doYourTurn
+        case endTurn
+    }
+
+    /// Where the player is in the turn, as the bottom row sees it.
+    ///
+    /// Three flags rather than one enum because they're independent facts
+    /// that arrive from different places: the turn being started is a UI
+    /// affordance, the phase comes from the engine, and finishing your
+    /// actions is a declaration only the player can make.
+    struct Progress {
+        /// Pressed "Start Turn" — before this, every card is unlit and the
+        /// first card reads "START / Begin your turn."
+        var hasStartedTurn: Bool
+        /// Reached the Action Phase by stepping A→B→C→D.
+        var phase: GamePhase
+        /// Declared they're done playing cards, which is what arms the
+        /// End Turn button.
+        var hasDeclaredActions: Bool
+
+        var stage: Stage {
+            guard hasStartedTurn else { return .startOfTurn }
+            switch phase {
+            case .awaken, .beginning, .channel, .draw: return .startOfTurn
+            case .action: return hasDeclaredActions ? .endTurn : .doYourTurn
+            }
+        }
     }
 
     static func stage(for phase: GamePhase) -> Stage {
@@ -126,14 +159,12 @@ struct TurnPhasePip: View {
 // MARK: - Card 1
 
 struct StartOfTurnPhaseCard: View {
-    let phase: GamePhase
-    /// False before the player has pressed "Start Turn" — the mockup's
-    /// "START / Begin your turn." state, with every pip unlit.
-    let hasStartedTurn: Bool
+    let progress: RiftboundPhaseCopy.Progress
 
-    private var isActive: Bool {
-        hasStartedTurn && RiftboundPhaseCopy.stage(for: phase) == .startOfTurn
-    }
+    private var phase: GamePhase { progress.phase }
+    private var hasStartedTurn: Bool { progress.hasStartedTurn }
+
+    private var isActive: Bool { progress.stage == .startOfTurn && hasStartedTurn }
 
     var body: some View {
         RiftPanelCard(isActive: isActive) {
@@ -182,12 +213,9 @@ struct StartOfTurnPhaseCard: View {
 // MARK: - Card 2
 
 struct DoYourTurnCard: View {
-    let phase: GamePhase
-    let hasStartedTurn: Bool
+    let progress: RiftboundPhaseCopy.Progress
 
-    private var isActive: Bool {
-        hasStartedTurn && RiftboundPhaseCopy.stage(for: phase) == .doYourTurn
-    }
+    private var isActive: Bool { progress.stage == .doYourTurn }
 
     var body: some View {
         RiftPanelCard(isActive: isActive) {
@@ -255,18 +283,20 @@ struct DoYourTurnCard: View {
 /// The turn's destination.
 ///
 /// Unlike the other two this card marks no phase — 517's steps aren't in
-/// `GamePhase` at all. It lights up during the Action Phase because 516.6
-/// says the turn ends when the player declares it, so that's exactly when
-/// the End Turn button below becomes the live action. Treating it as a
-/// signpost rather than a step is what keeps the row honest about a
-/// five-phase model.
+/// `GamePhase` at all. It lights when the player has said they're finished
+/// playing cards, which under 516.6 is exactly the moment the turn becomes
+/// endable. Treating it as the third step of a sequence rather than a
+/// co-lit twin of "Do Your Turn!" is what makes the row readable as a
+/// progression.
 struct EndTurnCard: View {
-    let phase: GamePhase
-    let hasStartedTurn: Bool
+    let progress: RiftboundPhaseCopy.Progress
 
-    private var isActive: Bool {
-        hasStartedTurn && RiftboundPhaseCopy.stage(for: phase) == .doYourTurn
-    }
+    /// Lights up only once the player has declared their actions done —
+    /// **not** at the same moment as "Do Your Turn!". Both cards glowing
+    /// together said the turn could be ended and cards could still be
+    /// played, which is two different states drawn as one; the row is a
+    /// sequence, so it should light one step at a time.
+    private var isActive: Bool { progress.stage == .endTurn }
 
     var body: some View {
         RiftPanelCard(isActive: isActive, alignment: .center) {
@@ -278,17 +308,22 @@ struct EndTurnCard: View {
         .riftComponentDisabled(!isActive)
         .help(isActive
               ? "Ending the Action Phase runs the rest of the turn and passes to the other seat (Rule 516.6/517)."
-              : "Available once you reach your Action Phase.")
+              : "Available once you've finished playing cards this turn.")
     }
 }
 
 #Preview {
-    HStack(spacing: 0) {
-        StartOfTurnPhaseCard(phase: .beginning, hasStartedTurn: true)
+    let progress = RiftboundPhaseCopy.Progress(
+        hasStartedTurn: true,
+        phase: .beginning,
+        hasDeclaredActions: false
+    )
+    return HStack(spacing: 0) {
+        StartOfTurnPhaseCard(progress: progress)
         RiftFlowConnector()
-        DoYourTurnCard(phase: .beginning, hasStartedTurn: true)
+        DoYourTurnCard(progress: progress)
         RiftFlowConnector()
-        EndTurnCard(phase: .beginning, hasStartedTurn: true)
+        EndTurnCard(progress: progress)
     }
     .padding()
     .background(RiftboundPalette.mainBackground)

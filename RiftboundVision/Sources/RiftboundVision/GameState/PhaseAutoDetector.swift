@@ -364,8 +364,8 @@ public struct PhaseAutoDetector: Sendable {
         }
 
         return Progress(
-            headline: "Finish playing \(play.name): \(sentence(owed)).",
-            detail: "Nothing else counts until this is paid for (Rules 139.4, 157.2).",
+            headline: "You've played \(play.name).",
+            detail: "Still to do: \(sentence(owed)). Nothing else counts until it's paid for (Rules 139.4, 157.2).",
             needsCorrection: true
         )
     }
@@ -398,7 +398,10 @@ public struct PhaseAutoDetector: Sendable {
             // is otherwise a puzzle.
             let entersExhausted = card.kind == .unit || card.kind == .champion
             if entersExhausted, !card.entersReady {
-                parts.append("turn \(card.name) sideways")
+                // "it", not the card's name: the headline right above this
+                // already says which card was played, and repeating the
+                // name inside the same sentence reads like a second card.
+                parts.append("turn it sideways")
             }
 
             if card.energyCost > 0 {
@@ -422,10 +425,14 @@ public struct PhaseAutoDetector: Sendable {
                 )
             }
 
+            // Split across the strip's two lines: what happened on top,
+            // what's owed for it underneath. One sentence carrying both was
+            // the card's name, a colon and a list, which reads as a label
+            // rather than as something to act on.
             return Progress(
-                headline: "\(card.name): \(sentence(parts)).",
-                detail: abilityLine
-                    ?? "Sideways means exhausted; returning a rune to the rune deck pays power (Rule 157.2)."
+                headline: "You've played \(card.name).",
+                detail: sentence(parts).capitalizedFirst + "."
+                    + (abilityLine.map { "  ·  \($0)" } ?? "")
             )
 
         case .unaffordable(.energy(let required, let available)):
@@ -443,5 +450,15 @@ public struct PhaseAutoDetector: Sendable {
                 needsCorrection: true
             )
         }
+    }
+}
+
+private extension String {
+    /// Uppercases only the first character, leaving the rest alone —
+    /// unlike `capitalized`, which would also retitle "rune deck" and every
+    /// other word in the sentence.
+    var capitalizedFirst: String {
+        guard let first else { return self }
+        return first.uppercased() + dropFirst()
     }
 }

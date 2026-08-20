@@ -7,21 +7,20 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0AF99833302F1923001D832C /* best-3.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 0AF99832302F1923001D832C /* best-3.mlpackage */; };
+		0AF26C11303623B3000C6AA2 /* best-4.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 0AF26C10303623B3000C6AA2 /* best-4.mlpackage */; };
 		17EEFEABA0B94E61BA799EE9 /* master_yi.json in Resources */ = {isa = PBXBuildFile; fileRef = 4BAA057A479749368EAEF496 /* master_yi.json */; };
 		1DE850A028A146EF8CD2965A /* garen.json in Resources */ = {isa = PBXBuildFile; fileRef = 9840E86F98974947AB667FE5 /* garen.json */; };
 		28BBE6A41DF542389F12D127 /* RiftboundVision in Frameworks */ = {isa = PBXBuildFile; productRef = BAF983D8D87248D98042BA4D /* RiftboundVision */; };
 		40EB822647F14E35A612999A /* annie.json in Resources */ = {isa = PBXBuildFile; fileRef = 40BF4C5F514846A583323984 /* annie.json */; };
 		71EB87BDA66944C493D04B22 /* best-2.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = C80542A83A3C4765A9F7868D /* best-2.mlpackage */; };
 		AEAAA284B54A4B9493BD0940 /* lux.json in Resources */ = {isa = PBXBuildFile; fileRef = 27536C6BCCE545FA95F26D33 /* lux.json */; };
-		C65BD2D963D14E48BD280043 /* best.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = DBF6C0B24D384E309B541FB3 /* best.mlpackage */; };
 		CCCC6491D5C14229AAC7452C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D88B8B2034A14CA4A0D53DCE /* Assets.xcassets */; };
 		E16FF14ECC8F4448823BFD1F /* RiftboundExpertSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 1A78B4275C9F40C0A74AFCE8 /* RiftboundExpertSystem */; };
 		E9DDFFDCB8224BC3BC9ED19C /* RiftboundTextProcessing in Frameworks */ = {isa = PBXBuildFile; productRef = C060F6247F344B33BA6FE317 /* RiftboundTextProcessing */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		0AF99832302F1923001D832C /* best-3.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = "best-3.mlpackage"; sourceTree = "<group>"; };
+		0AF26C10303623B3000C6AA2 /* best-4.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = "best-4.mlpackage"; sourceTree = "<group>"; };
 		27536C6BCCE545FA95F26D33 /* lux.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lux.json; sourceTree = "<group>"; };
 		40BF4C5F514846A583323984 /* annie.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = annie.json; sourceTree = "<group>"; };
 		4BAA057A479749368EAEF496 /* master_yi.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = master_yi.json; sourceTree = "<group>"; };
@@ -29,7 +28,6 @@
 		9840E86F98974947AB667FE5 /* garen.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = garen.json; sourceTree = "<group>"; };
 		C80542A83A3C4765A9F7868D /* best-2.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = "best-2.mlpackage"; sourceTree = "<group>"; };
 		D88B8B2034A14CA4A0D53DCE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		DBF6C0B24D384E309B541FB3 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
 		FF5C8EB31C364F5AAD701BF1 /* RiftboundVisionApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RiftboundVisionApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -69,9 +67,8 @@
 		534CBAAC54BE40A0A8292534 /* CardDetectionModel */ = {
 			isa = PBXGroup;
 			children = (
-				DBF6C0B24D384E309B541FB3 /* best.mlpackage */,
+				0AF26C10303623B3000C6AA2 /* best-4.mlpackage */,
 				C80542A83A3C4765A9F7868D /* best-2.mlpackage */,
-				0AF99832302F1923001D832C /* best-3.mlpackage */,
 			);
 			path = CardDetectionModel;
 			sourceTree = "<group>";
@@ -132,6 +129,7 @@
 				38881DF111A046FA9410698A /* Sources */,
 				EF4B7FFBC02B449CB61D4FF8 /* Frameworks */,
 				856BD6A83D464E3E9BD586B3 /* Resources */,
+				7A1C0F2E9B4D41A8B6E30C55 /* Verify bundled Core ML model */,
 			);
 			buildRules = (
 			);
@@ -204,14 +202,36 @@
 				AEAAA284B54A4B9493BD0940 /* lux.json in Resources */,
 				1DE850A028A146EF8CD2965A /* garen.json in Resources */,
 				17EEFEABA0B94E61BA799EE9 /* master_yi.json in Resources */,
-				C65BD2D963D14E48BD280043 /* best.mlpackage in Resources */,
 				71EB87BDA66944C493D04B22 /* best-2.mlpackage in Resources */,
-				0AF99833302F1923001D832C /* best-3.mlpackage in Resources */,
+				0AF26C11303623B3000C6AA2 /* best-4.mlpackage in Resources */,
 				CCCC6491D5C14229AAC7452C /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		7A1C0F2E9B4D41A8B6E30C55 /* Verify bundled Core ML model */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/RiftboundVisionApp/Services/CardDetectionModelLoader.swift",
+			);
+			name = "Verify bundled Core ML model";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Fails the build when the trained Core ML model the app actually loads\n# isn't in the built bundle.\n#\n# An .mlpackage added to Compile Sources instead of Copy Bundle Resources\n# is never compiled to .mlmodelc or copied. The build still succeeds, the\n# app still launches, and CardDetectionModelLoader quietly falls back to\n# the geometric detector - so cards are found but never identified. That\n# has happened twice here; both times it looked like a model problem\n# rather than a project-file one.\n#\n# The expected name is read out of CardDetectionModelLoader.swift rather\n# than hardcoded, so swapping the model cannot leave this check behind\n# guarding a file nobody loads. That read is why the loader is declared in\n# this phase's inputPaths: script phases run sandboxed, and an undeclared\n# file can be stat-ed but not read, which fails as \"Operation not\n# permitted\" rather than as \"not found\".\n#\n# No backslashes anywhere on purpose - this string is escaped into\n# project.pbxproj, and a regex full of them does not survive the trip.\nLOADER=\"$SRCROOT/RiftboundVisionApp/Services/CardDetectionModelLoader.swift\"\nif [ ! -r \"$LOADER\" ]; then\n  echo \"warning: cannot read $LOADER; skipping the bundled-model check\"\n  exit 0\nfi\n\nMODEL=$(awk -F'\"' '/static let modelName/ { print $2; exit }' \"$LOADER\")\nif [ -z \"$MODEL\" ]; then\n  echo \"warning: could not read modelName from CardDetectionModelLoader.swift; skipping the bundled-model check\"\n  exit 0\nfi\n\nCOMPILED=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/$MODEL.mlmodelc\"\nif [ ! -d \"$COMPILED\" ]; then\n  echo \"error: $MODEL.mlmodelc is missing from the built app bundle. Add $MODEL.mlpackage to this target's Copy Bundle Resources phase (not Compile Sources). Without it the app runs on the fallback detector and cannot identify cards.\"\n  exit 1\nfi\necho \"Verified $MODEL.mlmodelc is in the bundle.\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		38881DF111A046FA9410698A /* Sources */ = {
@@ -293,11 +313,11 @@
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CODE_SIGN_ENTITLEMENTS = RiftboundVisionApp/RiftboundVisionApp.entitlements;
 				CODE_SIGN_IDENTITY = "-";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 7XY2GBMW9G;
+				DEVELOPMENT_TEAM = SSJH6446CA;
 				ENABLE_DEBUG_DYLIB = YES;
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
@@ -324,11 +344,11 @@
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CODE_SIGN_ENTITLEMENTS = RiftboundVisionApp/RiftboundVisionApp.entitlements;
 				CODE_SIGN_IDENTITY = "-";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 7XY2GBMW9G;
+				DEVELOPMENT_TEAM = SSJH6446CA;
 				ENABLE_DEBUG_DYLIB = YES;
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;

@@ -21,6 +21,12 @@ import RiftboundVision
 struct ContentView: View {
     @StateObject private var pipeline: CameraPipelineController
     @State private var isShowingPipelineSettings = false
+    @State private var isShowingOnboarding = false
+    /// Whether the welcome sheet has already been shown. Persisted, so it
+    /// greets a new player once and then stays out of the way — a modal
+    /// that appears every launch is one people learn to dismiss without
+    /// reading. It stays reachable from the Help menu.
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     /// The card being inspected. Lives here rather than in the panel so the
     /// camera view and the sidebar agree on what's selected — tapping a box
     /// is what usually sets it.
@@ -34,93 +40,47 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            GameStateBar(gameState: $pipeline.gameState)
-
-            // The right column runs the full height of the window, not
-            // just alongside the camera — in the reference the phase cards
-            // sit *under the feed only*, with the Score/Card Library
-            // column continuing past them to the bottom edge. Nesting the
-            // bottom bar inside the left column is what produces that;
-            // making it a sibling of the whole `HStack` (as it was) cut
-            // the sidebar off early and left a band of window background
-            // under it.
-            HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    cameraStage
-                    TurnControlBar(
-                        gameState: $pipeline.gameState,
-                        isAutoDetecting: $pipeline.isAutoDetectingPhase,
-                        instructions: pipeline.instructions,
-                        phaseProgress: pipeline.phaseProgress,
-                        misplacedCards: pipeline.misplacedCards,
-                        needsCalibration: pipeline.needsCalibration
-                    )
-                }
-
-                DetectedCardsPanel(pipeline: pipeline, selection: $selectedCard)
+        // Top bar across the full width, then two columns beneath it.
+        //
+        // `GameStateBar` and the bottom bar both live *inside* the left
+        // column rather than spanning the window: that's what puts the
+        // Score panel level with the turn banner, and lets the sidebar run
+        // unbroken to the bottom edge.
+        HStack(alignment: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                GameStateBar(gameState: $pipeline.gameState)
+                cameraStage
+                TurnControlBar(
+                    gameState: $pipeline.gameState,
+                    isAutoDetecting: $pipeline.isAutoDetectingPhase,
+                    instructions: pipeline.instructions,
+                    phaseProgress: pipeline.phaseProgress,
+                    misplacedCards: pipeline.misplacedCards,
+                    needsCalibration: pipeline.needsCalibration
+                )
             }
+
+            DetectedCardsPanel(pipeline: pipeline, selection: $selectedCard)
         }
         .background(RiftboundPalette.mainBackground)
         .frame(minWidth: 1160, minHeight: 675)
-        // `.primaryAction` on every item, not `.automatic`: with
-        // `.hiddenTitleBar` there is no title to sit beside, so the
-        // default placement collapsed the whole set against the left edge
-        // next to the traffic lights. The reference puts them at the
-        // trailing edge.
+        // `ToolbarItem` with no placement — `.automatic`, which on macOS
+        // trails the window title. That is the whole reason the title bar
+        // is left visible (see the app entry point): it's what gives these
+        // an edge to sit against.
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                cameraPicker
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // Explicit action for the case passive discovery can't
-                // handle — an iPhone the user manually Disconnected on
-                // the phone side. This actively tries to open it, which
-                // is what triggers the reconnect/permission handshake,
-                // rather than waiting for it to reappear on its own.
-                Button {
-                    pipeline.useIPhoneCamera()
-                } label: {
-                    Label("Use iPhone Camera", systemImage: "iphone")
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // Drag the 4 yellow corner handles onto the physical
-                // mat's actual corners as seen by the camera — a visual
-                // reference layer only now, not consulted by detection.
+            ToolbarItem { cameraPicker }
+            ToolbarItem {
+                // Drag the 4 corner handles onto the physical mat's actual
+                // corners as seen by the camera — a visual reference layer
+                // only, not consulted by detection.
                 Toggle(isOn: $pipeline.isCalibrating) {
                     Label("Calibrate Playmat", systemImage: "square.dashed")
                 }
                 .toggleStyle(.button)
             }
-            ToolbarItem(placement: .primaryAction) {
-                // Debug settings overlay — per-stage toggles instead of one
-                // flat kill switch. Disabling an earlier stage cascades:
-                // everything downstream of it turns off too (enforced by
-                // `CameraPipelineController.setStage`/`isStageActive`), so
-                // there's no way to leave the pipeline in an inconsistent
-                // "stage 3 on, stage 2 off" state from this UI.
-                Button {
-                    isShowingPipelineSettings = true
-                } label: {
-                    Label("Pipeline Settings", systemImage: "gearshape")
-                }
-                .popover(isPresented: $isShowingPipelineSettings) {
-                    PipelineSettingsView(pipeline: pipeline)
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // Diagnostic for "Continuity Camera works elsewhere but
-                // this app doesn't see it" — dumps every video device
-                // macOS reports (all device types, plus the legacy
-                // enumeration API) to the console and the sheet below.
-                Button {
-                    pipeline.runCameraDiagnostic()
-                } label: {
-                    Label("Debug Cameras", systemImage: "ladybug")
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem { diagnosticsMenu }
+            ToolbarItem {
                 // Starts the *pipeline*, not the camera — the feed is
                 // already live so the mat can be calibrated first.
                 Button(pipeline.isPipelineRunning ? "Stop" : "Start Game") {
@@ -129,7 +89,19 @@ struct ContentView: View {
                 .disabled(!pipeline.isCameraRunning)
             }
         }
-        .onAppear { pipeline.refreshAvailableCameras() }
+        .onAppear {
+            pipeline.refreshAvailableCameras()
+            // First launch only. Set before presenting rather than on
+            // dismiss, so a player who closes the window with the sheet
+            // still open isn't greeted by it again next time.
+            if !hasSeenOnboarding {
+                hasSeenOnboarding = true
+                isShowingOnboarding = true
+            }
+        }
+        .sheet(isPresented: $isShowingOnboarding) {
+            OnboardingView { isShowingOnboarding = false }
+        }
         // Bring the camera up as soon as the window opens, prompting for
         // access the first time. Calibration needs a live picture, and
         // aligning the mat after starting detection is what put cards in
@@ -227,8 +199,26 @@ struct ContentView: View {
                         .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                         .allowsHitTesting(false)
 
-                    VStack {
+                    VStack(spacing: 8) {
                         detectionCountBadge
+                        // Only ever visible when the trained model didn't
+                        // load. Sits under the card count rather than in
+                        // the transient error slot at the bottom because
+                        // it's true for the whole session, not a passing
+                        // camera condition — and because an app that
+                        // detects cards but names none of them otherwise
+                        // looks like it's simply working badly.
+                        if let warning = pipeline.detectorFallbackWarning {
+                            Text("Card recognition unavailable — \(warning)")
+                                .font(RiftboundFont.body)
+                                .foregroundStyle(RiftboundPalette.regularText)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 520)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(RiftboundPalette.primaryButton, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
                         Spacer()
                     }
                     .padding(.top, 12)
@@ -248,30 +238,24 @@ struct ContentView: View {
             }
     }
 
+    /// Player-facing: how many cards the pipeline currently believes are on
+    /// the table. Reads `trackedObjects`, not `detections` — the raw
+    /// per-poll count flickered between neighbouring numbers at the
+    /// detector's own noise level, several times a second, even with
+    /// nothing on the table actually changing (same class of bug the Card
+    /// Library had). `trackedObjects` only changes in response to a real
+    /// tracked appearance/disappearance. fps and table-event counts used to
+    /// sit here too; those are developer telemetry, not game state, and now
+    /// live in Pipeline Settings (Help & Diagnostics) instead of a
+    /// permanent on-camera HUD.
     private var detectionCountBadge: some View {
-        HStack(spacing: 8) {
-            Text(pipeline.detections.isEmpty ? "No cards detected" : "\(pipeline.detections.count) card\(pipeline.detections.count == 1 ? "" : "s") detected")
-            // Visible proof the reconnected Object Tracking + Area of
-            // Region pipeline (expertSystemAdapter) is actually producing
-            // events, not just structurally wired — see
-            // CameraPipelineController.observedEvents' doc comment.
-            if !pipeline.observedEvents.isEmpty {
-                Text("· \(pipeline.observedEvents.count) table event\(pipeline.observedEvents.count == 1 ? "" : "s")")
-                    .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
-            }
-            // The measured detection rate, not a configured one — this is
-            // what the machine actually sustains.
-            if pipeline.detectionsPerSecond > 0 {
-                Text("· \(pipeline.detectionsPerSecond, specifier: "%.0f") fps")
-                    .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
-            }
-        }
-        .font(RiftboundFont.body)
-        .foregroundStyle(RiftboundPalette.regularText)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-        .background(RiftboundPalette.elementShadow.opacity(0.85), in: Capsule())
-        .overlay(Capsule().stroke(RiftboundPalette.elementStroke.opacity(0.7), lineWidth: 1))
+        Text(pipeline.trackedObjects.isEmpty ? "No cards detected" : "\(pipeline.trackedObjects.count) card\(pipeline.trackedObjects.count == 1 ? "" : "s") detected")
+            .font(RiftboundFont.body)
+            .foregroundStyle(RiftboundPalette.regularText)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(RiftboundPalette.elementShadow.opacity(0.85), in: Capsule())
+            .overlay(Capsule().stroke(RiftboundPalette.elementStroke.opacity(0.7), lineWidth: 1))
     }
 
     private var debugReportSheet: some View {
@@ -336,6 +320,67 @@ struct ContentView: View {
             }
         } label: {
             Label(cameraLabel, systemImage: selectedIsContinuityCamera ? "iphone" : "camera")
+        }
+    }
+
+    /// The three developer affordances, folded behind one control.
+    ///
+    /// They used to be three separate toolbar buttons — an iPhone glyph, a
+    /// gear and a ladybug — which put six items across the top bar and made
+    /// the two a player actually needs (pick a camera, calibrate the mat)
+    /// hard to find among them. None of them is used during a game: two are
+    /// for when a camera won't appear, and one is a pipeline kill-switch
+    /// panel.
+    ///
+    /// Nothing is removed, only gathered. A menu also lets each item carry
+    /// its full name instead of a glyph that has to be guessed at.
+    private var diagnosticsMenu: some View {
+        Menu {
+            // Explicit action for the case passive discovery can't handle —
+            // an iPhone the user manually Disconnected on the phone side.
+            // This actively tries to open it, which is what triggers the
+            // reconnect/permission handshake, rather than waiting for it to
+            // reappear on its own.
+            Button {
+                isShowingOnboarding = true
+            } label: {
+                Label("How to Play…", systemImage: "questionmark.circle")
+            }
+
+            Divider()
+
+            Button {
+                pipeline.useIPhoneCamera()
+            } label: {
+                Label("Use iPhone Camera", systemImage: "iphone")
+            }
+
+            // Per-stage toggles instead of one flat kill switch. Disabling
+            // an earlier stage cascades: everything downstream turns off
+            // too (enforced by `CameraPipelineController.setStage`/
+            // `isStageActive`), so there's no way to leave the pipeline in
+            // an inconsistent "stage 3 on, stage 2 off" state from here.
+            Button {
+                isShowingPipelineSettings = true
+            } label: {
+                Label("Pipeline Settings…", systemImage: "gearshape")
+            }
+
+            Divider()
+
+            // Diagnostic for "Continuity Camera works elsewhere but this
+            // app doesn't see it" — dumps every video device macOS reports
+            // (all device types, plus the legacy enumeration API).
+            Button {
+                pipeline.runCameraDiagnostic()
+            } label: {
+                Label("Debug Cameras…", systemImage: "ladybug")
+            }
+        } label: {
+            Label("Help & Diagnostics", systemImage: "questionmark.circle")
+        }
+        .popover(isPresented: $isShowingPipelineSettings) {
+            PipelineSettingsView(pipeline: pipeline)
         }
     }
 

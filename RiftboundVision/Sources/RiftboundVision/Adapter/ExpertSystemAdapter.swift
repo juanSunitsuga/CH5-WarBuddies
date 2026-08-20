@@ -70,6 +70,11 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// Draw coverage is actually missing right now.
     public private(set) var unrepresentableZoneEvents: [VisionEvent] = []
 
+    /// How many entries either diagnostic buffer keeps. Both are
+    /// newest-wins ring buffers: they exist to answer "what just happened",
+    /// and an unbounded answer to that question is a leak.
+    static let diagnosticBufferLimit = 200
+
     /// Buffer behind `drainVisionTrace()`.
     private var visionTrace: [VisionEventTrace] = []
 
@@ -165,6 +170,16 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
                 continuation?.yield(observed)
             } else {
                 unrepresentableZoneEvents.append(visionEvent)
+                // Capped like `visionTrace`. This is a diagnostic — "what
+                // did translation drop" — and a card crossing between
+                // calibrated zones lands here on the way, so it fills at
+                // roughly the rate hands move over the mat. Uncapped it
+                // grew for the length of the session.
+                if unrepresentableZoneEvents.count > Self.diagnosticBufferLimit {
+                    unrepresentableZoneEvents.removeFirst(
+                        unrepresentableZoneEvents.count - Self.diagnosticBufferLimit
+                    )
+                }
             }
             record(VisionEventTrace(event: visionEvent, wasForwarded: observed != nil))
         }
@@ -200,8 +215,8 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         visionTrace.append(trace)
         // Bounded in case nothing ever drains this — a debug tap must not
         // become a leak.
-        if visionTrace.count > 200 {
-            visionTrace.removeFirst(visionTrace.count - 200)
+        if visionTrace.count > Self.diagnosticBufferLimit {
+            visionTrace.removeFirst(visionTrace.count - Self.diagnosticBufferLimit)
         }
     }
 

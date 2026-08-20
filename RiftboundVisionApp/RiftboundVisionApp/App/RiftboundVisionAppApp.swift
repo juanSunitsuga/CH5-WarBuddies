@@ -62,9 +62,12 @@ struct RiftboundVisionAppApp: App {
                 .preferredColorScheme(.dark)
         }
         .modelContainer(container)
-        // The reference is a fixed composition — a unified toolbar keeps
-        // the title bar from adding a second, differently-coloured band
-        // above the header bar.
-        .windowStyle(.hiddenTitleBar)
+        // The title bar stays visible, and that is load-bearing for the
+        // toolbar rather than a style choice. `.automatic` toolbar items
+        // trail the window title; with `.hiddenTitleBar` there is no title
+        // for them to trail, so every item packed against the leading edge
+        // no matter which placement it was given. Hiding it cost the
+        // toolbar its alignment, and no placement or modifier bought that
+        // back — three attempts said so.
     }
 }

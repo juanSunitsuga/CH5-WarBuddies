@@ -47,7 +47,7 @@ struct PendingPlayTests {
         let owed = play.outstanding(seen(.ready))
 
         #expect(!play.isSettled(seen(.ready)))
-        #expect(owed.contains("turn Annie sideways"))
+        #expect(owed.contains("turn it sideways"))
         #expect(owed.contains("exhaust 2 more runes"))
     }
 
@@ -121,7 +121,7 @@ struct PendingPlayTests {
         let play = annie(energy: 0)
 
         #expect(!play.isSettled(seen(nil)))
-        #expect(play.outstanding(seen(nil)).contains("turn Annie sideways"))
+        #expect(play.outstanding(seen(nil)).contains("turn it sideways"))
     }
 
     /// Runes coming *back* — a miscount, or the player putting one back —
@@ -200,7 +200,8 @@ struct PendingPlayTests {
 
         #expect(progress.needsCorrection)
         #expect(!progress.isComplete)
-        #expect(progress.headline.contains("turn Annie sideways and exhaust 2 more runes"))
+        #expect(progress.headline == "You've played Annie.")
+        #expect(progress.detail?.contains("turn it sideways and exhaust 2 more runes") == true)
     }
 
     @Test("A settled play releases the phase")

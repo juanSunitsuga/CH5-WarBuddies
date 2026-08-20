@@ -48,9 +48,44 @@ struct PipelineSettingsView: View {
                 }
                 .riftComponentDisabled(!stage.isWired)
             }
+
+            Rectangle()
+                .fill(RiftboundPalette.elementStroke.opacity(0.25))
+                .frame(height: 1)
+
+            // Moved here from a permanent badge on the camera view — fps
+            // and a raw table-event count are developer telemetry (proof
+            // the pipeline is actually producing events, and what rate the
+            // machine sustains), not information a player needs in front of
+            // them for the whole game. This popover is already the
+            // developer surface (see this type's doc comment), so it's
+            // where they belong.
+            Text("Live Telemetry")
+                .font(RiftboundFont.heading)
+                .foregroundStyle(RiftboundPalette.regularText)
+
+            telemetryRow(
+                "Detection rate",
+                pipeline.detectionsPerSecond > 0
+                    ? String(format: "%.0f fps", pipeline.detectionsPerSecond)
+                    : "—"
+            )
+            telemetryRow("Table events", "\(pipeline.observedEvents.count)")
         }
         .padding(18)
         .frame(width: 320)
         .background(RiftboundPalette.secondaryBackground)
+    }
+
+    private func telemetryRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(RiftboundFont.body)
+                .foregroundStyle(RiftboundPalette.regularText.opacity(0.7))
+            Spacer()
+            Text(value)
+                .font(RiftboundFont.body)
+                .foregroundStyle(RiftboundPalette.regularText)
+        }
     }
 }

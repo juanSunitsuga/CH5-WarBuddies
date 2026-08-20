@@ -234,7 +234,9 @@ struct PhaseAutoDetectorTests {
         ])
 
         #expect(!progress.needsCorrection)
-        #expect(progress.headline.contains("exhaust 2 runes"))
+        #expect(progress.headline == "You've played Annie.")
+        // Capitalised: the detail is its own sentence under the headline.
+        #expect(progress.detail?.contains("Exhaust 2 runes") == true)
     }
 
     @Test("An unaffordable card tells the player to put it back in hand")
@@ -326,8 +328,10 @@ struct PhaseAutoDetectorTests {
             ObservedRune(domain: .fury, stance: .ready)
         ])
 
-        #expect(progress.headline.contains("turn Tibbers sideways"))
-        #expect(progress.headline.contains("exhaust 2 runes"))
+        // Headline says what happened; the detail is one sentence listing
+        // everything owed for it, so only its first word is capitalised.
+        #expect(progress.headline == "You've played Tibbers.")
+        #expect(progress.detail?.contains("Turn it sideways and exhaust 2 runes") == true)
     }
 
     /// Rule 717: Accelerate is the exception, and worth saying out loud —
@@ -340,8 +344,8 @@ struct PhaseAutoDetectorTests {
             ObservedRune(domain: .fury, stance: .ready)
         ])
 
-        #expect(!progress.headline.contains("sideways"))
-        #expect(progress.headline.contains("exhaust 1 rune"))
+        #expect(progress.detail?.contains("sideways") == false)
+        #expect(progress.detail?.contains("Exhaust 1 rune") == true)
     }
 
     /// A free Unit still owes the exhaust, so it can't be skipped just
@@ -351,7 +355,7 @@ struct PhaseAutoDetectorTests {
         let free = ObservedCard(id: 1, name: "Poro", zone: .base, kind: .unit)
         let progress = PhaseAutoDetector().paymentProgress(for: free, runes: [])
 
-        #expect(progress.headline.contains("turn Poro sideways"))
+        #expect(progress.detail?.contains("Turn it sideways") == true)
     }
 
     /// A Spell has no board form, so nothing is turned sideways for it.
@@ -362,7 +366,7 @@ struct PhaseAutoDetectorTests {
             ObservedRune(domain: .fury, stance: .ready)
         ])
 
-        #expect(!progress.headline.contains("sideways"))
+        #expect(progress.detail?.contains("sideways") == false)
     }
 
     /// The card's own text, translated to Game Actions by the NLP layer,

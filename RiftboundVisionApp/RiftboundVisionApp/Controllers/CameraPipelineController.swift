@@ -265,6 +265,18 @@ final class CameraPipelineController: ObservableObject {
     /// Phase must not keep paying out for every frame it lasts.
     var hasAwardedHoldPoints = false
 
+    /// Consecutive polls the current phase has reported itself finished.
+    ///
+    /// Auto-detect used to advance on the first poll that said "complete",
+    /// which made it hostage to a single frame of detection noise. A hand
+    /// fanned over the mat miscounts by one and the Draw Phase completes
+    /// before the card is drawn; a card flickers out of view and Awaken
+    /// decides nothing is exhausted. Requiring agreement across a few
+    /// polls costs about half a second and removes the whole class.
+    private var completedPollStreak = 0
+    /// Polls a phase must agree it's finished before the turn moves on.
+    private static let phaseAdvanceConfirmations = 3
+
     @Published var playerScore = 0
     @Published var opponentScore = 0
 
@@ -277,7 +289,19 @@ final class CameraPipelineController: ObservableObject {
     /// reconnected Object Tracking + Area of Region pipeline is really
     /// producing real events, and the seam a future GameEngine wiring
     /// would read from.
-    @Published private(set) var observedEvents: [RiftboundExpertSystem.ObservedTableEvent] = []
+    ///
+    /// Deliberately **not** `@Published`. This type is an
+    /// `ObservableObject`, whose change signal carries no information about
+    /// *which* property changed — so every mutation invalidates every view
+    /// observing it, which here is `ContentView` (the camera stage and all
+    /// three overlays) and `DetectedCardsPanel` (whose rows each fetch
+    /// full-size card art). Publishing this meant a full re-render of the
+    /// camera and the sidebar on every table event, to keep a diagnostic
+    /// count up to date and nothing else. The count still tracks live in
+    /// practice: the settings popover is re-rendered by the genuinely
+    /// published per-poll properties (`detections`, `trackedObjects`)
+    /// anyway, and re-reads this when it does.
+    private(set) var observedEvents: [RiftboundExpertSystem.ObservedTableEvent] = []
 
 
     /// The tracker's own view of the table — stable IDs and centroids,
@@ -337,8 +361,33 @@ final class CameraPipelineController: ObservableObject {
     let battlefieldSlotIDs: [Int: BattlefieldID] = [0: BattlefieldID()]
 
     private let camera = AVFoundationCameraCapture()
-    private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
+    private let loadedDetector = CardDetectionModelLoader.loadDetector()
+    private var detector: any ObjectDetecting { loadedDetector.detector }
+
+    /// Set when the trained Core ML model couldn't be loaded and the app
+    /// is running on the geometric fallback detector, which finds cards
+    /// but can't say which card each one is.
+    ///
+    /// Separate from `errorMessage` on purpose: that one is for transient
+    /// camera conditions and gets cleared when they resolve (a reconnect,
+    /// an interruption ending). This is a condition fixed for the whole
+    /// session — the model either loaded at launch or it didn't — so it
+    /// must not be cleared by an unrelated camera event. Surfacing it at
+    /// all is the point: the fallback used to be a `print` nobody reads,
+    /// so a mis-filed model looked exactly like a working app that had
+    /// stopped recognizing anything.
+    var detectorFallbackWarning: String? { loadedDetector.fallbackReason }
     private let ciContext = CIContext()
+
+    /// Preview refresh ceiling. The picture cannot usefully update faster
+    /// than the display refreshes, and every conversion above that rate is
+    /// work thrown away.
+    private static let previewFrameInterval: TimeInterval = 1.0 / 30.0
+    private var lastPreviewTimestamp: TimeInterval?
+    /// Guards against queueing conversions behind a slow one — with a
+    /// 60fps camera and a conversion that takes longer than a frame, every
+    /// frame would otherwise start another and they'd pile up.
+    private var isConvertingPreview = false
 
     /// Floor on the gap between detections — about 5 Hz.
     ///
@@ -799,6 +848,19 @@ final class CameraPipelineController: ObservableObject {
         }.value
     }
 
+    /// Converts a camera frame to a `CGImage` off the main actor.
+    ///
+    /// Same asserted crossing as `detect(in:)`, and sound for the same
+    /// reason: one caller, one frame at a time — `isConvertingPreview`
+    /// guarantees no second conversion starts while this one is in flight.
+    private func makePreviewImage(from ciImage: CIImage) async -> CGImage? {
+        let box = UncheckedBox(value: (ciContext, ciImage))
+        return await Task.detached(priority: .userInitiated) {
+            let (context, image) = box.value
+            return context.createCGImage(image, from: image.extent)
+        }.value
+    }
+
     /// What kind of card a recognizer label names, resolved once per label.
     ///
     /// `CardDatabase.printing(approximatelyNamed:)` normalizes and scans the
@@ -909,11 +971,28 @@ final class CameraPipelineController: ObservableObject {
             hasSizedCalibrationToFrame = true
         }
 
-        // Video stays smooth at full camera framerate regardless of the
-        // detection poll below — only the (expensive) detector call is
-        // throttled.
-        backgroundImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
+        // The preview conversion, off the main actor and rate-limited.
+        //
+        // This used to run inline, on every camera frame, on this
+        // `@MainActor` type. `createCGImage` is a synchronous
+        // full-resolution GPU→CPU copy, so at 60fps the main thread spent
+        // most of its time converting frames it was about to throw away —
+        // which is what made the feed feel laggy no matter how cheap
+        // detection got. The comment here used to claim only the detector
+        // was expensive; the conversion was the larger cost of the two.
+        //
+        // Capped at `previewFrameInterval` because the display cannot show
+        // more than it refreshes, and skipped entirely while a conversion
+        // is still in flight so a slow frame can't queue up behind itself.
         frameSize = size
+        if !isConvertingPreview,
+           frame.timestamp - (lastPreviewTimestamp ?? -.infinity) >= Self.previewFrameInterval {
+            lastPreviewTimestamp = frame.timestamp
+            isConvertingPreview = true
+            let image = await makePreviewImage(from: ciImage)
+            isConvertingPreview = false
+            if let image { backgroundImage = image }
+        }
 
         // Everything above this line runs whenever the camera is up — the
         // preview picture and the frame sizing the playmat overlay needs.
@@ -1059,6 +1138,7 @@ extension CameraPipelineController {
                 completedChannelPhases += 1
             }
             hasAwardedHoldPoints = false
+            completedPollStreak = 0
             // A play left unsettled when the phase changed isn't chased
             // into the next one. Ending the turn is the player asserting
             // they're done, and holding last turn's obligation over them
@@ -1142,7 +1222,13 @@ extension CameraPipelineController {
             playerScore += progress.pointsToAward
         }
 
-        guard progress.isComplete else { return }
+        guard progress.isComplete else {
+            completedPollStreak = 0
+            return
+        }
+        completedPollStreak += 1
+        guard completedPollStreak >= Self.phaseAdvanceConfirmations else { return }
+        completedPollStreak = 0
         gameState.advance()
     }
 

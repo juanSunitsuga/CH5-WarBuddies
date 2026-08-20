@@ -287,7 +287,8 @@ private struct RiftButtonBody: View {
 /// The "Auto-detect" switch. AppKit's stock switch is system-blue and
 /// can't be tinted through `.toggleStyle(.switch)`, so it read as the one
 /// piece of foreign chrome on the screen; this draws the mockup's gold
-/// pill with the knob on the *left* when on, matching the reference.
+/// pill with the knob on the *trailing* side when on, matching the
+/// reference.
 struct RiftSwitchToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         Button {
@@ -303,7 +304,15 @@ struct RiftSwitchToggleStyle: ToggleStyle {
                             lineWidth: 1
                         )
                     )
-                    .overlay(alignment: configuration.isOn ? .leading : .trailing) {
+                    // Knob on the **trailing** side when on.
+                    //
+                    // This was inverted, and the inversion was invisible in
+                    // a still: gold fill said "on" while the knob sat left,
+                    // which every switch on the platform reads as "off".
+                    // The two halves of the control disagreed, so the state
+                    // could only be worked out by toggling it and watching.
+                    // Fill and knob now both mean the same thing.
+                    .overlay(alignment: configuration.isOn ? .trailing : .leading) {
                         Circle()
                             .fill(RiftboundPalette.regularText)
                             .padding(2)

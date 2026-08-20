@@ -4,6 +4,7 @@
 # Claude Code local (per-developer, not shared) settings
 **/.claude/settings.local.json
 **/CLAUDE.md
+**/design.md
 
 # Antigravity and misc
 .history/
