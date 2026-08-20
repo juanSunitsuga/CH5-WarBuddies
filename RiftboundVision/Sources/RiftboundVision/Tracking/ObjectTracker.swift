@@ -115,6 +115,7 @@ public final class ObjectTracker: @unchecked Sendable {
         tracked.removeValue(forKey: track.id)
         discardStreaks[track.id] = nil
         labelVotes[track.id] = nil
+        reportedLabels[track.id] = nil
         // Don't let identity memory resurrect it — being in the Trash is
         // the one case where a re-detection should *not* reclaim its ID.
         retired.removeAll { $0.id == track.id }
@@ -238,14 +239,36 @@ public final class ObjectTracker: @unchecked Sendable {
     /// enough times.
     private var labelVotes: [TrackedObjectID: [String: Float]] = [:]
 
-    /// Records this poll's reading and returns the label with the most
-    /// accumulated evidence.
+    /// The label currently being *reported* for each track — distinct from
+    /// which label merely has the most votes right now. See
+    /// `labelSwitchMargin`'s doc comment for why these two can differ.
+    private var reportedLabels: [TrackedObjectID: String] = [:]
+
+    /// How much further ahead a challenger label's votes must be than the
+    /// currently-reported label's before it's allowed to take over.
+    ///
+    /// Pure argmax-of-votes still let two visually similar cards (e.g.
+    /// "Annie Fiery" vs "Annie Stubborn") trade the lead every poll: with
+    /// close, roughly-tied confidence, a single stronger reading for
+    /// whichever one is behind is enough to flip the argmax, so the
+    /// reported name — and everything downstream that reads it (the
+    /// Instruction Log, the saved board row) — kept re-triggering for a
+    /// card that never actually changed. Votes still accumulate for every
+    /// candidate as before; this only gates when the *reported* label
+    /// switches, so a genuinely different card swapped into the same spot
+    /// still eventually wins (`sustainedChangeWins` covers that) — it just
+    /// has to out-vote the incumbent by a clear margin, not merely edge
+    /// past it.
+    private let labelSwitchMargin: Float = 3.0
+
+    /// Records this poll's reading and returns the label currently being
+    /// reported for this track.
     private func stabilizedLabel(
         for id: TrackedObjectID,
         observing label: String?,
         confidence: Float
     ) -> String? {
-        guard let label else { return labelVotes[id]?.max(by: { $0.value < $1.value })?.key }
+        guard let label else { return reportedLabels[id] ?? labelVotes[id]?.max(by: { $0.value < $1.value })?.key }
         var votes = labelVotes[id] ?? [:]
         votes[label, default: 0] += confidence
         // Bounded so a long session can't let an early misread become
@@ -254,7 +277,20 @@ public final class ObjectTracker: @unchecked Sendable {
             for key in votes.keys { votes[key]! *= 0.5 }
         }
         labelVotes[id] = votes
-        return votes.max(by: { $0.value < $1.value })?.key
+
+        guard let incumbent = reportedLabels[id] else {
+            // Nothing reported yet for this track — first reading wins
+            // outright, same as before.
+            reportedLabels[id] = votes.max(by: { $0.value < $1.value })?.key
+            return reportedLabels[id]
+        }
+
+        if let challenger = votes.max(by: { $0.value < $1.value }),
+           challenger.key != incumbent,
+           challenger.value >= (votes[incumbent] ?? 0) + labelSwitchMargin {
+            reportedLabels[id] = challenger.key
+        }
+        return reportedLabels[id]
     }
 
     /// How far a card may travel between two polls and still be considered
@@ -485,6 +521,7 @@ public final class ObjectTracker: @unchecked Sendable {
                 disappearedIDs.append(id)
                 tracked.removeValue(forKey: id)
                 labelVotes[id] = nil
+                reportedLabels[id] = nil
                 // Was left behind: `discardStreaks` was only cleared on the
                 // discard path, so every track that instead timed out left
                 // one entry keyed by an ID that will never be seen again.
