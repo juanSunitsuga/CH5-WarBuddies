@@ -20,6 +20,11 @@ struct TableCardStrip: View {
     var cards: [CardPrinting]
     @Binding var selection: CardPrinting?
     let onOpenLibrary: () -> Void
+    /// Resolves a printing's rules text — `simple_text` where the database
+    /// has one, falling back through the tag-resolved copy to the raw
+    /// printed text. Taken as a closure rather than a `CameraPipelineController`
+    /// reference so this view doesn't need to know the pipeline exists.
+    let description: (CardPrinting) -> String
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -54,7 +59,7 @@ struct TableCardStrip: View {
                             // the row reads left-to-right as "this card,
                             // and here's what it is".
                             if selection?.id == printing.id {
-                                InlineCardDetail(printing: printing)
+                                InlineCardDetail(printing: printing, description: description(printing))
                                     .transition(.opacity)
                             }
                         }

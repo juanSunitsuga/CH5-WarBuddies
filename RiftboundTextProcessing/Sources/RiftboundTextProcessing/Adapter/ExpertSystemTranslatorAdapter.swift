@@ -161,21 +161,20 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
 
     /// Stage 3b: card text → structured effects (`CardAbilityParser`).
     ///
-    /// Falls back to the card's own printed text when `rawText` is empty:
-    /// the caller often has only a `CardDefID`, and this package's database
-    /// knows the text for every printing it ships. Refusing to parse
-    /// because the *caller* didn't supply text would make the common path
-    /// the useless one.
+    /// No `rawText` parameter — `ActionTranslating.parseAbility` dropped
+    /// it (see that protocol's doc comment): a caller sitting on
+    /// `GameState` alone has no printed text to hand in, so this resolves
+    /// its own via `cardContext`, the same self-contained lookup
+    /// `translate(...)` already uses.
     ///
-    /// Targeted effects come back with `TargetSpec.placeholder`, because
-    /// that type is still a placeholder in the engine by design — until it
-    /// can express "a unit at a battlefield", the *summary* on
-    /// `ParsedAbility` is what carries the meaning, and
-    /// `abilitySummaries(for:)` is what the UI should show. What this does
-    /// give the engine today is the untargeted cases — Draw, Channel,
-    /// Discard — which are exactly the ones it can already apply.
-    public func parseAbility(rawText: String, cardDefinitionID: CardDefID) async -> [EffectInstruction] {
-        CardAbilityParser.instructions(for: text(rawText, or: cardDefinitionID))
+    /// `CardAbilityParser` now resolves real `TargetSpec`s where the
+    /// sentence supports one ("a unit", "each enemy unit", "up to two
+    /// units") and `.unresolved` where it doesn't — either way the
+    /// *summary* on `ParsedAbility` is still what `abilitySummaries(for:)`
+    /// shows a player, since a resolved `TargetSpec` says who an effect
+    /// reaches, not how to describe it in a sentence.
+    public func parseAbility(cardDefinitionID: CardDefID) async -> [EffectInstruction] {
+        CardAbilityParser.instructions(for: text(for: cardDefinitionID))
     }
 
     /// The same parse, keyed by card alone — what `GameEngine` calls when a
@@ -190,12 +189,11 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
     /// Action it resolves to (586–607). What the app puts on screen when a
     /// card is played or selected.
     public func abilitySummaries(for cardDefinitionID: CardDefID, rawText: String = "") -> [ParsedAbility] {
-        CardAbilityParser.read(text(rawText, or: cardDefinitionID)).abilities
+        CardAbilityParser.read(rawText.isEmpty ? text(for: cardDefinitionID) : rawText).abilities
     }
 
-    private func text(_ rawText: String, or cardDefinitionID: CardDefID) -> String {
-        guard rawText.isEmpty else { return rawText }
-        return cardContext(cardDefinitionID)?.printedText ?? ""
+    private func text(for cardDefinitionID: CardDefID) -> String {
+        cardContext(cardDefinitionID)?.printedText ?? ""
     }
 
     // MARK: - Translation

@@ -29,7 +29,45 @@ struct CardDatabaseServiceTests {
     func fetchUnindexedCardReturnsNil() {
         let cardID = "non_existent_card_9999"
         let card = dbService.fetchCard(by: cardID)
-        
+
         #expect(card == nil)
+    }
+
+    /// The data-prep notebook used to write its `simple_text` rows keyed
+    /// by `riftbound_id` (`ogn-085-298`) rather than this database's hex
+    /// `card_id` — a data bug fixed by a one-time migration that merged
+    /// `simple_text` onto the correct hex-keyed row and dropped the
+    /// duplicate (see the migration note in `CardDatabaseService.swift`).
+    /// This is the happy path that migration exists for: the id every
+    /// other lookup in this file already uses now resolves `simple_text`
+    /// directly, no name fallback needed.
+    @Test("simplifiedText finds a card by its hex id directly")
+    func simplifiedTextResolvesByHexID() {
+        let hexID = "69bc5bcbd308c64675ca8714" // Falling Comet
+        let result = dbService.simplifiedText(for: hexID)
+
+        #expect(result != nil)
+        // The rewrite should read as a sentence, not carry over the raw
+        // rules text's own bracketed keyword or reminder-text parenthetical.
+        #expect(result?.contains("[Action]") == false)
+    }
+
+    /// The name fallback stays in place defensively — if a future notebook
+    /// run reintroduces a wrongly-keyed row (or any other id mismatch),
+    /// this is what keeps `simplifiedText` resolving anyway. Forced here by
+    /// deliberately passing an id that can't match, so the fallback path
+    /// itself stays covered even though the data no longer requires it.
+    @Test("simplifiedText falls back to a name match when the id doesn't resolve")
+    func simplifiedTextFallsBackToName() {
+        let result = dbService.simplifiedText(for: "not-the-real-id", name: "Falling Comet")
+
+        #expect(result != nil)
+        #expect(result?.contains("[Action]") == false)
+    }
+
+    @Test("simplifiedText returns nil rather than a stale id when neither key matches")
+    func simplifiedTextReturnsNilWhenUnresolved() {
+        let result = dbService.simplifiedText(for: "not-a-real-id", name: "Not A Real Card")
+        #expect(result == nil)
     }
 }

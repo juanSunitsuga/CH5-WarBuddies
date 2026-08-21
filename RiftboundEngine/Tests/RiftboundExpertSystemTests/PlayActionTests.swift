@@ -34,7 +34,7 @@ struct PlayActionTests {
     /// is (512.2.c: that's who has Priority while it does).
     private static func chain(activePlayer: PlayerID, relevantPlayers: Set<PlayerID>) -> Chain {
         Chain(
-            firstItem: .activatedAbility(source: ObjectID(), effectID: EffectID(), targets: []),
+            firstItem: .activatedAbility(source: ObjectID(), effectID: EffectID(), proposedBy: activePlayer, targets: [], instructions: []),
             activePlayer: activePlayer,
             relevantPlayers: relevantPlayers
         )
@@ -519,6 +519,37 @@ struct PlayActionTests {
             Issue.record("Expected the Chain to have closed, got \(state.turnState)")
             return
         }
+    }
+
+    /// A Spell's parsed ability travels with the `ChainItem` it opens
+    /// (`ChainItem.spell`'s `instructions:`) and only executes once the
+    /// Chain actually resolves — not at Play time, unlike a Unit's. This
+    /// is the whole reason `abilityInstructions` exists on `apply(...)`.
+    @Test("A Spell's ability executes only once its Chain item resolves, not at Play")
+    func spellAbilityExecutesOnlyOnResolution() {
+        var (state, playerA, playerB, battlefieldID) = TestFixtures.makeTwoPlayerState()
+        let card = Self.handCard(owner: playerA, name: "Test Spell", type: .spell, might: nil)
+        state.zones[playerA]?.hand.append(card)
+        let victim = TestFixtures.makeUnit(owner: playerB, location: .battlefield(battlefieldID))
+        state.units[victim.id] = victim
+
+        GameActionApplier.apply(
+            .play(card: card.id, destination: .none, additionalChoices: [victim.id]),
+            to: &state,
+            proposedBy: playerA,
+            abilityInstructions: [.dealDamage(amount: 5, targets: .chosenUnit())]
+        )
+
+        // On the Chain, not yet resolved — the target is untouched.
+        #expect(state.units[victim.id]?.damage == 0)
+        #expect(state.abilityOutcomeSummaries.isEmpty)
+
+        // Both players Pass — the Chain resolves its one item and closes.
+        GameActionApplier.apply(.pass, to: &state, proposedBy: playerB)
+        GameActionApplier.apply(.pass, to: &state, proposedBy: playerA)
+
+        #expect(state.units[victim.id]?.damage == 5)
+        #expect(state.abilityOutcomeSummaries.contains { $0.contains("Dealt 5 damage") })
     }
 
     /// Rule 563.1.d + 144.2: Gear always enters at the player's Base, Ready

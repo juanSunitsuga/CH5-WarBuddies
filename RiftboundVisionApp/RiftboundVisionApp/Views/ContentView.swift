@@ -58,7 +58,8 @@ struct ContentView: View {
                 TableCardStrip(
                     cards: pipeline.cardsOnTable,
                     selection: $selectedCard,
-                    onOpenLibrary: { isShowingCardLibrary = true }
+                    onOpenLibrary: { isShowingCardLibrary = true },
+                    description: { pipeline.description(for: $0) }
                 )
                 CameraStageView(pipeline: pipeline, selectedCard: $selectedCard)
                 MascotInstructionPanel(

@@ -7,7 +7,7 @@ import Testing
 struct ChainResolverTests {
 
     private static func spellItem(owner: PlayerID) -> ChainItem {
-        .spell(MainDeckCard(definitionID: CardDefID(rawValue: "spell"), owner: owner, name: "Test Spell", type: .spell), targets: [])
+        .spell(MainDeckCard(definitionID: CardDefID(rawValue: "spell"), owner: owner, name: "Test Spell", type: .spell), targets: [], instructions: [])
     }
 
     // MARK: - push (534)

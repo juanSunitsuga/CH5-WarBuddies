@@ -38,23 +38,18 @@ public protocol ActionTranslating: Sendable {
         proposedBy player: PlayerID
     ) async -> GameAction?
 
-    /// Stage 3b: card text → structured effect. `rawText` is the printed
-    /// rules text (534.2 Rules Text); returns the closed-vocabulary
-    /// instructions per CLAUDE.md point 4. Should be pure/deterministic
-    /// for a given `rawText` so callers can cache by `CardDefID`.
-    func parseAbility(rawText: String, cardDefinitionID: CardDefID) async -> [EffectInstruction]
-
-    /// Stage 3b keyed by card rather than by text: the instructions for a
-    /// definition, resolved from whatever corpus the translator has.
+    /// Stage 3b: card text → structured effect (534.2 Rules Text) →
+    /// closed-vocabulary instructions per CLAUDE.md point 4.
     ///
-    /// `parseAbility` needs the caller to already hold the printed text.
-    /// `GameEngine` doesn't — it sees `ObjectID`s and a `GameState`, not a
-    /// card corpus — so without this the engine could never ask what a card
-    /// it just played actually does. Defaulted to `[]` so a translator that
-    /// has no corpus is simply silent rather than forced to lie.
-    func abilities(of cardDefinitionID: CardDefID) async -> [EffectInstruction]
-}
-
-public extension ActionTranslating {
-    func abilities(of cardDefinitionID: CardDefID) async -> [EffectInstruction] { [] }
+    /// Takes only `cardDefinitionID`, not the raw text itself — `GameState`
+    /// stores a played card as a `Unit`/`Gear`/`MainDeckCard`, none of
+    /// which carry printed rules text, so a caller sitting on `GameState`
+    /// alone (`GameEngine`, after a Play resolves) has no text to hand in.
+    /// The conforming type looks its own text up, the same way
+    /// `inferAction` already resolves a card's identity internally rather
+    /// than requiring the caller to supply it.
+    ///
+    /// Should be pure/deterministic for a given `cardDefinitionID` so
+    /// callers can cache by it.
+    func parseAbility(cardDefinitionID: CardDefID) async -> [EffectInstruction]
 }

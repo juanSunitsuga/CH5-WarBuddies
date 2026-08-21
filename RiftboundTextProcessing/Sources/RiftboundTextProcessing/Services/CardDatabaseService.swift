@@ -110,10 +110,42 @@ public final class CardDatabaseService: @unchecked Sendable {
     /// (the `plain_text` column). Lets the tagging fallback run for a card
     /// the *caller* couldn't resolve but this database can still describe.
     public func printedText(for cardID: String) -> String? {
+        textColumn("plain_text", forCardID: cardID)
+    }
+
+    /// A short, first-timer-friendly rewrite of a card's rules text (the
+    /// `simple_text` column, produced by the data-prep notebook's LangChain
+    /// + Gemini pass — see that notebook for why it's a separate column
+    /// from `plain_text` rather than a replacement).
+    ///
+    /// Tries `cardID` first, then `name`. The notebook used to write
+    /// `card_id` as `riftbound_id` (`ogn-085-298`) for the rows it
+    /// populated, not this database's hex `card_id`
+    /// (`69bc5bc6d308c64675ca86bc`) that `RiftboundVision.CardPrinting.id`
+    /// — and every other lookup in this file — uses, which meant an
+    /// id-only lookup missed every simplified row. A one-time migration
+    /// merged each `simple_text` onto its card's correct hex-keyed row and
+    /// dropped the wrongly-keyed duplicate, so the id lookup resolves
+    /// directly today; the name fallback stays as a defensive path for
+    /// whenever the notebook (which still writes `riftbound_id`) gets
+    /// re-run and reintroduces the same mismatch.
+    public func simplifiedText(for cardID: String, name: String? = nil) -> String? {
+        if let byID = textColumn("simple_text", forCardID: cardID), !byID.isEmpty {
+            return byID
+        }
+        guard let name else { return nil }
+        return simpleTextByName(name)
+    }
+
+    /// Shared `SELECT <column> ... WHERE card_id = ?` — `column` is always
+    /// one of this file's own literals, never external input, so string
+    /// interpolation here is a column name, not a query parameter (SQLite
+    /// can't bind those with `?` anyway).
+    private func textColumn(_ column: String, forCardID cardID: String) -> String? {
         guard let db else { return nil }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
-        let query = "SELECT plain_text FROM cards WHERE card_id = ? LIMIT 1;"
+        let query = "SELECT \(column) FROM cards WHERE card_id = ? LIMIT 1;"
         guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else { return nil }
         // SQLITE_TRANSIENT — sqlite must copy the bytes, since the buffer
         // backing `cardID` can be released before the step runs.
@@ -121,6 +153,28 @@ public final class CardDatabaseService: @unchecked Sendable {
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
         let value = Self.text(statement, 0)
         return value.isEmpty ? nil : value
+    }
+
+    /// Full-table scan for `simple_text` by normalized `clean_name` — same
+    /// idiom as `fetchCard(named:)`. A separate query rather than routing
+    /// through `fetchAllCards()`/`CardMetadata`, which don't carry
+    /// `plain_text`/`simple_text` at all. Still guards against a matching
+    /// name with an empty `simple_text` rather than assuming one row per
+    /// name — a defensive leftover from before the migration, cheap to
+    /// keep in case a future notebook run reintroduces duplicates.
+    private func simpleTextByName(_ name: String) -> String? {
+        let normalized = Self.normalize(name)
+        guard !normalized.isEmpty, let db else { return nil }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        let query = "SELECT clean_name, simple_text FROM cards;"
+        guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else { return nil }
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard Self.normalize(Self.text(statement, 0)) == normalized else { continue }
+            let value = Self.text(statement, 1)
+            if !value.isEmpty { return value }
+        }
+        return nil
     }
 
     /// Lowercased letters and digits only — drops the spaces, hyphens, and
