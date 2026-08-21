@@ -846,6 +846,45 @@ final class CameraPipelineController: ObservableObject {
         }.value
     }
 
+    /// Distinct printings behind the currently-*tracked* cards, oldest track
+    /// first.
+    ///
+    /// Deduped because several boxes can resolve to the same printing (two
+    /// copies of the same rune) and a list should name a card once. Lives
+    /// here rather than in a view because two now need it — the card strip
+    /// and the sidebar — and two copies of "what's on the table" could
+    /// disagree about what the player is looking at.
+    ///
+    /// Reads `trackedObjects`, not `detections`, on purpose. `detections` is
+    /// the raw, per-poll detector output — no identity, no occlusion
+    /// tolerance, and (by design, for the live on-camera overlay) not run
+    /// through `ObjectTracker`'s label-vote stabilization at all. Building
+    /// this list from it meant every card flickered in and out, and renamed
+    /// itself, at the raw detector's own noise level — several times a
+    /// second, even for a card lying dead still — because that's exactly
+    /// what `detections` is supposed to expose for the overlay.
+    /// `trackedObjects` is the stabilized output of the same poll: a card
+    /// keeps its place through brief occlusion (a hand passing over it) and
+    /// its name only changes when the evidence for a different card is
+    /// actually decisive, not on every ambiguous frame.
+    ///
+    /// Sorted by `TrackedObjectID` rather than relying on the underlying
+    /// storage's order, which isn't guaranteed stable across mutations — IDs
+    /// are assigned in increasing order as cards first appear, so this
+    /// reproduces "in detection order" deterministically instead of by
+    /// accident.
+    var cardsOnTable: [CardPrinting] {
+        var seen = Set<String>()
+        var result: [CardPrinting] = []
+        for object in trackedObjects.sorted(by: { $0.id < $1.id }) {
+            guard let label = object.recognizedLabel,
+                  let printing = cardDatabase.printing(approximatelyNamed: label),
+                  seen.insert(printing.id).inserted else { continue }
+            result.append(printing)
+        }
+        return result
+    }
+
     /// What kind of card a recognizer label names, resolved once per label.
     ///
     /// `CardDatabase.printing(approximatelyNamed:)` normalizes and scans the

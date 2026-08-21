@@ -82,3 +82,47 @@ struct ManualGameStateTests {
         }
     }
 }
+
+/// `back()` is an undo of the app's own bookkeeping, not a game action —
+/// nothing in 515 moves a turn backwards. It exists because the phase is
+/// asserted by a human and sometimes guessed by Auto-advance, and both can
+/// be wrong.
+struct ManualGameStateBackTests {
+
+    @Test("Back steps to the previous phase")
+    func backStepsBackwards() {
+        var state = ManualGameState(round: 1, turnPlayer: .player1, phase: .channel)
+        state.back()
+        #expect(state.phase == .beginning)
+    }
+
+    /// Wrapping would hand the turn to a player who already finished it —
+    /// much worse to land in by accident than simply not moving.
+    @Test("Back stops at Awaken rather than wrapping to the previous player")
+    func backStopsAtAwaken() {
+        var state = ManualGameState(round: 2, turnPlayer: .player2, phase: .awaken)
+        state.back()
+
+        #expect(state.phase == .awaken)
+        #expect(state.turnPlayer == .player2)
+        #expect(state.round == 2)
+    }
+
+    @Test("canGoBack is false only at Awaken")
+    func canGoBackReportsTheEdge() {
+        #expect(!ManualGameState(phase: .awaken).canGoBack)
+        for phase in [GamePhase.beginning, .channel, .draw, .action] {
+            #expect(ManualGameState(phase: phase).canGoBack, "\(phase.displayName) should be able to step back.")
+        }
+    }
+
+    @Test("Back undoes advance for every phase")
+    func backUndoesAdvance() {
+        for phase in [GamePhase.awaken, .beginning, .channel, .draw] {
+            var state = ManualGameState(phase: phase)
+            state.advance()
+            state.back()
+            #expect(state.phase == phase)
+        }
+    }
+}
