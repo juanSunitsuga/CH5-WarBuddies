@@ -13,7 +13,7 @@
 /// not just at declaration time. Design these once a batch of real card
 /// texts is available to pressure-test the vocabulary against — don't
 /// guess the shape prematurely.
-public enum EffectInstruction: Sendable {
+public enum EffectInstruction: Sendable, Equatable {
     case dealDamage(amount: Int, targets: TargetSpec)
     case draw(count: Int)
     case discard(count: Int)
@@ -32,11 +32,11 @@ public enum EffectInstruction: Sendable {
     case conditional(condition: EffectCondition, then: [EffectInstruction], else_: [EffectInstruction] = [])
 
     /// TODO — placeholder; not yet designed. See doc comment above.
-    public enum TargetSpec: Sendable { case placeholder }
+    public enum TargetSpec: Sendable, Equatable { case placeholder }
     /// TODO — placeholder; not yet designed.
-    public enum LocationSpec: Sendable { case placeholder }
+    public enum LocationSpec: Sendable, Equatable { case placeholder }
     /// TODO — e.g. Legion's "have you played another Main Deck card this
     /// turn" (724), or Might/keyword checks. Needs a small expression
     /// language once real card texts are in hand.
-    public enum EffectCondition: Sendable { case placeholder }
+    public enum EffectCondition: Sendable, Equatable { case placeholder }
 }

@@ -43,4 +43,18 @@ public protocol ActionTranslating: Sendable {
     /// instructions per CLAUDE.md point 4. Should be pure/deterministic
     /// for a given `rawText` so callers can cache by `CardDefID`.
     func parseAbility(rawText: String, cardDefinitionID: CardDefID) async -> [EffectInstruction]
+
+    /// Stage 3b keyed by card rather than by text: the instructions for a
+    /// definition, resolved from whatever corpus the translator has.
+    ///
+    /// `parseAbility` needs the caller to already hold the printed text.
+    /// `GameEngine` doesn't — it sees `ObjectID`s and a `GameState`, not a
+    /// card corpus — so without this the engine could never ask what a card
+    /// it just played actually does. Defaulted to `[]` so a translator that
+    /// has no corpus is simply silent rather than forced to lie.
+    func abilities(of cardDefinitionID: CardDefID) async -> [EffectInstruction]
+}
+
+public extension ActionTranslating {
+    func abilities(of cardDefinitionID: CardDefID) async -> [EffectInstruction] { [] }
 }

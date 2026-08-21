@@ -116,8 +116,16 @@ struct FixedActionTranslator: ActionTranslating {
         action
     }
 
+    /// What the played card's text says to do. Empty by default, so every
+    /// existing test keeps the behaviour it was written against.
+    var cardAbilities: [EffectInstruction] = []
+
     func parseAbility(rawText: String, cardDefinitionID: CardDefID) async -> [EffectInstruction] {
-        []
+        cardAbilities
+    }
+
+    func abilities(of cardDefinitionID: CardDefID) async -> [EffectInstruction] {
+        cardAbilities
     }
 }
 

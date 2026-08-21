@@ -71,11 +71,21 @@ public actor GameEngine {
             return .actionRejected(observed: event, reason: reason)
 
         case .success:
-            // 615/519: apply the action, then Cleanup — both must run as
-            // one atomic transform through the store (CLAUDE.md point 2/3).
+            // A played card's own text resolves as part of playing it, so
+            // its instructions have to be in hand *before* the mutation —
+            // `store.mutate` is synchronous and the lookup is async. Read
+            // from the pre-play snapshot, where the card is still in hand.
+            let effects = await abilities(triggeredBy: candidateAction, in: snapshot, player: proposer)
+
+            // 615/519: apply the action, run the card's own effects, then
+            // Cleanup — all as one atomic transform through the store
+            // (CLAUDE.md point 2/3). Cleanup runs once at the end rather
+            // than after each effect, so nothing observes a half-resolved
+            // card.
             let consequences = ConsequenceBox()
             _ = await store.mutate { state in
                 consequences.events = GameActionApplier.apply(candidateAction, to: &state, proposedBy: proposer)
+                consequences.effects = EffectExecutor.run(effects, on: &state, player: proposer)
                 state = Cleanup.run(state)
             }
 
@@ -89,8 +99,43 @@ public actor GameEngine {
             if let scored = consequences.events.first(where: { if case .scored = $0 { return true } else { return false } }) {
                 return scored
             }
-            return .actionAccepted(candidateAction, followUp: nil)
+            return .actionAccepted(candidateAction, followUp: followUp(for: consequences.effects))
         }
+    }
+
+    /// The played card's own instructions, if this action put one on the
+    /// board.
+    ///
+    /// Only `.play` — a Move or a Draw doesn't re-trigger a card's text.
+    /// Looked up by the card's definition, so the translator can cache per
+    /// definition rather than per copy.
+    private func abilities(
+        triggeredBy action: GameAction,
+        in snapshot: GameState,
+        player: PlayerID
+    ) async -> [EffectInstruction] {
+        guard case .play(let cardID, _, _, _) = action,
+              let card = snapshot.zones[player]?.hand.first(where: { $0.id == cardID })
+        else { return [] }
+        return await translator.abilities(of: card.definitionID)
+    }
+
+    /// Turns what the effects did into one line for the player.
+    ///
+    /// Both halves matter and they're phrased differently on purpose. What
+    /// the engine applied is reported in the past tense, because it has
+    /// already happened and the player is being told, not asked. What it
+    /// deferred is an instruction, because the board is not finished until
+    /// the player does it.
+    private func followUp(for outcome: EffectExecutor.Outcome) -> FollowUp? {
+        guard !outcome.isEmpty else { return nil }
+
+        var parts: [String] = []
+        if !outcome.applied.isEmpty {
+            parts.append("I've applied: " + outcome.applied.map(\.playerFacingSummary).joined(separator: " "))
+        }
+        parts.append(contentsOf: outcome.deferred)
+        return FollowUp(description: parts.joined(separator: " "))
     }
 
     /// Carries the applier's events out of the `store.mutate` closure.
@@ -100,6 +145,7 @@ public actor GameEngine {
     /// mean every snapshot carried a growing log of past events.
     private final class ConsequenceBox: @unchecked Sendable {
         var events: [PlayerInstruction] = []
+        var effects = EffectExecutor.Outcome()
     }
 
     /// Attribution: whose action this physically was, derived from which
