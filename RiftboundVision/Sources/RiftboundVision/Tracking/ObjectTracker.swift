@@ -116,6 +116,7 @@ public final class ObjectTracker: @unchecked Sendable {
         discardStreaks[track.id] = nil
         labelVotes[track.id] = nil
         reportedLabels[track.id] = nil
+        committedLabels[track.id] = nil
         // Don't let identity memory resurrect it — being in the Trash is
         // the one case where a re-detection should *not* reclaim its ID.
         retired.removeAll { $0.id == track.id }
@@ -261,6 +262,34 @@ public final class ObjectTracker: @unchecked Sendable {
     /// past it.
     private let labelSwitchMargin: Float = 3.0
 
+    /// Labels that are settled and will not be reconsidered for the life of
+    /// the track.
+    ///
+    /// A physical card does not become a different card. Once a track has
+    /// been read as the same card often enough, re-deciding its identity
+    /// every poll can only ever be wrong: the card on the mat hasn't
+    /// changed, so a later disagreement is a misread, not news. The vote
+    /// margin alone couldn't express that — it made a switch *harder*, not
+    /// impossible, and the periodic halving of votes meant a long-settled
+    /// card could still be renamed twenty minutes in, which is exactly the
+    /// failure people hit: card information changing with nothing touched.
+    ///
+    /// Committing is per *track*, not per card. If the track dies — the
+    /// card is picked up and taken away, or discarded — the commitment goes
+    /// with it, and whatever appears next is identified from scratch.
+    private var committedLabels: [TrackedObjectID: String] = [:]
+
+    /// Accumulated confidence the leading label needs before its identity
+    /// is committed.
+    ///
+    /// At the detector's typical ~0.9 per reading this is about seven
+    /// agreeing polls — long enough that a card has been seen properly and
+    /// short enough to settle while the player is still reaching for the
+    /// next one. The leader must *also* be clear of the runner-up by
+    /// `labelSwitchMargin`, so nothing commits while two similar cards are
+    /// still neck and neck.
+    private let labelCommitThreshold: Float = 6.0
+
     /// Records this poll's reading and returns the label currently being
     /// reported for this track.
     private func stabilizedLabel(
@@ -268,6 +297,9 @@ public final class ObjectTracker: @unchecked Sendable {
         observing label: String?,
         confidence: Float
     ) -> String? {
+        // Settled is settled. Nothing this poll says can reopen it.
+        if let committed = committedLabels[id] { return committed }
+
         guard let label else { return reportedLabels[id] ?? labelVotes[id]?.max(by: { $0.value < $1.value })?.key }
         var votes = labelVotes[id] ?? [:]
         votes[label, default: 0] += confidence
@@ -290,7 +322,28 @@ public final class ObjectTracker: @unchecked Sendable {
            challenger.value >= (votes[incumbent] ?? 0) + labelSwitchMargin {
             reportedLabels[id] = challenger.key
         }
+
+        commitIfSettled(id, votes: votes)
         return reportedLabels[id]
+    }
+
+    /// Freezes a track's identity once the evidence is one-sided enough.
+    ///
+    /// Both conditions matter. The threshold says "we have looked at this
+    /// card properly"; the margin says "and it isn't a coin flip between
+    /// two similar ones". Committing on the threshold alone would lock in
+    /// whichever of a confusable pair happened to be ahead at the moment
+    /// the counter tripped.
+    private func commitIfSettled(_ id: TrackedObjectID, votes: [String: Float]) {
+        let ranked = votes.sorted { $0.value > $1.value }
+        guard let leader = ranked.first, leader.value >= labelCommitThreshold else { return }
+        let runnerUp = ranked.dropFirst().first?.value ?? 0
+        guard leader.value >= runnerUp + labelSwitchMargin else { return }
+
+        committedLabels[id] = leader.key
+        reportedLabels[id] = leader.key
+        // The tally has done its job and can't influence anything again.
+        labelVotes[id] = nil
     }
 
     /// How far a card may travel between two polls and still be considered
@@ -346,6 +399,7 @@ public final class ObjectTracker: @unchecked Sendable {
             observing: detection.recognizedLabel,
             confidence: detection.confidence
         ) ?? track.recognizedLabel
+        track.isIdentityCommitted = committedLabels[trackID] != nil
         tracked[trackID] = track
     }
 
@@ -522,6 +576,7 @@ public final class ObjectTracker: @unchecked Sendable {
                 tracked.removeValue(forKey: id)
                 labelVotes[id] = nil
                 reportedLabels[id] = nil
+                committedLabels[id] = nil
                 // Was left behind: `discardStreaks` was only cleared on the
                 // discard path, so every track that instead timed out left
                 // one entry keyed by an ID that will never be seen again.

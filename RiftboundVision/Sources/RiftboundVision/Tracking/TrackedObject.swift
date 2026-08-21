@@ -75,6 +75,16 @@ public struct TrackedObject: Sendable, Equatable {
     /// already describes.
     public var recognizedLabel: String?
 
+    /// Whether `recognizedLabel` is settled and will no longer be
+    /// reconsidered — see `ObjectTracker.committedLabels`.
+    ///
+    /// The distinction is what lets a consumer tell "this is a card and I
+    /// know which one" from "this is a card and I'm still deciding". An
+    /// event recorded off a provisional identity is a fact about the game
+    /// that may turn out to name the wrong card, and once recorded there is
+    /// nothing to correct it against.
+    public var isIdentityCommitted: Bool = false
+
     public init(
         id: TrackedObjectID,
         type: ObjectType,
@@ -89,7 +99,8 @@ public struct TrackedObject: Sendable, Equatable {
         lastSeenFrame: Int,
         zIndex: Int = 0,
         underlaidCardIDs: [TrackedObjectID] = [],
-        recognizedLabel: String? = nil
+        recognizedLabel: String? = nil,
+        isIdentityCommitted: Bool = false
     ) {
         self.id = id
         self.type = type
@@ -105,6 +116,7 @@ public struct TrackedObject: Sendable, Equatable {
         self.zIndex = zIndex
         self.underlaidCardIDs = underlaidCardIDs
         self.recognizedLabel = recognizedLabel
+        self.isIdentityCommitted = isIdentityCommitted
     }
 }
 

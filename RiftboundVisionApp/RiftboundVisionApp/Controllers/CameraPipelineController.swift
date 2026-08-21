@@ -1377,6 +1377,12 @@ extension CameraPipelineController {
             // anyone was watching, and announcing it would fire every
             // ability on the table the moment the pipeline starts.
             guard let previouslyAnnounced, previouslyAnnounced != zone else { continue }
+            // Don't act on a card the tracker is still identifying. Naming
+            // the wrong card's ability is worse than naming none: the
+            // player resolves an effect that isn't on the table, and
+            // nothing later corrects it. A track commits within about a
+            // second of being seen properly, so the cost is a short wait.
+            guard object.isIdentityCommitted else { continue }
             guard let label = object.recognizedLabel,
                   let printing = cardDatabase.printing(approximatelyNamed: label) else { continue }
 
