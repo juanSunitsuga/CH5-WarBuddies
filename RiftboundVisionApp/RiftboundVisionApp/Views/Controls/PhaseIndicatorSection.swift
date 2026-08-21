@@ -27,7 +27,7 @@ struct PhaseIndicatorSection: View {
                     Text(RiftboundPhaseCopy.title(for: gameState.phase))
                         .font(RiftboundFont.heading)
                         .foregroundStyle(RiftboundPalette.regularText)
-                    Text(gameState.phase.instruction)
+                    Text(RiftboundPhaseCopy.blurb(for: gameState.phase))
                         .font(RiftboundFont.body)
                         .foregroundStyle(RiftboundPalette.regularText.opacity(0.75))
                         .fixedSize(horizontal: false, vertical: true)

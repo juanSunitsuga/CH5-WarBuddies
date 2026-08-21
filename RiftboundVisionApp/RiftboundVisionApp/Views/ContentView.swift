@@ -31,6 +31,8 @@ struct ContentView: View {
     /// camera view and the sidebar agree on what's selected — tapping a box
     /// is what usually sets it.
     @State private var selectedCard: CardPrinting?
+    /// How wide the camera picture actually draws — see `CameraStageWidthKey`.
+    @State private var cameraStageWidth: CGFloat = 0
     @State private var isShowingCardLibrary = false
 
     /// `modelContext` is optional so SwiftUI previews (and the no-arg
@@ -65,12 +67,20 @@ struct ContentView: View {
                     misplacedCards: pipeline.misplacedCards,
                     needsCalibration: pipeline.needsCalibration,
                     validatesPlayerMoves: pipeline.gameState.phase.validatesPlayerMoves,
-                    fallback: pipeline.isPipelineRunning ? pipeline.gameState.phase.instruction : "Ready to play?"
+                    fallback: pipeline.isPipelineRunning
+                        ? RiftboundPhaseCopy.blurb(for: pipeline.gameState.phase)
+                        : "Ready to play?"
                 )
-                // Same inset as the strip and the camera above it.
-                .padding(.horizontal, RiftboundLayout.columnInset)
+                // Matched to the camera's *drawn* width, not to the
+                // column's inset. The camera is aspect-fit, so at a short
+                // window it draws narrower than the column and a band
+                // using the same inset overhung it on both sides. `nil`
+                // until the first measurement arrives, which falls back to
+                // the old full-width behaviour for one layout pass.
+                .frame(width: cameraStageWidth > 0 ? cameraStageWidth : nil)
                 .padding(.bottom, RiftboundLayout.columnInset)
             }
+            .onPreferenceChange(CameraStageWidthKey.self) { cameraStageWidth = $0 }
 
             TurnControlColumn(
                 gameState: $pipeline.gameState,

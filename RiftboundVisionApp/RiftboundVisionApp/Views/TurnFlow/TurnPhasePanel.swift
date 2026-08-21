@@ -67,14 +67,22 @@ enum RiftboundPhaseCopy {
         phase.displayName.uppercased()
     }
 
-    /// One line, plain language, no rule numbers.
+    /// The phase's description, in plain language and with no rule numbers.
+    ///
+    /// Deliberately *static* — one fixed sentence per phase, not a line
+    /// that reacts to the table. `GamePhase.instruction` is the reactive,
+    /// rule-cited text the engine reasons with, and putting that in front
+    /// of a player meant the description under the pips rewrote itself
+    /// mid-phase and cited rulebook sections at someone who is holding
+    /// cards. What belongs here is the answer to "what is this phase for",
+    /// which never changes.
     static func blurb(for phase: GamePhase) -> String {
         switch phase {
         case .awaken: return "Ready all units and runes."
-        case .beginning: return "Get Hold points from battlefields."
-        case .channel: return "Channel 2 runes."
-        case .draw: return "Draw 1 card."
-        case .action: return "Play cards and move your units."
+        case .beginning: return "Get Hold points from battlefield."
+        case .channel: return "Play 2 runes from the Rune deck."
+        case .draw: return "Draw 1 card from the Main deck."
+        case .action: return "Play cards from hand. Conquer and combat the battlefield with your units."
         }
     }
 }
