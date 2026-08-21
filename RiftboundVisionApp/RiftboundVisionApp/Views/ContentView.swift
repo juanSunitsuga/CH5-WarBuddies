@@ -66,6 +66,7 @@ struct ContentView: View {
                     progress: pipeline.phaseProgress,
                     misplacedCards: pipeline.misplacedCards,
                     needsCalibration: pipeline.needsCalibration,
+                    inactiveStage: pipeline.inactivePipelineNotice,
                     validatesPlayerMoves: pipeline.gameState.phase.validatesPlayerMoves,
                     fallback: pipeline.isPipelineRunning
                         ? RiftboundPhaseCopy.blurb(for: pipeline.gameState.phase)

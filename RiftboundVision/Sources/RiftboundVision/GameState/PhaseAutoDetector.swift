@@ -85,8 +85,13 @@ public struct PhaseAutoDetector: Sendable {
         public var detail: String?
         /// Auto-detect may advance to the next phase.
         public var isComplete: Bool
-        /// Rule 630.2: points earned by Holding, for the Beginning Phase.
-        public var pointsToAward: Int
+        /// Rule 630.2: points the player has earned by Holding, for the
+        /// Beginning Phase. Advisory only — this is a number to *tell* them,
+        /// not one anything adds for them. The app reads a camera, so it can
+        /// be wrong about who holds what; a score it moves on its own is a
+        /// score the player has to audit before they can trust it. They add
+        /// it on the Score tracker, and the count here is the reminder.
+        public var pointsToClaim: Int
         /// Something on the table contradicts the rules and the player has
         /// to undo it — currently only an unaffordable Play. Never
         /// auto-advances.
@@ -99,14 +104,14 @@ public struct PhaseAutoDetector: Sendable {
             headline: String,
             detail: String? = nil,
             isComplete: Bool = false,
-            pointsToAward: Int = 0,
+            pointsToClaim: Int = 0,
             needsCorrection: Bool = false,
             steps: [String] = []
         ) {
             self.headline = headline
             self.detail = detail
             self.isComplete = isComplete
-            self.pointsToAward = pointsToAward
+            self.pointsToClaim = pointsToClaim
             self.needsCorrection = needsCorrection
             self.steps = steps
         }
@@ -234,7 +239,7 @@ public struct PhaseAutoDetector: Sendable {
 
         guard held > 0 else {
             return Progress(
-                headline: "No battlefields held.",
+                headline: "No points to add this turn.",
                 detail: contested > 0
                     ? "\(contested) battlefield\(contested == 1 ? " is" : "s are") contested — no hold point for those (Rule 630.2)."
                     : "You hold no battlefields this turn, so there's nothing to score (Rule 630.2).",
@@ -243,10 +248,12 @@ public struct PhaseAutoDetector: Sendable {
         }
 
         return Progress(
-            headline: held == 1 ? "Holding 1 battlefield — score 1 point." : "Holding \(held) battlefields — score \(held) points.",
-            detail: "You control \(held == 1 ? "it" : "them") at the start of your turn (Rule 630.2).",
+            headline: held == 1
+                ? "Add 1 point — you're holding a battlefield."
+                : "Add \(held) points — you're holding \(held) battlefields.",
+            detail: "Tap + on Player to add \(held == 1 ? "it" : "them"). You control \(held == 1 ? "that battlefield" : "those battlefields") at the start of your turn (Rule 630.2).",
             isComplete: true,
-            pointsToAward: held
+            pointsToClaim: held
         )
     }
 

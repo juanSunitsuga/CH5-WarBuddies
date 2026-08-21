@@ -185,6 +185,25 @@ final class CameraPipelineController: ObservableObject {
     /// next frame's generic "Your move." — the player would see the
     /// warning flash and vanish. This one is event-driven and persists
     /// until it's stale or answered.
+    /// What a card's own text says to do, raised the moment the camera sees
+    /// the move that triggers it — "Play a 1 Might Recruit unit token here."
+    ///
+    /// This is the piece that makes a card's printed ability *reach* the
+    /// player. The ability list under the instruction is a standing
+    /// reminder of everything in play; this is the one thing that just
+    /// became true, which is why it gets the headline rather than a bullet.
+    @Published private(set) var abilityNotice: PhaseAutoDetector.Progress?
+    private var abilityNoticeRaisedAt: Date?
+
+    /// Which zone each track was last *announced* in.
+    ///
+    /// `TrackedObject.previousZone` keeps naming the old zone for as long
+    /// as the card sits still, so firing off that alone would re-announce
+    /// the same arrival on every poll — several times a second. This
+    /// records what the player has already been told, so an arrival fires
+    /// once and only fires again if the card genuinely leaves and returns.
+    private var announcedZones: [TrackedObjectID: Zone] = [:]
+
     @Published private(set) var paymentNotice: PhaseAutoDetector.Progress?
     private var paymentNoticeRaisedAt: Date?
 
@@ -253,10 +272,6 @@ final class CameraPipelineController: ObservableObject {
     /// are both once-per-phase, not per-frame.
     var lastSeenPhase: GamePhase?
 
-    /// 631: Holding scores once per battlefield per turn, so the Beginning
-    /// Phase must not keep paying out for every frame it lasts.
-    var hasAwardedHoldPoints = false
-
     /// Consecutive polls the current phase has reported itself finished.
     ///
     /// Auto-detect used to advance on the first poll that said "complete",
@@ -269,6 +284,14 @@ final class CameraPipelineController: ObservableObject {
     /// Polls a phase must agree it's finished before the turn moves on.
     private static let phaseAdvanceConfirmations = 3
 
+    /// The score is the player's to move, and only theirs.
+    ///
+    /// The Beginning Phase used to add hold points here by itself (630.2).
+    /// It stopped because this app reads a camera: it can misread who holds
+    /// a battlefield, and a score that moves on its own is one the player
+    /// has to re-audit before they can trust any of it — which costs more
+    /// than typing the number. `PhaseAutoDetector` still counts the holds
+    /// and says "add 2 points"; pressing + stays a person's decision.
     @Published var playerScore = 0
     @Published var opponentScore = 0
 
@@ -570,6 +593,19 @@ final class CameraPipelineController: ObservableObject {
     /// `enabledStages`), actually wired into the live loop, *and* every
     /// stage before it is active too. This is what `process(_:)` and the
     /// settings overlay should read, not `enabledStages` directly.
+    /// The earliest stage that is switched off while the pipeline runs, as
+    /// a sentence — or `nil` when the whole chain is live.
+    ///
+    /// Exists so the instruction band can say "the Expert System is off"
+    /// instead of going blank. A blank band and a broken app look identical
+    /// from the player's chair; naming the switch they flipped is the
+    /// difference between a setting and a bug.
+    var inactivePipelineNotice: String? {
+        guard isPipelineRunning else { return nil }
+        guard let firstOff = PipelineStage.allCases.first(where: { !isStageActive($0) }) else { return nil }
+        return firstOff.title
+    }
+
     func isStageActive(_ stage: PipelineStage) -> Bool {
         guard stage.isWired, enabledStages.contains(stage) else { return false }
         return PipelineStage.allCases
@@ -1139,7 +1175,23 @@ extension CameraPipelineController {
     /// the Action Phase no completion condition — it ends when the player
     /// says so (516.6) — so Auto-detect narrates it and nothing more.
     func updateAutoDetect(with objects: [TrackedObject]) {
+        // Everything below this line is the Expert System stage: reading
+        // the table against the rules and saying what the turn needs next.
+        // It used to run whenever Object Tracking was on, which is why
+        // switching stages ③ and ④ off changed nothing a player could see —
+        // the overlays went quiet but the instruction band carried on
+        // narrating the turn, off a stage that was supposedly disabled.
+        // Now the band goes quiet too, and says why.
+        guard isStageActive(.expertSystem) else {
+            phaseProgress = nil
+            abilityNotice = nil
+            abilityNoticeRaisedAt = nil
+            announcedZones.removeAll()
+            return
+        }
+
         let observed = objects.compactMap { observedCard(from: $0) }
+        noteAbilityTriggers(in: objects)
         autoDetectRunes = observed.compactMap { card in
             guard card.zone == .runeArea, let domain = card.domain else { return nil }
             return ObservedRune(domain: domain, stance: card.stance)
@@ -1161,7 +1213,6 @@ extension CameraPipelineController {
                 // asks for the opening three.
                 completedChannelPhases += 1
             }
-            hasAwardedHoldPoints = false
             completedPollStreak = 0
             // A play left unsettled when the phase changed isn't chased
             // into the next one. Ending the turn is the player asserting
@@ -1182,6 +1233,14 @@ extension CameraPipelineController {
            Date().timeIntervalSince(raisedAt) > Self.paymentNoticeLifetime {
             paymentNotice = nil
             paymentNoticeRaisedAt = nil
+        }
+        // Same clock, same reasoning: a triggered ability is about a move
+        // that just happened, and stale feedback claims the app is keeping
+        // up when it isn't.
+        if let raisedAt = abilityNoticeRaisedAt,
+           Date().timeIntervalSince(raisedAt) > Self.paymentNoticeLifetime {
+            abilityNotice = nil
+            abilityNoticeRaisedAt = nil
         }
 
         let progress = detector.progress(for: gameState.phase, cards: observed, seat: .player1)
@@ -1210,18 +1269,17 @@ extension CameraPipelineController {
         if var notice = paymentNotice {
             notice.steps = progress.steps
             phaseProgress = notice
+        } else if var triggered = abilityNotice {
+            // Below payment, above the phase. A cost the player still owes
+            // is the thing blocking the game; a triggered ability is the
+            // thing that just happened and has to be resolved next.
+            triggered.steps = progress.steps
+            phaseProgress = triggered
         } else {
             phaseProgress = progress
         }
 
         guard isAutoDetectingPhase else { return }
-
-        // 630.2: award the hold points once, on entering the Beginning
-        // Phase — not every frame it stays there.
-        if gameState.phase == .beginning, !hasAwardedHoldPoints {
-            hasAwardedHoldPoints = true
-            playerScore += progress.pointsToAward
-        }
 
         guard progress.isComplete else {
             completedPollStreak = 0
@@ -1289,6 +1347,58 @@ extension CameraPipelineController {
         }
         abilitySummaryCache[printing.riftboundID] = summaries
         return summaries
+    }
+
+    /// Fires a card's "when I move to a battlefield" text the moment the
+    /// camera sees that move.
+    ///
+    /// Only the triggers a camera can actually witness — a zone change —
+    /// are ever fired. `AbilityTrigger.unobservable` covers attacking,
+    /// conquering and defending, which this app has no way to see; those
+    /// stay in the standing ability list where the player can read them,
+    /// rather than being guessed at from a card twitching on the mat.
+    private func noteAbilityTriggers(in objects: [TrackedObject]) {
+        var seen: Set<TrackedObjectID> = []
+
+        for object in objects where object.type == .card {
+            seen.insert(object.id)
+            let zone = object.currentZone
+            let previouslyAnnounced = announcedZones[object.id]
+            announcedZones[object.id] = zone
+
+            // First sighting isn't a move. A card the tracker picks up
+            // already lying on a battlefield was not *moved* there while
+            // anyone was watching, and announcing it would fire every
+            // ability on the table the moment the pipeline starts.
+            guard let previouslyAnnounced, previouslyAnnounced != zone else { continue }
+            guard let label = object.recognizedLabel,
+                  let printing = cardDatabase.printing(approximatelyNamed: label) else { continue }
+
+            let fired = CardAbilityParser.triggers(in: printing.text.plain).filter { ability in
+                switch ability.trigger {
+                case .movedToBattlefield: return zone == .battlefield
+                case .moved: return true
+                // "When you play me" is a card arriving on the board from
+                // hand, which is a move *out of* the hand specifically —
+                // not any arrival, or tidying the mat would trigger it.
+                case .played: return previouslyAnnounced.isHand(for: .player1) && zone != .unknown
+                case .unobservable: return false
+                }
+            }
+            guard !fired.isEmpty else { continue }
+
+            abilityNotice = PhaseAutoDetector.Progress(
+                headline: "\(printing.name): \(fired[0].effect)",
+                detail: fired.count > 1
+                    ? fired.dropFirst().map(\.effect).joined(separator: " ")
+                    : "Its text triggered when you moved it. Resolve it before you carry on."
+            )
+            abilityNoticeRaisedAt = Date()
+        }
+
+        // Forget tracks that are gone, so a card that leaves the table and
+        // comes back is a fresh arrival rather than a stale comparison.
+        announcedZones = announcedZones.filter { seen.contains($0.key) }
     }
 
     /// Rule 130.2/130.3: a card leaving the hand for the board has to be

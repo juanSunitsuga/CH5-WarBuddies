@@ -28,6 +28,11 @@ struct MascotInstructionPanel: View {
     var misplacedCards: [MisplacedCard] = []
     /// Most cards are landing outside every calibrated zone.
     var needsCalibration = false
+    /// The first pipeline stage that is switched off, if any. Ranked high
+    /// because it changes what every other line here is worth: with the
+    /// Expert System off, nothing below is being computed at all, and a
+    /// band that just went quiet is indistinguishable from a broken one.
+    var inactiveStage: String?
     /// Whether the app should be judging moves at all — only the Action
     /// Phase (516.2). During the fixed phases a verdict on every card the
     /// player touches while following a script buries the instruction.
@@ -47,6 +52,11 @@ struct MascotInstructionPanel: View {
     /// then a misplaced card, then a play that can't be paid for, then the
     /// engine's verdict, then the phase.
     private func message(now: Date) -> (headline: String, detail: String?, isAlert: Bool) {
+        if let inactiveStage {
+            return ("\(inactiveStage) is switched off.",
+                    "Turn it back on in Pipeline Settings and I'll read the table again. Until then the camera still shows the board, but nothing on it is being judged.",
+                    true)
+        }
         if needsCalibration {
             return ("Cards aren't landing on the mat.",
                     "Turn on Calibrate Playmat and drag the outline onto your mat — until then nothing can be read as a move.",
