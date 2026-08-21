@@ -297,6 +297,27 @@ map is a parse failure to surface, not a new primitive to invent.
 > parser gap someone can go fix; one silently invented is a wrong game state
 > nobody can trace.
 
+> **Triggers are read separately from effects.** `CardAbilityTrigger` splits
+> the "When I move to a battlefield," clause off the front of a card's text,
+> because the app can act on a trigger even where it can't execute the
+> effect. Triggers are classified by *whether a camera can witness them*:
+> `.played`, `.movedToBattlefield` and `.moved` are zone changes the tracker
+> already reports and are fired for real; attacking, conquering, defending
+> and "when you play a spell" are kept as `.unobservable` so they still read
+> as standing reminders but are never guessed at from a card moving on the
+> mat. A fired trigger shows the card's own effect sentence — this is a
+> reminder to resolve something, not a claim that anything was resolved.
+>
+> **`CardPlainLanguage` is the player-facing renderer.** Printed text is
+> written for someone who already speaks the game (`[Tank]`, `:rb_might:`,
+> "recycle it", first person). It expands keywords from the glossary in
+> `docs/rules/how-to-play.md`, turns icon markup into words, drops rule
+> citations, rewrites "me" as "it", and glosses jargon once as a trailing
+> sentence. Every definition is copied from the rules docs — a keyword with
+> no grounded wording is carried in `Explanation.unexplained` and shown as
+> printed, never paraphrased from its name. It renders instructions as well
+> as card text, so both surfaces speak the same way.
+
 When it is built, resolution must follow the defined steps: re-validate
 targets at *resolution* time (559.3.c), apply Layers in Trait → Ability →
 Arithmetic order (634–639), and run replacement effects (571–575) as a filter
@@ -330,6 +351,43 @@ Expiration and Cleanup are real, but a player does nothing in them, so
 directly. `TurnSequencer` still models all three properly — this enum is the
 player-facing sequence, not the rules one.
 
+**The Expert System is not where the player's instructions come from.**
+Worth stating plainly, because the package layout implies otherwise. The
+instruction band ranks eight sources, and the engine feeds exactly one of
+them:
+
+| # | Line | Written by |
+|---|---|---|
+| 1 | A pipeline stage is switched off | `CameraPipelineController` |
+| 2 | What the tapped card is | `CardPlainLanguage.describeCard` |
+| 3 | Cards aren't landing on the mat | zone resolution / calibration |
+| 4 | Put a misplaced card back | `MisplacedCardMonitor` |
+| 5 | A play that can't be paid for | `PendingPlay` + `RunePayment` |
+| 6 | **Was that move allowed?** | **`GameEngine` — Action Phase only** |
+| 7 | What this phase still needs | `PhaseAutoDetector` |
+| 8 | "Ready to play?" | static fallback |
+
+`PhaseAutoDetector` imports `RiftboundExpertSystem` only for value types
+(`Player`, `Zone`, `Domain`, `CardKind`); it never touches `GameEngine`,
+`GameState` or `LegalityValidator`. So the four fixed phases are narrated
+entirely without the engine, and with `GameSessionBuilder` still seeding a
+stand-in Energy pool the engine cannot reject a play on cost either. Removing
+the engine today would leave the app instructing the player through every
+phase. That is a real architectural gap, not a description of intent — see §7.
+
+**The score is the player's to move.** The Beginning Phase used to add Hold
+points itself (630.2). It doesn't any more: this app reads a camera, it can
+misjudge who holds a battlefield, and a score that moves on its own is one
+the player must re-audit before trusting any of it — which costs more than
+typing the number. `PhaseAutoDetector` still counts the holds and says "Add 2
+points"; `Progress.pointsToClaim` is named to make clear nothing pays it out.
+
+**A tapped card outranks the warnings.** Ranking 2 above 3 and 4 is
+deliberate. Every other line is the app volunteering something; a tap is the
+player asking a direct question, and a control that visibly does nothing
+reads as broken. It is dismissable by deselecting, and the warning returns
+immediately.
+
 **Verdicts are withheld until the Action Phase.** 516.2 makes it the only
 phase whose contents the player chooses, so it's the only one where "was that
 allowed?" is a question. During the fixed prefix the bar says what to *do*
@@ -349,6 +407,29 @@ table" is the payment. Power is the mirror image: recycling takes the rune
 off the board, so it reads as the Rune Area shrinking. That's inferred from
 the area rather than the deck growing because a deck is a *stack* — the
 detector sees one object on top however many cards are underneath.
+
+**A card's identity is decided once, then followed.** `ObjectTracker`
+accumulates confidence-weighted label votes per track and *commits* once the
+leader clears both a threshold (about seven agreeing reads) and the existing
+switch margin over the runner-up. After that the label is frozen for the life
+of the track and later disagreement is discarded as the misread it is — a
+physical card does not become a different card, so re-deciding every poll can
+only ever be wrong. Both conditions are needed: the threshold says the card
+has been seen properly, the margin stops a coin flip between two confusable
+cards from settling at all.
+
+Commitment is per *track*, not per card: if the card is taken away or
+discarded, it dies with the track and whatever appears next is identified
+from scratch. `TrackedObject.isIdentityCommitted` exposes the distinction,
+and it does two further jobs. Detection-to-track matching prefers a pairing
+the detector agrees with over a marginally closer one — geometry alone is a
+coin flip for two cards lying side by side, which is how two cards swap
+identities with nothing having moved — though the hard distance gate still
+applies, so identity reorders candidates and never matches across the table.
+And occlusion tolerance runs in three tiers by how much is known: 300 polls
+in a positionally-stable zone, 60 for a committed identity, 15 for an
+anonymous blob. Card ability triggers wait for commitment, because naming the
+wrong card's effect makes the player resolve something that isn't there.
 
 Three ways a play could settle itself for free, each guarded: a card the
 camera has lost sight of counts as not-yet-turned (otherwise a hand passing
@@ -419,12 +500,15 @@ so "whose turn" is strict.
 | 6b | Scoring — Hold, Conquer, victory | 629–633 | ✅ |
 | 6c | Rune economy — channel, exhaust, recycle | 153–160, 594, 606 | ✅ Runes are board objects |
 | 7 | Ability parsing | 586–607 | ✅ `CardAbilityParser`; untargeted cases produce real `EffectInstruction`s |
+| 7a | Ability *triggers* | — | ✅ `CardAbilityTrigger` fires observable zone-change triggers; attack/conquer/defend kept `.unobservable` |
 | 7b | Effect execution + Layers | 634–639 | ❌ nothing runs an `EffectInstruction` yet |
 | 8 | NLP → candidate `GameAction` | — | ✅ live |
 | 9 | Detection → `ObservedTableEvent` | — | ✅ live |
-| 10 | Instruction / feedback UI | — | ✅ live (instruction bar + card details) |
+| 10 | Instruction / feedback UI | — | ✅ live — mascot band, 8 ranked sources (§4b), card details |
+| 10a | Plain-language rendering | — | ✅ `CardPlainLanguage` renders card text *and* instructions; unglossed keywords shown as printed |
 | 11 | Play flow at the table | 515–516, 139.4, 157.2 | ✅ `PhaseAutoDetector`, `RunePayment`, `PendingPlay` — see §4b |
-| 12 | Auto-detect of the fixed phases | 515 | ✅ Awaken, Beginning, Channel, Draw; Action never auto-completes (516.2) |
+| 12 | Auto-detect of the fixed phases | 515 | ✅ Awaken, Beginning, Channel, Draw; Action never auto-completes (516.2). Beginning no longer awards points — it asks the player to (§4b) |
+| 12a | Stable card identity | — | ✅ committed once per track, then followed; identity-aware matching, three-tier occlusion (§4b) |
 | 13 | Onboarding | — | ✅ first-launch sheet, reachable later from Help |
 | 14 | Long-session stability | — | ✅ diagnostic buffers capped; no per-poll `@Model` writes |
 
@@ -435,6 +519,16 @@ describes.
 
 ### What blocks fuller play, in order
 
+0. **Nothing reads `GameState` back.** The engine mutates it on every accepted
+   action, but no player-facing line is derived from it — §4b's table shows
+   the instruction band taking 7 of its 8 sources from elsewhere, and the one
+   engine slot is Action-Phase only. Combined with the seeded Energy pool
+   (item 1), the engine currently records rather than adjudicates: it is a
+   ledger nobody consults. Making it the source of truth means moving those
+   slots off `PhaseAutoDetector`'s re-read of the table and onto `GameState`,
+   which is the change that would make this an expert system driven by a
+   camera rather than a table-reader with an engine attached. Items 1 and 2
+   are prerequisites, not alternatives.
 1. **Propose `.exhaust` when a rune turns.** The engine now models the real
    rune economy — Channel puts a Rune on the board (606.1), Exhausting it is
    what adds Energy (157.2.a), Recycling returns the card to the Rune Deck for

@@ -114,3 +114,59 @@ struct CardPlainLanguageTests {
         #expect(CardPlainLanguage.simplify("Draw 1 card.") == "Draw 1 card.")
     }
 }
+
+/// Tapping a card asks "what is this?". These cover the answer.
+struct CardSummaryTests {
+
+    @Test("Name and type lead, then cost, then what it does")
+    func fullCard() {
+        let out = CardPlainLanguage.describeCard(
+            name: "Noxian Drummer",
+            type: "Unit",
+            energyCost: 2,
+            powerCost: 1,
+            printedText: "When I move to a battlefield, play a 1 :rb_might: Recruit unit token here. (It is also at the battlefield.)"
+        )
+
+        #expect(out.headline == "Noxian Drummer — Unit")
+        #expect(out.detail.hasPrefix("Costs 2 Energy and 1 Power."))
+        #expect(out.detail.contains("When you move it to a battlefield: play a 1 Might Recruit unit token here."))
+    }
+
+    @Test("Energy-only and power-only costs read naturally")
+    func costShapes() {
+        #expect(CardPlainLanguage.describeCard(name: "A", type: "Spell", energyCost: 3, powerCost: 0, printedText: "")
+            .detail.hasPrefix("Costs 3 Energy."))
+        #expect(CardPlainLanguage.describeCard(name: "B", type: "Spell", energyCost: nil, powerCost: 2, printedText: "")
+            .detail.hasPrefix("Costs 2 Power."))
+    }
+
+    /// A blank detail would read as a panel that failed to load, and send
+    /// the player looking at the card for text that isn't there.
+    @Test("A card with no cost and no text still says something")
+    func emptyCard() {
+        let out = CardPlainLanguage.describeCard(
+            name: "Fury Rune", type: "Rune", energyCost: nil, powerCost: 0, printedText: ""
+        )
+
+        #expect(out.headline == "Fury Rune — Rune")
+        #expect(out.detail == "No printed ability — it does what its type does, nothing more.")
+    }
+
+    @Test("A missing type doesn't leave a dangling dash")
+    func noType() {
+        #expect(CardPlainLanguage.describeCard(name: "Mystery", type: "", energyCost: nil, powerCost: 0, printedText: "")
+            .headline == "Mystery")
+    }
+
+    /// Same rule as everywhere else: an unglossed keyword is shown as
+    /// printed, never paraphrased from its name.
+    @Test("An unexplained keyword still reaches the player")
+    func unexplainedCarried() {
+        let out = CardPlainLanguage.describeCard(
+            name: "Odd One", type: "Unit", energyCost: 1, powerCost: 0, printedText: "[Add] something happens."
+        )
+
+        #expect(out.detail.contains("[Add]"))
+    }
+}

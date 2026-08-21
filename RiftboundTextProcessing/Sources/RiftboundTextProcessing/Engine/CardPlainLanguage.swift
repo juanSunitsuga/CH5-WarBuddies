@@ -67,6 +67,59 @@ public enum CardPlainLanguage {
         return Explanation(lines: lines, unexplained: unexplained)
     }
 
+    /// One card described for someone who has just tapped it and doesn't
+    /// know what it is.
+    ///
+    /// Takes plain values rather than a `CardPrinting` on purpose: that
+    /// type lives in `RiftboundVision`, which this package must not depend
+    /// on. Keeping the seam at primitives is also what makes this testable
+    /// without a card database — the caller is then a two-line adapter with
+    /// nothing in it worth testing.
+    public struct CardSummary: Sendable, Equatable {
+        /// Name and type — "what kind of thing is this" is the first half
+        /// of the answer to "what is this".
+        public var headline: String
+        /// Cost, then what the card does, in the wording above.
+        public var detail: String
+    }
+
+    public static func describeCard(
+        name: String,
+        type: String,
+        energyCost: Int?,
+        powerCost: Int,
+        printedText: String
+    ) -> CardSummary {
+        let trimmedType = type.trimmingCharacters(in: .whitespaces)
+        let headline = trimmedType.isEmpty ? name : "\(name) — \(trimmedType)"
+
+        var parts: [String] = []
+        if let cost = costSentence(energyCost: energyCost, powerCost: powerCost) { parts.append(cost) }
+
+        let explanation = explain(printedText)
+        parts.append(contentsOf: explanation.lines)
+        // Shown as printed rather than paraphrased, same rule as everywhere
+        // else here.
+        parts.append(contentsOf: explanation.unexplained)
+
+        if parts.isEmpty {
+            parts.append("No printed ability — it does what its type does, nothing more.")
+        }
+        return CardSummary(headline: headline, detail: parts.joined(separator: " "))
+    }
+
+    /// A card with no cost at all says so. A missing cost line reads as a
+    /// value that failed to load, which invites the player to go looking
+    /// for it on the card.
+    private static func costSentence(energyCost: Int?, powerCost: Int) -> String? {
+        switch (energyCost, powerCost) {
+        case (nil, 0):          return nil
+        case (let e?, 0):       return "Costs \(e) Energy."
+        case (nil, let p):      return "Costs \(p) Power."
+        case (let e?, let p):   return "Costs \(e) Energy and \(p) Power."
+        }
+    }
+
     // MARK: - Instructions
 
     /// Rewrites one instruction sentence in plainer words.

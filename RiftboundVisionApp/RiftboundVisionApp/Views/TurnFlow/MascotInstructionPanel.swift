@@ -38,6 +38,9 @@ struct MascotInstructionPanel: View {
     /// Phase (516.2). During the fixed phases a verdict on every card the
     /// player touches while following a script buries the instruction.
     var validatesPlayerMoves = false
+    /// The card the player has tapped, in the strip or on the camera
+    /// overlay. `nil` when nothing is selected.
+    var selectedCard: CardPrinting?
     /// Said when nothing else has anything to report, so the band is never
     /// empty — an empty speech panel reads as a broken one.
     var fallback: String
@@ -57,6 +60,20 @@ struct MascotInstructionPanel: View {
             return ("\(inactiveStage) is switched off.",
                     "Turn it back on in Pipeline Settings and I'll read the table again. Until then the camera still shows the board, but nothing on it is being judged.",
                     true)
+        }
+        // A tap is the one message on this list the player *asked* for.
+        // Everything below is the app volunteering something; this is it
+        // answering a direct question, so it outranks the lot — with the
+        // single exception above, because with the pipeline off the app
+        // can't claim to know anything about the table.
+        //
+        // It outranks the corrections too, which looks aggressive until you
+        // try it the other way: tapping a card during a calibration warning
+        // then does nothing at all, and a button that does nothing reads as
+        // broken. This is dismissable — tap the card again — and the
+        // warning comes straight back, so nothing is lost, only deferred.
+        if let selectedCard {
+            return cardExplanation(selectedCard)
         }
         if needsCalibration {
             return ("Cards aren't landing on the mat.",
@@ -82,6 +99,22 @@ struct MascotInstructionPanel: View {
             return (progress.headline, progress.detail, false)
         }
         return (fallback, nil, false)
+    }
+
+    /// What one card is, for a player who doesn't know it.
+    ///
+    /// The wording lives in `CardPlainLanguage.describeCard` so it can be
+    /// tested without a running app; this is only the translation from a
+    /// `CardPrinting` to the plain values it takes.
+    private func cardExplanation(_ printing: CardPrinting) -> (headline: String, detail: String?, isAlert: Bool) {
+        let summary = CardPlainLanguage.describeCard(
+            name: printing.name,
+            type: printing.classification.type,
+            energyCost: printing.attributes.energy,
+            powerCost: printing.attributes.power ?? 0,
+            printedText: printing.text.plain
+        )
+        return (summary.headline, summary.detail, false)
     }
 
     var body: some View {
