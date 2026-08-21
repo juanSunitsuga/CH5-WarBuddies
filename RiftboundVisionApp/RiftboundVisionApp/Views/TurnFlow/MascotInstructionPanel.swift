@@ -1,5 +1,6 @@
 import SwiftUI
 import RiftboundVision
+import RiftboundTextProcessing
 
 /// The bottom band: BonBon, and one line telling the player what to do.
 ///
@@ -102,7 +103,7 @@ struct MascotInstructionPanel: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(message.headline.strippingRuleCitation)
+                Text(CardPlainLanguage.simplify(message.headline))
                     .font(RiftboundFont.iconic2)
                     .foregroundStyle(message.isAlert ? RiftboundPalette.highlightOverlay : RiftboundPalette.iconicText)
                     .minimumScaleFactor(0.45)
@@ -110,7 +111,7 @@ struct MascotInstructionPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let detail = message.detail {
-                    Text(detail.strippingRuleCitation)
+                    Text(CardPlainLanguage.simplify(detail))
                         .font(RiftboundFont.body)
                         .foregroundStyle(RiftboundPalette.regularText.opacity(0.8))
                         .fixedSize(horizontal: false, vertical: true)
@@ -132,21 +133,6 @@ struct MascotInstructionPanel: View {
     }
 }
 
-
-private extension String {
-    /// Strips a trailing rules citation like " (Rule 515.1)" or
-    /// " (Rules 139.4, 157.2)" from `PhaseAutoDetector`/`CardAbilityParser`
-    /// text. Those citations are for a maintainer cross-referencing the
-    /// code against the rulebook — a player reading what BonBon says
-    /// mid-game just wants the instruction. Stripped here, at the one place
-    /// this panel renders any of that text, rather than at each of the
-    /// dozen-plus call sites the citations actually live in — this reads on
-    /// screen only, so the citations stay intact in the source (and in
-    /// whatever tests assert on them) for the case they're useful there.
-    var strippingRuleCitation: String {
-        replacingOccurrences(of: #"\s\((?:Rule|Rules)\s[0-9][^)]*\)"#, with: "", options: .regularExpression)
-    }
-}
 
 #Preview {
     VStack(spacing: 16) {

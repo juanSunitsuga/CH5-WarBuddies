@@ -1,5 +1,6 @@
 import SwiftUI
 import RiftboundVision
+import RiftboundTextProcessing
 
 /// The attribute list that opens beside a selected card.
 ///
@@ -35,9 +36,25 @@ struct InlineCardDetail: View {
         }
     }
 
+    /// The card's ability in plain words, not as printed.
+    ///
+    /// Printed text is written for someone who already speaks the game —
+    /// `[Tank]`, `:rb_might:`, "recycle it" — and this panel is exactly
+    /// where a player goes when they *don't* know what a card does. So it
+    /// shows `CardPlainLanguage`'s rendering: keywords spelled out, icon
+    /// markup turned into words, and each triggered ability split into its
+    /// condition and its effect.
+    ///
+    /// A keyword the rulebook glossary doesn't cover is appended as printed
+    /// rather than paraphrased — see `Explanation.unexplained`. Showing it
+    /// raw is honest; inventing a meaning would be a rule the player can't
+    /// check.
     private var abilityText: String {
-        let text = printing.text.plain.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? "No printed ability." : text
+        let explanation = CardPlainLanguage.explain(printing.text.plain)
+        var lines = explanation.lines
+        lines.append(contentsOf: explanation.unexplained)
+        guard !lines.isEmpty else { return "No printed ability." }
+        return lines.joined(separator: "\n")
     }
 
     private func row(_ label: String, _ value: String) -> some View {

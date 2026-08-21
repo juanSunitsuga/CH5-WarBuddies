@@ -1342,9 +1342,15 @@ extension CameraPipelineController {
     /// the same text each time would be pure waste.
     func abilitySummaries(for printing: CardPrinting) -> [String] {
         if let cached = abilitySummaryCache[printing.riftboundID] { return cached }
-        let summaries = CardAbilityParser.read(printing.text.plain).abilities.map { ability in
-            ability.timing.map { "\(ability.summary) (\($0.prefix(while: { $0 != " " })))" } ?? ability.summary
-        }
+        // `CardAbilityParser.read` names Game Actions, which is the
+        // engine's vocabulary; these lines are read by a player mid-game,
+        // so they get the plain rendering instead. Falls back to the parsed
+        // summaries when a card's text has no plain form — better a terse
+        // line than a blank one.
+        let explanation = CardPlainLanguage.explain(printing.text.plain)
+        let summaries = explanation.lines.isEmpty
+            ? CardAbilityParser.read(printing.text.plain).abilities.map(\.summary)
+            : explanation.lines
         abilitySummaryCache[printing.riftboundID] = summaries
         return summaries
     }
@@ -1388,7 +1394,7 @@ extension CameraPipelineController {
             guard !fired.isEmpty else { continue }
 
             abilityNotice = PhaseAutoDetector.Progress(
-                headline: "\(printing.name): \(fired[0].effect)",
+                headline: "\(printing.name): \(CardPlainLanguage.simplify(fired[0].effect))",
                 detail: fired.count > 1
                     ? fired.dropFirst().map(\.effect).joined(separator: " ")
                     : "Its text triggered when you moved it. Resolve it before you carry on."
