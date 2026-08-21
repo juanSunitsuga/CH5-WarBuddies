@@ -31,6 +31,7 @@ struct ContentView: View {
     /// camera view and the sidebar agree on what's selected — tapping a box
     /// is what usually sets it.
     @State private var selectedCard: CardPrinting?
+    @State private var isShowingCardLibrary = false
 
     /// `modelContext` is optional so SwiftUI previews (and the no-arg
     /// `ContentView()` used in `#Preview`) still work without a container —
@@ -46,21 +47,38 @@ struct ContentView: View {
         // column rather than spanning the window: that's what puts the
         // Score panel level with the turn banner, and lets the sidebar run
         // unbroken to the bottom edge.
+        // Left column is the board — the cards on the table, the camera,
+        // and what BonBon is saying about it. Right column is everything
+        // the player operates. Nothing that is only *shown* sits on the
+        // right, and nothing you press sits on the left.
         HStack(alignment: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                GameStateBar(gameState: $pipeline.gameState)
-                cameraStage
-                TurnControlBar(
-                    gameState: $pipeline.gameState,
-                    isAutoDetecting: $pipeline.isAutoDetectingPhase,
-                    instructions: pipeline.instructions,
-                    phaseProgress: pipeline.phaseProgress,
-                    misplacedCards: pipeline.misplacedCards,
-                    needsCalibration: pipeline.needsCalibration
+            VStack(spacing: RiftboundLayout.bandSpacing) {
+                TableCardStrip(
+                    cards: pipeline.cardsOnTable,
+                    selection: $selectedCard,
+                    onOpenLibrary: { isShowingCardLibrary = true },
+                    description: { pipeline.description(for: $0) }
                 )
+                CameraStageView(pipeline: pipeline, selectedCard: $selectedCard)
+                MascotInstructionPanel(
+                    instructions: pipeline.instructions,
+                    progress: pipeline.phaseProgress,
+                    misplacedCards: pipeline.misplacedCards,
+                    needsCalibration: pipeline.needsCalibration,
+                    validatesPlayerMoves: pipeline.gameState.phase.validatesPlayerMoves,
+                    fallback: pipeline.isPipelineRunning ? pipeline.gameState.phase.instruction : "Ready to play?"
+                )
+                // Same inset as the strip and the camera above it.
+                .padding(.horizontal, RiftboundLayout.columnInset)
+                .padding(.bottom, RiftboundLayout.columnInset)
             }
 
-            DetectedCardsPanel(pipeline: pipeline, selection: $selectedCard)
+            TurnControlColumn(
+                gameState: $pipeline.gameState,
+                isAutoAdvancing: $pipeline.isAutoDetectingPhase,
+                playerScore: $pipeline.playerScore,
+                opponentScore: $pipeline.opponentScore
+            )
         }
         .background(RiftboundPalette.mainBackground)
         .frame(minWidth: 1160, minHeight: 675)
@@ -69,7 +87,7 @@ struct ContentView: View {
         // is left visible (see the app entry point): it's what gives these
         // an edge to sit against.
         .toolbar {
-            ToolbarItem { cameraPicker }
+            ToolbarItem { CameraSourceMenu(pipeline: pipeline) }
             ToolbarItem {
                 // Drag the 4 corner handles onto the physical mat's actual
                 // corners as seen by the camera — a visual reference layer
@@ -79,7 +97,13 @@ struct ContentView: View {
                 }
                 .toggleStyle(.button)
             }
-            ToolbarItem { diagnosticsMenu }
+            ToolbarItem {
+                DiagnosticsMenu(
+                    pipeline: pipeline,
+                    isShowingPipelineSettings: $isShowingPipelineSettings,
+                    onShowOnboarding: { isShowingOnboarding = true }
+                )
+            }
             ToolbarItem {
                 // Starts the *pipeline*, not the camera — the feed is
                 // already live so the mat can be calibrated first.
@@ -102,6 +126,13 @@ struct ContentView: View {
         .sheet(isPresented: $isShowingOnboarding) {
             OnboardingView { isShowingOnboarding = false }
         }
+        .sheet(isPresented: $isShowingCardLibrary) {
+            CardLibrarySheet(
+                database: pipeline.cardDatabase,
+                selection: $selectedCard,
+                onClose: { isShowingCardLibrary = false }
+            )
+        }
         // Bring the camera up as soon as the window opens, prompting for
         // access the first time. Calibration needs a live picture, and
         // aligning the mat after starting detection is what put cards in
@@ -115,295 +146,15 @@ struct ContentView: View {
             get: { pipeline.debugReport != nil },
             set: { if !$0 { pipeline.debugReport = nil } }
         )) {
-            debugReportSheet
+            CameraDiagnosticSheet(report: pipeline.debugReport ?? "") {
+                pipeline.debugReport = nil
+            }
         }
     }
 
 
     // MARK: - Camera stage
 
-    /// The framed camera area. The frame is drawn *outside* the
-    /// `GeometryReader` so the overlay maths below is untouched by it —
-    /// the scale correction still refers to the feed's own bounds, not the
-    /// frame's.
-    private var cameraStage: some View {
-        cameraFeed
-            // Every camera this app targets (built-in, Continuity, USB)
-            // delivers 16:9, so the frame can simply *be* that shape
-            // rather than boxing a letterboxed picture.
-            .aspectRatio(16.0 / 9.0, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(RiftboundPalette.elementStroke, lineWidth: 2)
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
-    }
-
-    private var cameraFeed: some View {
-        GeometryReader { proxy in
-                ZStack {
-                    // Was `Color.black`. The letterbox around an
-                    // aspect-fit feed is a large area of the window, and
-                    // pure black is the one shade on screen that belongs
-                    // to no part of the palette — it read as a hole.
-                    // `elementShadow` is the board's own darkest value.
-                    RiftboundPalette.elementShadow
-
-                    if let backgroundImage = pipeline.backgroundImage {
-                        Image(decorative: backgroundImage, scale: 1, orientation: .up)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                    } else {
-                        Text(pipeline.isCameraRunning ? "Waiting for camera frames…" : "Opening camera…")
-                            .font(RiftboundFont.body)
-                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
-                    }
-
-                    // Both overlays draw in the raw pixel coordinates of
-                    // `pipeline.frameSize`/`pipeline.calibration` (the
-                    // camera frame's native size), but the image above is
-                    // displayed aspect-fit inside whatever the window's
-                    // current size is — without this correction, boxes
-                    // and the zone reference layer drift away from what
-                    // they're labeling as soon as the window isn't
-                    // exactly the camera's native resolution.
-                    let scale = fitScale(container: proxy.size, content: pipeline.frameSize)
-
-                    PlaymatOverlayView(calibration: $pipeline.calibration, isEditable: pipeline.isCalibrating)
-                        .frame(width: pipeline.frameSize.width, height: pipeline.frameSize.height)
-                        .scaleEffect(scale)
-                        .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-
-                    // Interactive: tapping a card's box selects it, which
-                    // is how the sidebar is driven now.
-                    LiveDetectionOverlayView(
-                        detections: pipeline.detections,
-                        cardDatabase: pipeline.cardDatabase,
-                        selectedPrintingID: selectedCard?.id,
-                        onSelect: { selectedCard = $0 }
-                    )
-                        .frame(width: pipeline.frameSize.width, height: pipeline.frameSize.height)
-                        .scaleEffect(scale)
-                        .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-
-                    // Above the detection boxes: the tracker's centroids
-                    // and their stable IDs. This is the layer that shows
-                    // whether a card keeps its identity across a pickup —
-                    // the boxes below look the same either way.
-                    TrackedObjectOverlayView(objects: pipeline.trackedObjects)
-                        .frame(width: pipeline.frameSize.width, height: pipeline.frameSize.height)
-                        .scaleEffect(scale)
-                        .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-                        .allowsHitTesting(false)
-
-                    VStack(spacing: 8) {
-                        detectionCountBadge
-                        // Only ever visible when the trained model didn't
-                        // load. Sits under the card count rather than in
-                        // the transient error slot at the bottom because
-                        // it's true for the whole session, not a passing
-                        // camera condition — and because an app that
-                        // detects cards but names none of them otherwise
-                        // looks like it's simply working badly.
-                        if let warning = pipeline.detectorFallbackWarning {
-                            Text("Card recognition unavailable — \(warning)")
-                                .font(RiftboundFont.body)
-                                .foregroundStyle(RiftboundPalette.regularText)
-                                .multilineTextAlignment(.center)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: 520)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .background(RiftboundPalette.primaryButton, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        }
-                        Spacer()
-                    }
-                    .padding(.top, 12)
-
-                    if let errorMessage = pipeline.errorMessage {
-                        VStack {
-                            Spacer()
-                            Text(errorMessage)
-                                .font(RiftboundFont.body)
-                                .foregroundStyle(RiftboundPalette.regularText)
-                                .padding(10)
-                                .background(RiftboundPalette.primaryButton, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                .padding()
-                        }
-                    }
-                }
-            }
-    }
-
-    /// Player-facing: how many cards the pipeline currently believes are on
-    /// the table. Reads `trackedObjects`, not `detections` — the raw
-    /// per-poll count flickered between neighbouring numbers at the
-    /// detector's own noise level, several times a second, even with
-    /// nothing on the table actually changing (same class of bug the Card
-    /// Library had). `trackedObjects` only changes in response to a real
-    /// tracked appearance/disappearance. fps and table-event counts used to
-    /// sit here too; those are developer telemetry, not game state, and now
-    /// live in Pipeline Settings (Help & Diagnostics) instead of a
-    /// permanent on-camera HUD.
-    private var detectionCountBadge: some View {
-        Text(pipeline.trackedObjects.isEmpty ? "No cards detected" : "\(pipeline.trackedObjects.count) card\(pipeline.trackedObjects.count == 1 ? "" : "s") detected")
-            .font(RiftboundFont.body)
-            .foregroundStyle(RiftboundPalette.regularText)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .background(RiftboundPalette.elementShadow.opacity(0.85), in: Capsule())
-            .overlay(Capsule().stroke(RiftboundPalette.elementStroke.opacity(0.7), lineWidth: 1))
-    }
-
-    private var debugReportSheet: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Camera Diagnostic")
-                .font(RiftboundFont.heading)
-                .foregroundStyle(RiftboundPalette.regularText)
-            ScrollView {
-                // Monospaced on purpose — this is a device dump, and
-                // column alignment is the point. Sora is a proportional
-                // face, so the theme scale doesn't apply here.
-                Text(pipeline.debugReport ?? "")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(RiftboundPalette.regularText)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            HStack {
-                Button("Copy") {
-                    if let report = pipeline.debugReport {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(report, forType: .string)
-                    }
-                }
-                .buttonStyle(RiftSecondaryButtonStyle())
-                Spacer()
-                Button("Close") { pipeline.debugReport = nil }
-                    .buttonStyle(RiftPrimaryButtonStyle())
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(20)
-        .frame(minWidth: 600, minHeight: 400)
-        .background(RiftboundPalette.mainBackground)
-    }
-
-    /// Camera-source picker — "connect to iPhone" is just picking the
-    /// Continuity Camera entry once the iPhone is nearby/paired and has
-    /// made itself available (that pairing/handoff is entirely OS-level,
-    /// nothing this app needs to negotiate).
-    private var cameraPicker: some View {
-        Menu {
-            Button("System Default") {
-                pipeline.selectCamera(id: nil)
-            }
-            if !pipeline.availableCameras.isEmpty {
-                Divider()
-                ForEach(pipeline.availableCameras) { device in
-                    Button {
-                        pipeline.selectCamera(id: device.id)
-                    } label: {
-                        Label(device.name, systemImage: device.isContinuityCamera ? "iphone" : "camera")
-                        if pipeline.selectedCameraID == device.id {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-            Divider()
-            Button("Refresh Camera List") {
-                pipeline.refreshAvailableCameras()
-            }
-        } label: {
-            Label(cameraLabel, systemImage: selectedIsContinuityCamera ? "iphone" : "camera")
-        }
-    }
-
-    /// The three developer affordances, folded behind one control.
-    ///
-    /// They used to be three separate toolbar buttons — an iPhone glyph, a
-    /// gear and a ladybug — which put six items across the top bar and made
-    /// the two a player actually needs (pick a camera, calibrate the mat)
-    /// hard to find among them. None of them is used during a game: two are
-    /// for when a camera won't appear, and one is a pipeline kill-switch
-    /// panel.
-    ///
-    /// Nothing is removed, only gathered. A menu also lets each item carry
-    /// its full name instead of a glyph that has to be guessed at.
-    private var diagnosticsMenu: some View {
-        Menu {
-            // Explicit action for the case passive discovery can't handle —
-            // an iPhone the user manually Disconnected on the phone side.
-            // This actively tries to open it, which is what triggers the
-            // reconnect/permission handshake, rather than waiting for it to
-            // reappear on its own.
-            Button {
-                isShowingOnboarding = true
-            } label: {
-                Label("How to Play…", systemImage: "questionmark.circle")
-            }
-
-            Divider()
-
-            Button {
-                pipeline.useIPhoneCamera()
-            } label: {
-                Label("Use iPhone Camera", systemImage: "iphone")
-            }
-
-            // Per-stage toggles instead of one flat kill switch. Disabling
-            // an earlier stage cascades: everything downstream turns off
-            // too (enforced by `CameraPipelineController.setStage`/
-            // `isStageActive`), so there's no way to leave the pipeline in
-            // an inconsistent "stage 3 on, stage 2 off" state from here.
-            Button {
-                isShowingPipelineSettings = true
-            } label: {
-                Label("Pipeline Settings…", systemImage: "gearshape")
-            }
-
-            Divider()
-
-            // Diagnostic for "Continuity Camera works elsewhere but this
-            // app doesn't see it" — dumps every video device macOS reports
-            // (all device types, plus the legacy enumeration API).
-            Button {
-                pipeline.runCameraDiagnostic()
-            } label: {
-                Label("Debug Cameras…", systemImage: "ladybug")
-            }
-        } label: {
-            Label("Help & Diagnostics", systemImage: "questionmark.circle")
-        }
-        .popover(isPresented: $isShowingPipelineSettings) {
-            PipelineSettingsView(pipeline: pipeline)
-        }
-    }
-
-    private var selectedIsContinuityCamera: Bool {
-        guard let id = pipeline.selectedCameraID else { return false }
-        return pipeline.availableCameras.first(where: { $0.id == id })?.isContinuityCamera ?? false
-    }
-
-    private var cameraLabel: String {
-        guard let id = pipeline.selectedCameraID,
-              let device = pipeline.availableCameras.first(where: { $0.id == id }) else {
-            return "Camera: System Default"
-        }
-        return "Camera: \(device.name)"
-    }
-
-    /// Aspect-fit scale factor, matching `.aspectRatio(contentMode: .fit)`
-    /// above — kept in lockstep so the overlay always sits exactly over
-    /// the displayed video image, not the raw window bounds.
-    private func fitScale(container: CGSize, content: CGSize) -> CGFloat {
-        guard content.width > 0, content.height > 0 else { return 1 }
-        return min(container.width / content.width, container.height / content.height)
-    }
 }
 
 #Preview {
