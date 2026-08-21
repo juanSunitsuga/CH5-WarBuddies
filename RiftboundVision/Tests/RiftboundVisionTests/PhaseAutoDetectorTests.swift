@@ -30,7 +30,7 @@ struct PhaseAutoDetectorTests {
         ])
 
         #expect(!progress.isComplete)
-        #expect(progress.headline == "1 card is still exhausted.")
+        #expect(progress.headline == "Turn 1 card upright.")
     }
 
     @Test("Awaken completes once everything is upright")
@@ -87,7 +87,7 @@ struct PhaseAutoDetectorTests {
         ])
 
         #expect(!progress.isComplete)
-        #expect(progress.headline == "1 card is still exhausted.")
+        #expect(progress.headline == "Turn 1 card upright.")
     }
 
     /// 515.1 is the *Turn Player's* Awaken — the opponent's exhausted cards
@@ -156,6 +156,33 @@ struct PhaseAutoDetectorTests {
         #expect(progress.headline.contains("No points"))
     }
 
+    /// Draw always read well and the others didn't, and the difference was
+    /// grammatical: "Draw 1 card" is an instruction, "0 of 2 runes
+    /// channeled" is a status report. The headline is the display-size line
+    /// read from across a table, so it carries the thing to do; counts and
+    /// card names belong underneath.
+    @Test("Every phase headline is an instruction, not a status line")
+    func headlinesAreInstructions() {
+        let detector = PhaseAutoDetector(channelBaseline: 0, runesToChannel: 2, handBaseline: 0)
+
+        let awaken = detector.progress(for: .awaken, cards: [
+            card(1, "Tibbers", zone: .base, stance: .exhausted)
+        ])
+        #expect(awaken.headline == "Turn 1 card upright.")
+
+        let channel = detector.progress(for: .channel, cards: [])
+        #expect(channel.headline == "Put out 2 more runes.")
+        // The progress count moved out of the headline, not away.
+        #expect(channel.detail?.contains("0 of 2") == true)
+
+        // None of these leans on a word the player would have to be taught.
+        for headline in [awaken.headline, channel.headline] {
+            for jargon in ["exhausted", "channeled", "channelled"] {
+                #expect(!headline.lowercased().contains(jargon), "\(headline) still says '\(jargon)'")
+            }
+        }
+    }
+
     // MARK: - Channel (515.3)
 
     /// The target is 2 *new* runes. An absolute count would be satisfied
@@ -168,7 +195,8 @@ struct PhaseAutoDetectorTests {
         let progress = detector.progress(for: .channel, cards: runes)
 
         #expect(!progress.isComplete)
-        #expect(progress.headline == "1 of 2 runes channeled.")
+        #expect(progress.headline == "Put out 1 more rune.")
+        #expect(progress.detail?.contains("1 of 2") == true)
     }
 
     @Test("Channel completes once both new runes are in the rune area")

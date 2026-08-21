@@ -136,7 +136,7 @@ struct MascotInstructionPanel: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(CardPlainLanguage.simplify(message.headline))
+                Text(CardPlainLanguage.tidy(message.headline))
                     .font(RiftboundFont.iconic2)
                     .foregroundStyle(message.isAlert ? RiftboundPalette.highlightOverlay : RiftboundPalette.iconicText)
                     .minimumScaleFactor(0.45)

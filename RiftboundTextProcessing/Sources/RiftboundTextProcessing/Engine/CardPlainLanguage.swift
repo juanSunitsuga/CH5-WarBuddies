@@ -133,6 +133,23 @@ public enum CardPlainLanguage {
         return simplify(sentence, glossed: &glossed)
     }
 
+    /// The same cleanup with the glossary switched off.
+    ///
+    /// A gloss is a whole extra sentence, which is right underneath an
+    /// instruction and wrong inside a headline: the mascot band's headline
+    /// is set at display size, so appending "Channelling takes runes off
+    /// your rune deck and puts them on the board." to "0 of 2 runes
+    /// channeled." doubled the largest text on screen and then said the
+    /// same thing again in the line below it. Headlines take this; details
+    /// take `simplify`.
+    public static func tidy(_ sentence: String) -> String {
+        var out = CardAbilityParser.plainMarkup(sentence)
+        out = strippingRuleCitations(out)
+        out = expandingInlineKeywords(out)
+        out = thirdPerson(out)
+        return collapsingSpaces(out)
+    }
+
     /// The glossing set is threaded through so a term is explained once per
     /// card or per instruction, not once per sentence. Repeating "(turn it
     /// sideways)" three times in four lines reads as a malfunction.
