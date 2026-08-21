@@ -378,6 +378,36 @@ struct RiftFlowConnector: View {
 /// The SVG set that shipped with the reference, addressed by name in one
 /// place so a rename in the catalog is a single-line fix rather than a
 /// hunt through string literals.
+/// Shared measurements, so "the same width" is one number rather than the
+/// same number typed in three places.
+///
+/// The card strip, the camera stage and the mascot panel are three bands of
+/// one column and must line up down both edges. They were each carrying
+/// their own padding, which is how they drifted apart — the strip ran wider
+/// than the camera it sat above.
+enum RiftboundLayout {
+    /// Horizontal inset for every band in the left column. One value, read
+    /// by all three.
+    static let columnInset: CGFloat = 24
+    /// Vertical rhythm between those bands.
+    static let bandSpacing: CGFloat = 12
+    /// The control column's width. Fixed rather than proportional: it holds
+    /// a fixed set of controls at a fixed type size, so letting it stretch
+    /// only ever added empty space beside them.
+    static let controlColumnWidth: CGFloat = 372
+    /// Padding inside the control column's sections.
+    static let controlColumnInset: CGFloat = 20
+
+    /// Thumbnail size in the table strip.
+    static let stripCardWidth: CGFloat = 96
+    static let stripCardHeight: CGFloat = 134
+    /// Width of the detail that opens beside a selected card.
+    static let stripDetailWidth: CGFloat = 260
+
+    static let cornerRadius: CGFloat = 8
+    static let hairline: CGFloat = 2
+}
+
 enum RiftboundArt {
     static let ready = "Ready"
     static let exhaustOrPay = "Exhaust or Pay"
