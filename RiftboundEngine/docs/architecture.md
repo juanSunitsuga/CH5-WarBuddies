@@ -58,7 +58,8 @@ Four packages. Dependencies point inward; this package depends on nothing.
                      ▼
 ┌──────────────────────────────────────────────┐
 │  Ability resolution                          │  EffectInstruction
-│  ⚠ parsed + shown, not executed — see §7     │  CardAbilityParser  
+│  parsed, then executed against GameState     │  CardAbilityParser
+│  ⚠ the parser is the narrow part — see §7    │  EffectExecutor
 └────────────────────┬─────────────────────────┘
                      │ resulting state diff
                      ▼
@@ -277,24 +278,32 @@ enum EffectInstruction {
 card text onto *only* those primitives is the constraint. Text that doesn't
 map is a parse failure to surface, not a new primitive to invent.
 
-> **Status: parsed and shown, not executed.** `CardAbilityParser` reads
-> printed text into this vocabulary and `ExpertSystemTranslatorAdapter.parseAbility`
-> returns it, so a card's abilities reach the player — the app lists what
-> everything in play does, and names each by the Game Action it resolves to.
-> What still doesn't happen is *execution*: nothing runs an
-> `EffectInstruction` against `GameState`.
+> **Status: executed, within a real targeting vocabulary.**
+> `CardAbilityParser` reads printed text into this vocabulary,
+> `ExpertSystemTranslatorAdapter.parseAbility(cardDefinitionID:)` returns it,
+> and `EffectExecutor` runs it against `GameState` inside the same
+> `store.mutate` as the action that triggered it, with Cleanup once at the
+> end so nothing observes a half-resolved card.
 >
-> The untargeted cases (`.draw`, `.channelRune`, `.discard`) carry real
-> arguments and are the ones the engine could already apply. Targeted ones
-> come back with `TargetSpec.placeholder`, because `TargetSpec` /
-> `LocationSpec` / `EffectCondition` are still placeholders on purpose —
-> their shape gets settled against real card text rather than guessed. Until
-> then a targeted ability can be *named* but not aimed, and the
-> `ParsedAbility.summary` is what carries its meaning.
+> `TargetSpec` is no longer a placeholder: `.source` is the permanent that
+> generated the effect, `.chosenUnit(UnitFilter)` consumes a choice the
+> player already declared on `GameAction.play`'s `additionalChoices` (559.3),
+> and `.allUnits(UnitFilter)` resolves at execution time with no choice
+> involved. An instruction whose target can't be resolved reports itself as
+> not-executed in the outcome rather than guessing.
 >
-> Text that mentions a game verb but matches no known shape is reported as
-> unparsed rather than guessed at. A card whose ability shows as unread is a
-> parser gap someone can go fix; one silently invented is a wrong game state
+> Text that mentions a game verb but matches no known shape is still reported
+> as unparsed rather than guessed at. A card whose ability shows as unread is
+> a parser gap someone can go fix; one silently invented is a wrong game
+> state nobody can trace.
+>
+> **The parser is now the narrow part, not the executor.** Measured across
+> the 59 card texts in `CardData`: 32 yield at least one `EffectInstruction`.
+> `CardAbilityParser` also names a "Deal damage" action for Annie - Fiery,
+> whose text is a static modifier rather than an instruction to deal 1, and
+> misses Tibbers' actual "deal 3 to all units at battlefields" — so widening
+> the damage rule is the next thing that would matter here.
+
 > nobody can trace.
 
 > **Triggers are read separately from effects.** `CardAbilityTrigger` splits
@@ -408,6 +417,28 @@ off the board, so it reads as the Rune Area shrinking. That's inferred from
 the area rather than the deck growing because a deck is a *stack* — the
 detector sees one object on top however many cards are underneath.
 
+**Identification is scoped to the deck in play.** The detector offers any
+label it was trained on, so a Garen deck's cards are read against a label
+space holding every other deck's too. Rule 166 puts exactly one Legend on the
+table at setup, so seeing it names the deck, and from then on a label from
+another deck is rejected — the object stays tracked, it just isn't claimed to
+be a card it can't be. Two exceptions, both where an out-of-deck card is real
+rather than a misread: anything at a Battlefield, where an opponent's cards
+legitimately arrive; and Battlefield cards themselves. Nothing narrows until
+a Legend has been seen, and adoption waits for a committed identity, since
+the whole deck is chosen off one label. `DeckScope` owns this, and
+`CardDatabase` keeps a `DeckRoster` per file alongside its flat index —
+rosters read each printing's *classification*, because every bundled export
+puts the whole deck in `mainDeck` and leaves `legend`/`runes`/`battlefields`
+empty.
+
+**Costs are stated as physical acts.** "2 + 1 Power" is how a card prints its
+cost and says nothing about what to do with it. Energy is paid by exhausting
+runes (157.2.a); Power by recycling them to the *bottom* of the rune deck
+(157.2.b/594.1.b) — the destination matters, because read as "discard" a
+player puts the rune somewhere it can never come back from. Power is usually
+domain-locked (130.3), so the domain is named: "recycle 1 Fury rune".
+
 **A card's identity is decided once, then followed.** `ObjectTracker`
 accumulates confidence-weighted label votes per track and *commits* once the
 leader clears both a threshold (about seven agreeing reads) and the existing
@@ -501,7 +532,8 @@ so "whose turn" is strict.
 | 6c | Rune economy — channel, exhaust, recycle | 153–160, 594, 606 | ✅ Runes are board objects |
 | 7 | Ability parsing | 586–607 | ✅ `CardAbilityParser`; untargeted cases produce real `EffectInstruction`s |
 | 7a | Ability *triggers* | — | ✅ `CardAbilityTrigger` fires observable zone-change triggers; attack/conquer/defend kept `.unobservable` |
-| 7b | Effect execution + Layers | 634–639 | ❌ nothing runs an `EffectInstruction` yet |
+| 7b | Effect execution | 586–607 | ✅ `EffectExecutor`, with `TargetSpec` resolved from declared choices (559.3) |
+| 7c | Layers | 634–639 | ❌ combat and Cleanup still use printed Might |
 | 8 | NLP → candidate `GameAction` | — | ✅ live |
 | 9 | Detection → `ObservedTableEvent` | — | ✅ live |
 | 10 | Instruction / feedback UI | — | ✅ live — mascot band, 8 ranked sources (§4b), card details |
@@ -509,6 +541,7 @@ so "whose turn" is strict.
 | 11 | Play flow at the table | 515–516, 139.4, 157.2 | ✅ `PhaseAutoDetector`, `RunePayment`, `PendingPlay` — see §4b |
 | 12 | Auto-detect of the fixed phases | 515 | ✅ Awaken, Beginning, Channel, Draw; Action never auto-completes (516.2). Beginning no longer awards points — it asks the player to (§4b) |
 | 12a | Stable card identity | — | ✅ committed once per track, then followed; identity-aware matching, three-tier occlusion (§4b) |
+| 12b | Deck scope | 166 | ✅ the Legend names the deck; other decks' cards rejected outside a Battlefield (§4b) |
 | 13 | Onboarding | — | ✅ first-launch sheet, reachable later from Help |
 | 14 | Long-session stability | — | ✅ diagnostic buffers capped; no per-poll `@Model` writes |
 
@@ -542,11 +575,12 @@ describes.
    `GameAction.exhaust`, no Energy can enter a pool from play, which is why
    `GameSessionBuilder` still seeds a stand-in pool. **The fix is that one
    translation, not a bigger seeded number.**
-2. **Item 7b — execute `EffectInstruction`.** Parsing is done: card text now
-   reaches the player as named Game Actions. What's missing is anything that
-   *runs* one against `GameState`, so a card still doesn't do what it says.
-   Score abilities (632.2), Cleanup's 520/522/523, and every targeted effect
-   (which needs a real `TargetSpec` first) all wait on this.
+2. **Widen the parser, now that the executor is real.** `EffectExecutor` runs
+   what it is given; the constraint has moved upstream. Across the 59 card
+   texts in `CardData`, 32 yield an instruction — and `CardAbilityParser`
+   reads "deal damage" off Annie - Fiery's static modifier while missing
+   Tibbers' actual "deal 3 to all units at battlefields". Score abilities
+   (632.2) and Cleanup's 520/522/523 wait on the same work.
 3. **A second seat.** `GameEngine` is built for one local player, so an
    opponent's Hold, Conquer and Focus are unreachable in the app even though
    the engine handles them. Scoring is therefore still effectively manual.

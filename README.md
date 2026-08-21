@@ -135,6 +135,32 @@ two identical Runes side by side can't swap identities.
 Without pass 2, every real play produced `.objectAppeared` with no origin —
 and an origin-less appearance can't be translated into a Play at all.
 
+### Committed Identity
+
+A physical card does not become a different card, so re-deciding what a track
+is on every poll can only ever be wrong. The tracker accumulates
+confidence-weighted votes per track and **commits** once the leading label
+clears two bars together: about seven agreeing reads, *and* a clear margin
+over the runner-up. After that the label is frozen for the life of that
+track and later disagreement is discarded as the misread it is.
+
+Both bars are needed. The threshold says the card has been looked at
+properly; the margin stops a coin-flip between two confusable cards settling
+at all. Commitment is per *track* — take the card away and the commitment
+dies with it, so whatever appears next is identified from scratch.
+
+`TrackedObject.isIdentityCommitted` exposes the distinction, and two other
+things lean on it:
+
+- **Matching prefers agreement.** Geometry alone is a coin flip for two cards
+  lying side by side — whichever detection lands a pixel nearer claims the
+  track, and the two swap identities with nothing having moved. A pairing the
+  detector agrees with is ranked ahead of a marginally closer one. The hard
+  distance gate still applies, so identity reorders candidates and never
+  matches across the table.
+- **Card abilities wait for it.** Firing an ability off a provisional
+  identity makes the player resolve an effect that isn't on the table.
+
 ### Temporal Confirmation
 
 Raw per-poll zone assignments flicker. `TemporalEventDetector` requires a card
@@ -149,7 +175,8 @@ A track isn't dropped the moment it stops being detected:
 | Situation | Grace period | Why |
 |---|---|---|
 | Card in a settled zone (Battlefield, Rune Area, Rune Deck) | **300 polls** | A card there genuinely doesn't move. A hand resting over it must not read as "left play." |
-| Card anywhere else (Hand, in transit, decks) | **15 polls** (~5 s) | These are exactly the zones where presence really can change between polls. |
+| Card whose identity is committed | **60 polls** (~6 s) | A hand reaching across the base covers a card for longer than 15 polls, and dropping the track throws away the identity — the expensive part, since a rebuilt track has to earn it again. |
+| Anything else (Hand, in transit, decks) | **15 polls** (~5 s) | These are exactly the zones where presence really can change between polls, and an unidentified blob costs an ID while telling nobody anything. |
 
 ### Playmat Calibration
 
@@ -205,7 +232,32 @@ four-step chain, most authoritative first:
 The database is the primary source because it holds hand-verified type, cost,
 and mechanic tags. The Foundation Model only runs for cards the index doesn't
 know, and its result is written back so the same card resolves instantly
-afterwards.
+afterwards. In practice that means it rarely runs at all: the detector can
+only emit labels for cards it was trained on, and those are in the index.
+
+### Deck Scope
+
+The detector will offer any label it was trained on, so a Garen deck's cards
+are read against a label space holding every Annie, Lux and Master Yi card
+too. Most misidentifications are between cards that were never both going to
+be in play — a constraint the app has and now uses.
+
+The **Legend** unlocks it. Rule 166 puts exactly one on the table at setup
+and it stays there, so seeing it names the deck. From then on a label from
+another deck is rejected: the object stays tracked and drawn, it just isn't
+claimed to be a card it can't be.
+
+| Where the card is | Identified? |
+|---|---|
+| In the active deck | Yes |
+| At a **Battlefield** | Yes, whatever deck it's from — this is where an opponent's cards legitimately arrive, and the engine can't track combat against a card it refuses to name |
+| A **Battlefield card** itself | Yes — placed at setup, belonging to the match rather than a deck |
+| Anything else, from another deck | **No** |
+
+Nothing narrows until a Legend has been seen, since narrowing earlier would
+hide the very card that identifies the deck. Adoption waits for a committed
+identity: the whole deck is chosen off one label, so choosing it from a
+reading that is still wobbling would scope everything else to the wrong deck.
 
 ### The ID Join
 
@@ -448,7 +500,11 @@ all 75 printings, and alternate arts stay distinct (`ogn-214-298` vs
 
 ## Known Gaps
 
-Flagged rather than papered over:
+Flagged rather than papered over. Two things that *did* land recently, so the
+list reads honestly: a played card's abilities now execute against
+`GameState` (`EffectExecutor`, with a real `TargetSpec` resolved from the
+action's declared choices), and card identification is scoped to the deck the
+Legend names.
 
 - **A rune turning sideways never becomes `.exhaust`.** The engine models the
   rune economy properly, both rune abilities are discretionary, and the camera
@@ -458,11 +514,14 @@ Flagged rather than papered over:
   nowhere else handles it. So no Energy can enter a pool from play, which is
   why `GameSessionBuilder` still seeds one. **The fix is that one translation,
   not a bigger seeded number.**
-- **Abilities are read but never run.** `CardAbilityParser` turns printed
-  text into named Game Actions and the app shows them, but nothing executes
-  an `EffectInstruction` against `GameState`, so a card still doesn't *do*
-  what it says. Targeted effects can be named but not aimed — `TargetSpec`
-  is deliberately still a placeholder. Score abilities (632.2) wait on this.
+- **Nothing reads `GameState` back.** `EffectExecutor` now runs a played
+  card's abilities against it, so the state moves — but no line the player
+  reads is derived from it. The instruction band takes seven of its eight
+  sources from `PhaseAutoDetector` re-reading the table, and the one engine
+  slot is Action-Phase only. Combined with the seeded Energy pool above, the
+  engine currently *records* rather than adjudicates. Making it the source of
+  truth is the change that would turn this into an expert system driven by a
+  camera, rather than a table-reader with an engine attached.
 - **No second seat.** The engine handles an opponent's Hold, Conquer and Focus,
   but the app is built for one local player, so scoring is still effectively
   manual and a Showdown has nobody to pass to.
@@ -481,7 +540,11 @@ Flagged rather than papered over:
 ## Roadmap
 
 - [ ] Map `.cardOrientationChanged` to `.exhaust`, and drop the seeded pool
-- [ ] Route mechanic tags into `parseAbility` → `EffectInstruction` execution
+- [ ] Derive player-facing instructions from `GameState` rather than from a
+      second read of the table
+- [ ] Widen ability parsing — `CardAbilityParser` reads "deal damage" off a
+      static modifier (Annie - Fiery) and misses a real one (Tibbers'
+      "deal 3 to all units at battlefields")
 - [ ] Second seat, so Hold, Conquer and Focus have an opponent to work against
 - [ ] Deck selection and player identification, replacing the permissive hand
 - [ ] Push Units and Gear through the Chain, so Reactions resolve in rules order
