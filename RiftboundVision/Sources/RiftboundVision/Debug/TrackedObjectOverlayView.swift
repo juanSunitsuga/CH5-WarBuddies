@@ -48,17 +48,17 @@ public struct TrackedObjectOverlayView: View {
                 .fill(tint)
                 .frame(width: 14, height: 14)
             Circle()
-                .stroke(.white, lineWidth: 2)
+                .stroke(PlaymatPalette.pureWhite, lineWidth: 2)
                 .frame(width: 14, height: 14)
         }
         .overlay(alignment: .top) {
             Text("#\(object.id)")
                 .font(.system(size: 22, weight: .heavy, design: .monospaced))
-                .foregroundStyle(.white)
+                .foregroundStyle(PlaymatPalette.pureWhite)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(tint, in: Capsule())
-                .overlay(Capsule().stroke(.black.opacity(0.35), lineWidth: 1))
+                .overlay(Capsule().stroke(PlaymatPalette.scrim, lineWidth: 1))
                 .fixedSize()
                 .offset(y: -30)
         }

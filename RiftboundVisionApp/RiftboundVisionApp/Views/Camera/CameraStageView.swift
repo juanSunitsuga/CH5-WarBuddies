@@ -11,6 +11,21 @@ import RiftboundVision
 /// The gold frame is applied *outside* the `GeometryReader` so the overlay
 /// maths is untouched by it — the scale correction refers to the feed's own
 /// bounds, not the frame's.
+/// The rendered width of the framed camera picture, published upward.
+///
+/// The camera is aspect-fit, so how wide it actually draws depends on the
+/// window's height, not just its width — at a short window the picture is
+/// height-limited and sits well inside the column's own inset. Anything
+/// that has to line up with the camera therefore can't just reuse
+/// `columnInset`; it has to be told the measured width. The mascot band is
+/// the one such thing today.
+struct CameraStageWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct CameraStageView: View {
     @ObservedObject var pipeline: CameraPipelineController
     /// Shared with the card strip: tapping a detection box selects the same
@@ -31,6 +46,15 @@ struct CameraStageView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(RiftboundPalette.elementStroke, lineWidth: 2)
+            )
+            // Measured *here*, on the aspect-fitted picture itself, rather
+            // than on the padded container below — the container is the
+            // full column width, which is exactly the number that was
+            // wrong before.
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: CameraStageWidthKey.self, value: proxy.size.width)
+                }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // Same inset the strip and the mascot band use, so the three

@@ -16,7 +16,8 @@ import SwiftUI
 /// drawn over. The cost is that it needs re-exporting when the layout
 /// changes, which is the honest trade.
 ///
-/// **Why the PNG and not `Frame 131.svg`.** The SVG in the app folder is
+/// **Why the PNG and not `Frame 131`.** That SVG — now an image set in
+/// the asset catalogue alongside this PNG — is
 /// the same design and renders sharper — its title and disclaimer are real
 /// vector paths and the screenshot it embeds is 1512×1037, against this
 /// PNG's 882×584 overall. It is not used because **it is missing all four
@@ -26,8 +27,8 @@ import SwiftUI
 /// crisper picture that has lost its labels is worse than a soft one that
 /// explains itself.
 ///
-/// If that layer gets re-exported, the SVG is the better asset and this
-/// should switch to it — note that it also contains the heading and the
+/// If that layer gets re-exported, `Frame 131` is the better asset and
+/// this should switch to it — note that it also contains the heading and the
 /// disclaimer, so `header` and `disclaimer` below would become duplicates
 /// and should go at the same time.
 struct OnboardingView: View {

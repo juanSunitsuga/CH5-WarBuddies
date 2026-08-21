@@ -17,23 +17,34 @@ enum RiftboundVisionResources {
 
 /// The handful of design-board colours this package draws with.
 ///
-/// The app target owns the full palette (`RiftboundPalette` in
+/// The app target owns the naming layer (`RiftboundPalette` in
 /// `RiftboundTheme.swift`), but `RiftboundVision` is a package the app
-/// depends on and can't import back the other way. Rather than reach
-/// across that boundary, the four values these overlays actually use are
-/// restated here — same hexes, and worth grepping for both names when a
-/// swatch changes.
+/// depends on and can't import back the other way — nor can it read the
+/// app's `Assets.xcassets`, which is a target resource, not a shared one.
+///
+/// So this module ships `Resources/Palette.xcassets`: the same swatch
+/// names, the same values, loaded through `Bundle.module`. Two catalogues
+/// is a real duplication and the honest cost of the module boundary; what
+/// keeps it from drifting silently is that both are *named* catalogues
+/// with identical colour-set names, so changing a swatch in one and not
+/// the other is a visible diff rather than a buried literal. Grep both
+/// when the board moves.
 enum PlaymatPalette {
-    /// #1D3145 — shadow/stroke for elements.
-    static let elementShadow = Color(red: 0x1D / 255, green: 0x31 / 255, blue: 0x45 / 255)
+    /// #1C3449 — shadow/stroke for elements.
+    static let elementShadow = Color("MainBackground", bundle: .module)
     /// #CEA73F — highlight overlay.
-    static let highlightOverlay = Color(red: 0xCE / 255, green: 0xA7 / 255, blue: 0x3F / 255)
-    /// #C5A560 — playmat overlay.
-    static let playmatOverlay = Color(red: 0xC5 / 255, green: 0xA5 / 255, blue: 0x60 / 255)
+    static let highlightOverlay = Color("HighlightOverlay", bundle: .module)
+    /// #D5A250 — playmat overlay.
+    static let playmatOverlay = Color("PlaymatOverlay", bundle: .module)
     /// #CBCBCB — disabled element stroke.
-    static let disabledElementStroke = Color(red: 0xCB / 255, green: 0xCB / 255, blue: 0xCB / 255)
+    static let disabledElementStroke = Color("DisabledElementStroke", bundle: .module)
     /// #FFF2D6 — regular text.
-    static let regularText = Color(red: 0xFF / 255, green: 0xF2 / 255, blue: 0xD6 / 255)
+    static let regularText = Color("RegularText", bundle: .module)
+    /// #FFFFFF — pure white, for overlay marks that sit on the photograph
+    /// itself rather than on any of the board's own colours.
+    static let pureWhite = Color("PureWhite", bundle: .module)
+    /// #000000 at 20% — the board's one darkening value.
+    static let scrim = Color("Scrim", bundle: .module)
 }
 
 public struct PlaymatOverlayView: View {
