@@ -142,9 +142,13 @@ public struct PendingPlay: Sendable, Equatable {
             let named = eligibleDomains.map { $0.rawValue.capitalized }.joined(separator: " or ")
             // Says where the rune goes, not just the verb. "Recycle" is
             // rules vocabulary (594) that reads as "discard" to anyone who
-            // hasn't memorised it; the rune goes back to the rune deck, and
-            // a player following an instruction needs the destination.
-            steps.append("return \(powerLeft) \(named.isEmpty ? "" : named + " ")rune\(powerLeft == 1 ? "" : "s") to your rune deck")
+            // hasn't memorised it — and the destination is specifically the
+            // *bottom* of the rune deck (594.1.b). That detail is the whole
+            // difference: read as "discard", a player puts the rune
+            // somewhere it can never come back from. The domain is named
+            // because Power is usually domain-locked (130.3) — "a rune" and
+            // "a Fury rune" are different asks.
+            steps.append("recycle \(powerLeft) \(named.isEmpty ? "" : named + " ")rune\(powerLeft == 1 ? "" : "s") to the bottom of your rune deck")
         }
 
         if energyLeft > 0 { costOutstanding = true }

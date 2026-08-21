@@ -88,13 +88,14 @@ public enum CardPlainLanguage {
         type: String,
         energyCost: Int?,
         powerCost: Int,
+        powerDomains: [String] = [],
         printedText: String
     ) -> CardSummary {
         let trimmedType = type.trimmingCharacters(in: .whitespaces)
         let headline = trimmedType.isEmpty ? name : "\(name) — \(trimmedType)"
 
         var parts: [String] = []
-        if let cost = costSentence(energyCost: energyCost, powerCost: powerCost) { parts.append(cost) }
+        if let cost = costSentence(energyCost: energyCost, powerCost: powerCost, domains: powerDomains) { parts.append(cost) }
 
         let explanation = explain(printedText)
         parts.append(contentsOf: explanation.lines)
@@ -108,16 +109,38 @@ public enum CardPlainLanguage {
         return CardSummary(headline: headline, detail: parts.joined(separator: " "))
     }
 
-    /// A card with no cost at all says so. A missing cost line reads as a
-    /// value that failed to load, which invites the player to go looking
-    /// for it on the card.
-    private static func costSentence(energyCost: Int?, powerCost: Int) -> String? {
-        switch (energyCost, powerCost) {
-        case (nil, 0):          return nil
-        case (let e?, 0):       return "Costs \(e) Energy."
-        case (nil, let p):      return "Costs \(p) Power."
-        case (let e?, let p):   return "Costs \(e) Energy and \(p) Power."
+    /// The cost as two physical acts, not two numbers.
+    ///
+    /// "Costs 2 Energy and 1 Power" names the currencies and leaves the
+    /// player to know how each is paid, which is exactly the part they
+    /// don't know: Energy comes from *exhausting* runes (157.2.a) and Power
+    /// from *recycling* them (157.2.b). Recycling means to the **bottom of
+    /// the rune deck** (594.1.b), not to a discard pile — which is the
+    /// reading the word invites, and the one that puts a rune somewhere it
+    /// can never come back from.
+    ///
+    /// Power is usually domain-locked (130.3), so the domain is named when
+    /// the card has one: "recycle 1 Fury rune" is something a player can
+    /// do, where "1 Power" is a symbol to go and look up.
+    ///
+    /// A card with no cost at all still says nothing rather than an empty
+    /// line, which would read as a value that failed to load.
+    private static func costSentence(energyCost: Int?, powerCost: Int, domains: [String]) -> String? {
+        let energy = energyCost ?? 0
+        guard energy > 0 || powerCost > 0 else { return nil }
+
+        var parts: [String] = []
+        if energy > 0 {
+            parts.append("exhaust \(energy) rune\(energy == 1 ? "" : "s")")
         }
+        if powerCost > 0 {
+            let named = domains
+                .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+                .joined(separator: " or ")
+            let domainPrefix = named.isEmpty ? "" : named + " "
+            parts.append("recycle \(powerCost) \(domainPrefix)rune\(powerCost == 1 ? "" : "s") to the bottom of your rune deck")
+        }
+        return "To play it, " + parts.joined(separator: " and ") + "."
     }
 
     // MARK: - Instructions

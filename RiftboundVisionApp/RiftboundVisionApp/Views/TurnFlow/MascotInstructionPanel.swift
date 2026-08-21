@@ -112,6 +112,7 @@ struct MascotInstructionPanel: View {
             type: printing.classification.type,
             energyCost: printing.attributes.energy,
             powerCost: printing.attributes.power ?? 0,
+            powerDomains: printing.classification.domain,
             printedText: printing.text.plain
         )
         return (summary.headline, summary.detail, false)
