@@ -177,14 +177,6 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
         CardAbilityParser.instructions(for: text(for: cardDefinitionID))
     }
 
-    /// The same parse, keyed by card alone — what `GameEngine` calls when a
-    /// card it just played needs resolving. The text comes from this
-    /// package's corpus, which is the whole reason the engine can ask at
-    /// all: it holds `ObjectID`s and a `GameState`, never card text.
-    public func abilities(of cardDefinitionID: CardDefID) async -> [EffectInstruction] {
-        await parseAbility(rawText: "", cardDefinitionID: cardDefinitionID)
-    }
-
     /// Player-facing reading of a card's abilities, each named by the Game
     /// Action it resolves to (586–607). What the app puts on screen when a
     /// card is played or selected.
