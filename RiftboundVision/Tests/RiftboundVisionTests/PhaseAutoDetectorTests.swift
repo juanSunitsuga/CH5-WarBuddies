@@ -110,8 +110,13 @@ struct PhaseAutoDetectorTests {
             card(2, "Mystic Poro", zone: .battlefield, slot: 1)
         ])
 
-        #expect(progress.pointsToAward == 2)
+        #expect(progress.pointsToClaim == 2)
         #expect(progress.isComplete)
+        // The count is advice, not an award: nothing adds it for the
+        // player, so the line has to *ask* them to. A headline that only
+        // states the fact ("Holding 2 battlefields") reads as a status
+        // message, and status messages get watched rather than acted on.
+        #expect(progress.headline.contains("Add 2 points"))
     }
 
     /// 631: once per Battlefield per turn — two of your units on the *same*
@@ -123,7 +128,7 @@ struct PhaseAutoDetectorTests {
             card(2, "Mystic Poro", zone: .battlefield, slot: 0)
         ])
 
-        #expect(progress.pointsToAward == 1)
+        #expect(progress.pointsToClaim == 1)
     }
 
     /// 181.4.b keeps a contested Battlefield with whoever already held it,
@@ -136,7 +141,7 @@ struct PhaseAutoDetectorTests {
             card(2, "Theirs", zone: .battlefield, slot: 0, owner: .player2)
         ])
 
-        #expect(progress.pointsToAward == 0)
+        #expect(progress.pointsToClaim == 0)
         #expect(progress.detail?.contains("contested") == true)
     }
 
@@ -146,8 +151,9 @@ struct PhaseAutoDetectorTests {
             card(1, "Tibbers", zone: .base)
         ])
 
-        #expect(progress.pointsToAward == 0)
+        #expect(progress.pointsToClaim == 0)
         #expect(progress.isComplete)
+        #expect(progress.headline.contains("No points"))
     }
 
     // MARK: - Channel (515.3)

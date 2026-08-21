@@ -1,5 +1,6 @@
 import SwiftUI
 import RiftboundVision
+import RiftboundTextProcessing
 
 /// The bottom band: BonBon, and one line telling the player what to do.
 ///
@@ -28,10 +29,18 @@ struct MascotInstructionPanel: View {
     var misplacedCards: [MisplacedCard] = []
     /// Most cards are landing outside every calibrated zone.
     var needsCalibration = false
+    /// The first pipeline stage that is switched off, if any. Ranked high
+    /// because it changes what every other line here is worth: with the
+    /// Expert System off, nothing below is being computed at all, and a
+    /// band that just went quiet is indistinguishable from a broken one.
+    var inactiveStage: String?
     /// Whether the app should be judging moves at all — only the Action
     /// Phase (516.2). During the fixed phases a verdict on every card the
     /// player touches while following a script buries the instruction.
     var validatesPlayerMoves = false
+    /// The card the player has tapped, in the strip or on the camera
+    /// overlay. `nil` when nothing is selected.
+    var selectedCard: CardPrinting?
     /// Said when nothing else has anything to report, so the band is never
     /// empty — an empty speech panel reads as a broken one.
     var fallback: String
@@ -47,6 +56,25 @@ struct MascotInstructionPanel: View {
     /// then a misplaced card, then a play that can't be paid for, then the
     /// engine's verdict, then the phase.
     private func message(now: Date) -> (headline: String, detail: String?, isAlert: Bool) {
+        if let inactiveStage {
+            return ("\(inactiveStage) is switched off.",
+                    "Turn it back on in Pipeline Settings and I'll read the table again. Until then the camera still shows the board, but nothing on it is being judged.",
+                    true)
+        }
+        // A tap is the one message on this list the player *asked* for.
+        // Everything below is the app volunteering something; this is it
+        // answering a direct question, so it outranks the lot — with the
+        // single exception above, because with the pipeline off the app
+        // can't claim to know anything about the table.
+        //
+        // It outranks the corrections too, which looks aggressive until you
+        // try it the other way: tapping a card during a calibration warning
+        // then does nothing at all, and a button that does nothing reads as
+        // broken. This is dismissable — tap the card again — and the
+        // warning comes straight back, so nothing is lost, only deferred.
+        if let selectedCard {
+            return cardExplanation(selectedCard)
+        }
         if needsCalibration {
             return ("Cards aren't landing on the mat.",
                     "Turn on Calibrate Playmat and drag the outline onto your mat — until then nothing can be read as a move.",
@@ -73,6 +101,22 @@ struct MascotInstructionPanel: View {
         return (fallback, nil, false)
     }
 
+    /// What one card is, for a player who doesn't know it.
+    ///
+    /// The wording lives in `CardPlainLanguage.describeCard` so it can be
+    /// tested without a running app; this is only the translation from a
+    /// `CardPrinting` to the plain values it takes.
+    private func cardExplanation(_ printing: CardPrinting) -> (headline: String, detail: String?, isAlert: Bool) {
+        let summary = CardPlainLanguage.describeCard(
+            name: printing.name,
+            type: printing.classification.type,
+            energyCost: printing.attributes.energy,
+            powerCost: printing.attributes.power ?? 0,
+            printedText: printing.text.plain
+        )
+        return (summary.headline, summary.detail, false)
+    }
+
     var body: some View {
         // Re-evaluates once a second so a verdict can age out on its own,
         // without the controller scheduling a timer per instruction.
@@ -92,7 +136,7 @@ struct MascotInstructionPanel: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(message.headline.strippingRuleCitation)
+                Text(CardPlainLanguage.simplify(message.headline))
                     .font(RiftboundFont.iconic2)
                     .foregroundStyle(message.isAlert ? RiftboundPalette.highlightOverlay : RiftboundPalette.iconicText)
                     .minimumScaleFactor(0.45)
@@ -100,7 +144,7 @@ struct MascotInstructionPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let detail = message.detail {
-                    Text(detail.strippingRuleCitation)
+                    Text(CardPlainLanguage.simplify(detail))
                         .font(RiftboundFont.body)
                         .foregroundStyle(RiftboundPalette.regularText.opacity(0.8))
                         .fixedSize(horizontal: false, vertical: true)
@@ -122,21 +166,6 @@ struct MascotInstructionPanel: View {
     }
 }
 
-
-private extension String {
-    /// Strips a trailing rules citation like " (Rule 515.1)" or
-    /// " (Rules 139.4, 157.2)" from `PhaseAutoDetector`/`CardAbilityParser`
-    /// text. Those citations are for a maintainer cross-referencing the
-    /// code against the rulebook — a player reading what BonBon says
-    /// mid-game just wants the instruction. Stripped here, at the one place
-    /// this panel renders any of that text, rather than at each of the
-    /// dozen-plus call sites the citations actually live in — this reads on
-    /// screen only, so the citations stay intact in the source (and in
-    /// whatever tests assert on them) for the case they're useful there.
-    var strippingRuleCitation: String {
-        replacingOccurrences(of: #"\s\((?:Rule|Rules)\s[0-9][^)]*\)"#, with: "", options: .regularExpression)
-    }
-}
 
 #Preview {
     VStack(spacing: 16) {
