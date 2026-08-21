@@ -66,18 +66,84 @@ public actor GameEngine {
             return .unrecognizedEvent(event)
         }
 
-        switch LegalityValidator.validate(candidateAction, in: snapshot, proposedBy: proposer) {
+        return await runValidated(candidateAction, in: snapshot, proposedBy: proposer, fallbackEvent: event)
+    }
+
+    /// The landing event `process(_:)` would otherwise have run — held
+    /// back and resubmitted once the caller has watched a Play's payment
+    /// settle. `observedExhaustedRuneCount` is only known at that point
+    /// (`RiftboundVision.PendingPlay` watches Energy/Power get paid over
+    /// several frames *after* the card lands), well after the moment
+    /// `process(_:)` would normally fire.
+    ///
+    /// This still asks `translator` to classify `event` — same SQLite/
+    /// on-device-model/regex resolution `process(_:)` uses, so a deferred
+    /// Play gets exactly the same card-type and ability intelligence an
+    /// immediate one would have, not a re-implementation of it here. Only
+    /// the physically observed Rune count, which the translator has no way
+    /// to know, is patched onto the result before validating.
+    public func resolveDeferredPlay(
+        for event: ObservedTableEvent,
+        observedExhaustedRuneCount: Int?,
+        proposedBy player: PlayerID
+    ) async -> PlayerInstruction {
+        let snapshot = await store.currentState
+
+        guard let candidateAction = await translator.inferAction(
+            from: event, in: snapshot, proposedBy: player
+        ) else {
+            return .unrecognizedEvent(event)
+        }
+
+        // The translator gets the final say on what this event means —
+        // if it no longer reads as a Play (e.g. the card's since been
+        // reclassified), trust that rather than forcing one.
+        guard case .play(let card, let destination, let additionalChoices, _) = candidateAction else {
+            return await runValidated(candidateAction, in: snapshot, proposedBy: player, fallbackEvent: event)
+        }
+        let action = GameAction.play(
+            card: card,
+            destination: destination,
+            additionalChoices: additionalChoices,
+            observedExhaustedRuneCount: observedExhaustedRuneCount
+        )
+        return await runValidated(action, in: snapshot, proposedBy: player, fallbackEvent: event)
+    }
+
+    /// Shared tail of `process(_:)`/`submitPlay(...)`: validate, and if
+    /// legal, apply + Cleanup as one atomic transform through the store
+    /// (CLAUDE.md point 2/3), then report whichever consequence outranks a
+    /// bare acknowledgement.
+    ///
+    /// For a `.play`, the played card's ability is parsed *before* that
+    /// mutation — `GameActionApplier` stays pure/synchronous and never
+    /// talks to `translator` itself (CLAUDE.md point 3), so this is the
+    /// one seam that does. A Unit executes its ability immediately inside
+    /// the same mutation; a Spell carries it on the `ChainItem` it pushes
+    /// and executes it later, whenever that item resolves — either way,
+    /// exactly one `store.mutate` call, no separate pass needed afterward.
+    private func runValidated(
+        _ action: GameAction,
+        in snapshot: GameState,
+        proposedBy proposer: PlayerID,
+        fallbackEvent event: ObservedTableEvent
+    ) async -> PlayerInstruction {
+        switch LegalityValidator.validate(action, in: snapshot, proposedBy: proposer) {
         case .failure(let reason):
             return .actionRejected(observed: event, reason: reason)
 
         case .success:
-            // 615/519: apply the action, then Cleanup — both must run as
-            // one atomic transform through the store (CLAUDE.md point 2/3).
+            let abilityInstructions = await abilityInstructions(for: action, in: snapshot, proposedBy: proposer)
+
             let consequences = ConsequenceBox()
+            var abilitySummaries: [String] = []
             _ = await store.mutate { state in
-                consequences.events = GameActionApplier.apply(candidateAction, to: &state, proposedBy: proposer)
+                consequences.events = GameActionApplier.apply(action, to: &state, proposedBy: proposer, abilityInstructions: abilityInstructions)
                 state = Cleanup.run(state)
+                abilitySummaries = state.abilityOutcomeSummaries
+                state.abilityOutcomeSummaries = []
             }
+            let followUp = abilitySummaries.isEmpty ? nil : FollowUp(description: abilitySummaries.joined(separator: " "))
 
             // 632/633: an action can *cause* something the player needs
             // told that isn't the action itself — a Conquer, a Hold, a win.
@@ -89,8 +155,21 @@ public actor GameEngine {
             if let scored = consequences.events.first(where: { if case .scored = $0 { return true } else { return false } }) {
                 return scored
             }
-            return .actionAccepted(candidateAction, followUp: nil)
+            return .actionAccepted(action, followUp: followUp)
         }
+    }
+
+    /// `.play`'s card, parsed — `[]` for every other `GameAction` (nothing
+    /// else in this vocabulary triggers an ability) and for a `.play`
+    /// whose card can't be found in `snapshot` (shouldn't happen; caught
+    /// as `.cardNotInHand` moments later by `LegalityValidator` regardless,
+    /// so this just declines to guess rather than duplicating that check).
+    private func abilityInstructions(for action: GameAction, in snapshot: GameState, proposedBy player: PlayerID) async -> [EffectInstruction] {
+        guard case .play(let cardID, _, _, _) = action,
+              let definitionID = snapshot.zones[player]?.hand.first(where: { $0.id == cardID })?.definitionID else {
+            return []
+        }
+        return await translator.parseAbility(cardDefinitionID: definitionID)
     }
 
     /// Carries the applier's events out of the `store.mutate` closure.

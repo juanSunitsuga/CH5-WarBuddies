@@ -87,7 +87,7 @@ struct ShowdownFocusTests {
             definitionID: CardDefID(rawValue: "spell"), owner: playerA,
             name: "Showdown Spell", type: .spell
         )
-        ChainResolver.push(.spell(spell, targets: []), proposedBy: playerA, to: &state)
+        ChainResolver.push(.spell(spell, targets: [], instructions: []), proposedBy: playerA, to: &state)
 
         ChainResolver.pass(by: playerA, in: &state)
         let outcome = ChainResolver.pass(by: playerB, in: &state)

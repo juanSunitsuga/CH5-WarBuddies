@@ -10,6 +10,14 @@ import RiftboundVision
 /// pair read as two cards. This is only the words the art can't tell you.
 struct InlineCardDetail: View {
     let printing: CardPrinting
+    /// Rules text for `printing`, resolved by the caller (see
+    /// `CameraPipelineController.description(for:)`) — a simplified,
+    /// first-timer-friendly rewrite where the card database has one,
+    /// falling back through its tag-resolved copy to the raw printed text.
+    /// Passed in rather than read from `printing.text.plain` directly so
+    /// this view doesn't need its own `CameraPipelineController` reference
+    /// just to ask one question.
+    let description: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -36,7 +44,7 @@ struct InlineCardDetail: View {
     }
 
     private var abilityText: String {
-        let text = printing.text.plain.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = description.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? "No printed ability." : text
     }
 

@@ -111,13 +111,18 @@ enum TestFixtures {
 /// testing guidance: this is the seam `process` was written to expose).
 struct FixedActionTranslator: ActionTranslating {
     let action: GameAction?
+    /// Returned by `parseAbility` regardless of `cardDefinitionID` — good
+    /// enough for a single-card test, which is all this fixture is used
+    /// for. Defaults empty so existing call sites that don't care about
+    /// ability resolution keep seeing exactly the old no-op behavior.
+    var abilityInstructions: [EffectInstruction] = []
 
     func inferAction(from event: ObservedTableEvent, in state: GameState, proposedBy player: PlayerID) async -> GameAction? {
         action
     }
 
-    func parseAbility(rawText: String, cardDefinitionID: CardDefID) async -> [EffectInstruction] {
-        []
+    func parseAbility(cardDefinitionID: CardDefID) async -> [EffectInstruction] {
+        abilityInstructions
     }
 }
 

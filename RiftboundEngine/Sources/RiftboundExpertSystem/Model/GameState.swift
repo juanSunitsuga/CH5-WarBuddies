@@ -113,6 +113,17 @@ public struct GameState: Sendable {
     /// not the engine.
     public var pendingLimitedActions: [PlayerID: [GameAction]] = [:]
 
+    /// What every `EffectExecutor.run(...)` call produced this mutation —
+    /// a Unit's own "when you play me" (563.1.c) resolves it inline inside
+    /// `applyPlay`, a Spell's or Ability's resolves it inline inside
+    /// `applyResolvedChainItem`. Both append here rather than returning it
+    /// directly because `GameActionApplier.apply`'s return type is shared
+    /// across every `GameAction` case and stays `[PlayerInstruction]`
+    /// (scoring/win events only) — this is the equivalent channel for
+    /// "what an ability just did," read by `GameEngine` right after
+    /// `store.mutate` to build a `FollowUp` for the player.
+    public var abilityOutcomeSummaries: [String] = []
+
     public var turnPlayer: PlayerID { turnOrder[turnPlayerIndex] }
 
     /// Rule 589.2 — the hook effect execution (a resolving Chain item, or a

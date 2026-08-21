@@ -222,7 +222,7 @@ struct RuneEconomyTests {
             name: "On The Chain", type: .spell
         )
         state.turnState = .neutralClosed(Chain(
-            firstItem: .spell(spell, targets: []),
+            firstItem: .spell(spell, targets: [], instructions: []),
             activePlayer: playerA,
             relevantPlayers: [playerA, playerB]
         ))
