@@ -262,6 +262,16 @@ public final class ObjectTracker: @unchecked Sendable {
     /// past it.
     private let labelSwitchMargin: Float = 3.0
 
+    /// How long to keep an identified card that has gone out of sight, in
+    /// polls, outside the positionally-stable zones.
+    ///
+    /// Sits between the 15 an anonymous track gets and the 300 a card
+    /// parked on a battlefield gets. A hand reaching across the base and
+    /// resting there covers a card for longer than 15 polls, and dropping
+    /// the track meant losing the identity — which is the expensive part,
+    /// since a rebuilt track has to re-earn its commitment from scratch.
+    private let committedOcclusionToleranceFrames = 60
+
     /// Labels that are settled and will not be reconsidered for the life of
     /// the track.
     ///
@@ -346,6 +356,40 @@ public final class ObjectTracker: @unchecked Sendable {
         labelVotes[id] = nil
     }
 
+    /// Ranks a candidate pairing by distance *and* by whether the detector
+    /// agrees with the identity this track already committed to.
+    ///
+    /// Geometry alone can't separate two cards lying side by side: whichever
+    /// detection happens to land a pixel closer claims the track, and the
+    /// two swap identities with nothing on the table having moved. That is
+    /// the failure this addresses — and it is only addressable now that a
+    /// track *has* a settled identity to agree or disagree with.
+    ///
+    /// A matching label pulls a pair to the front of the queue; a
+    /// contradicting one pushes it back without forbidding it, because the
+    /// detector does misread single frames and a track whose card really
+    /// did get swapped must still be able to re-match. Uncommitted tracks
+    /// and unlabelled detections are scored on distance alone, exactly as
+    /// before.
+    private func identityAdjusted(
+        _ distance: CGFloat,
+        track id: TrackedObjectID,
+        detection: Detection
+    ) -> CGFloat {
+        guard let committed = committedLabels[id],
+              let observed = detection.recognizedLabel else { return distance }
+        return observed == committed
+            ? distance * identityAgreementFactor
+            : distance * identityConflictFactor
+    }
+
+    /// Scales the distance of a pairing the detector agrees with, so it is
+    /// considered before a marginally-closer detection of a different card.
+    private let identityAgreementFactor: CGFloat = 0.4
+    /// And of one it contradicts. Deliberately finite: a real card swap has
+    /// to remain matchable once the closer candidates are taken.
+    private let identityConflictFactor: CGFloat = 2.5
+
     /// How far a card may travel between two polls and still be considered
     /// the same card, expressed as a multiple of its own size.
     ///
@@ -425,7 +469,7 @@ public final class ObjectTracker: @unchecked Sendable {
         // case, where a moving card stops dead and the prediction
         // overshoots.
         let elapsed = previousTimestamp.map { timestamp - $0 } ?? 0
-        var candidatePairs: [(distance: CGFloat, trackID: TrackedObjectID, detectionIndex: Int)] = []
+        var candidatePairs: [(score: CGFloat, trackID: TrackedObjectID, detectionIndex: Int)] = []
         for (existingID, existing) in tracked {
             let predicted = CGPoint(
                 x: existing.center.x + existing.velocity.dx * elapsed,
@@ -436,11 +480,18 @@ public final class ObjectTracker: @unchecked Sendable {
                 let toLastSeen = hypot(detection.center.x - existing.center.x, detection.center.y - existing.center.y)
                 let toPredicted = hypot(detection.center.x - predicted.x, detection.center.y - predicted.y)
                 let distance = min(toLastSeen, toPredicted)
+                // The hard gate stays on real distance — identity is
+                // allowed to reorder candidates, never to match a card to
+                // something on the far side of the table.
                 guard distance <= matchRadius(for: detection) else { continue }
-                candidatePairs.append((distance, existingID, index))
+                candidatePairs.append((
+                    identityAdjusted(distance, track: existingID, detection: detection),
+                    existingID,
+                    index
+                ))
             }
         }
-        candidatePairs.sort { $0.distance < $1.distance }
+        candidatePairs.sort { $0.score < $1.score }
 
         var claimedDetectionIndices = Set<Int>()
         for pair in candidatePairs {
@@ -570,7 +621,20 @@ public final class ObjectTracker: @unchecked Sendable {
         // Unmatched existing tracks: still-occluded, or finally dropped.
         var disappearedIDs: [TrackedObjectID] = []
         for (id, track) in tracked where !matchedTrackIDs.contains(id) {
-            let tolerance = track.currentZone.isPositionallyStable ? settledOcclusionToleranceFrames : occlusionToleranceFrames
+            // Three tiers of patience, by how much is known about the
+            // object. A card parked in a stable zone is barely re-checked
+            // at all; a card whose identity is settled is worth waiting for
+            // through a hand passing over it; an unidentified blob is
+            // dropped promptly, because keeping it costs an ID and tells
+            // nobody anything.
+            let tolerance: Int
+            if track.currentZone.isPositionallyStable {
+                tolerance = settledOcclusionToleranceFrames
+            } else if track.isIdentityCommitted {
+                tolerance = committedOcclusionToleranceFrames
+            } else {
+                tolerance = occlusionToleranceFrames
+            }
             if frameIndex - track.lastSeenFrame > tolerance {
                 disappearedIDs.append(id)
                 tracked.removeValue(forKey: id)
