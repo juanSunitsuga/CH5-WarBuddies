@@ -214,11 +214,11 @@ struct TurnControlBar: View {
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 2) {
-                Text(headline)
+                Text(headline.strippingRuleCitation)
                     .font(RiftboundFont.heading)
                     .foregroundStyle(RiftboundPalette.regularText)
                 if let detail {
-                    Text(detail)
+                    Text(detail.strippingRuleCitation)
                         .font(RiftboundFont.body)
                         .foregroundStyle(RiftboundPalette.regularText.opacity(0.75))
                         .fixedSize(horizontal: false, vertical: true)
@@ -230,7 +230,7 @@ struct TurnControlBar: View {
                 // once it's been sitting there a few turns.
                 if !steps.isEmpty {
                     ForEach(steps.prefix(3), id: \.self) { step in
-                        Text("• \(step)")
+                        Text("• \(step.strippingRuleCitation)")
                             .font(RiftboundFont.body)
                             .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
                             .lineLimit(1)
@@ -380,5 +380,20 @@ struct TurnControlBar: View {
         case .champion: return "Champion zone"
         case .unknown: return "off-mat area"
         }
+    }
+}
+
+private extension String {
+    /// Strips a trailing rules citation like " (Rule 515.1)" or
+    /// " (Rules 139.4, 157.2)" from `PhaseAutoDetector`/`CardAbilityParser`
+    /// text. Those citations are for a maintainer cross-referencing the
+    /// code against the rulebook — a player reading the instruction strip
+    /// mid-game just wants the instruction. Stripped here, at the one
+    /// place this bar renders any of that text, rather than at each of the
+    /// dozen-plus call sites the citations actually live in — this reads
+    /// on screen only, so the citations stay intact in the source (and in
+    /// whatever tests assert on them) for the case they're useful there.
+    var strippingRuleCitation: String {
+        replacingOccurrences(of: #"\s\((?:Rule|Rules)\s[0-9][^)]*\)"#, with: "", options: .regularExpression)
     }
 }
