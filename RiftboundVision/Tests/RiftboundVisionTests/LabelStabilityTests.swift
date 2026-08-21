@@ -65,6 +65,47 @@ struct LabelStabilityTests {
         #expect(Self.settledLabel(readings: readings) == "Petty Officer")
     }
 
+    /// Feeds a sequence of readings for one stationary card and returns the
+    /// reported label after *every* poll, not just the last — so a test can
+    /// assert on how often it actually changed, not only where it ended up.
+    private static func reportedLabelsOverTime(readings: [(String, Float)]) -> [String?] {
+        let tracker = ObjectTracker()
+        let mapper = zoneMapper()
+        var results: [String?] = []
+        for (index, reading) in readings.enumerated() {
+            let update = tracker.update(
+                detections: [detection(label: reading.0, confidence: reading.1)],
+                zoneMapper: mapper, frameIndex: index + 1,
+                timestamp: Double(index) * 0.1,
+                previousTimestamp: index == 0 ? nil : Double(index - 1) * 0.1
+            )
+            results.append(update.objects.first?.recognizedLabel)
+        }
+        return results
+    }
+
+    /// A well-established label used to lose its lead the moment a
+    /// challenger's *cumulative* total edged past it by any amount at all —
+    /// here, 4 solid "Annie Fiery" reads (3.6 accumulated) get overtaken by
+    /// the 4th consecutive "Annie Stubborn" read (3.80) under plain
+    /// argmax-of-votes, even though Annie Fiery is clearly the
+    /// better-attested card. `labelSwitchMargin` requires the challenger to
+    /// clear the incumbent by a decisive amount (here it never does — 4.75
+    /// vs. 3.6 falls short of the 3.0 margin), so the reported name stays
+    /// put.
+    @Test("A narrowly-overtaking challenger doesn't displace an established label")
+    func narrowOvertakeDoesNotDisplace() {
+        let readings: [(String, Float)] = [
+            ("Annie Fiery", 0.90), ("Annie Fiery", 0.90),
+            ("Annie Fiery", 0.90), ("Annie Fiery", 0.90), ("Annie Fiery", 0.90),
+            ("Annie Stubborn", 0.95), ("Annie Stubborn", 0.95),
+            ("Annie Stubborn", 0.95), ("Annie Stubborn", 0.95), ("Annie Stubborn", 0.95),
+        ]
+        let reported = Self.reportedLabelsOverTime(readings: readings)
+
+        #expect(reported.allSatisfy { $0 == "Annie Fiery" })
+    }
+
     /// A detector that stops recognizing for a frame — a hand partly over
     /// the art — must not blank an established identity.
     @Test("A frame with no label keeps the established identity")

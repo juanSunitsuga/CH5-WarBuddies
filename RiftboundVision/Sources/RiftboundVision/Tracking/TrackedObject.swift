@@ -61,7 +61,10 @@ public struct TrackedObject: Sendable, Equatable {
     /// *is* recognized, `CardPrinting.isExhausted(observedBoundingBox:)` is
     /// the better answer, since it knows whether the card is printed
     /// portrait or landscape.
-    public var stance: CardStance { boundingBox.cardStance }
+    ///
+    /// Always `.ready` in the Battlefield zone — see `stance(knowing:)`'s
+    /// doc comment for why.
+    public var stance: CardStance { currentZone == .battlefield ? .ready : boundingBox.cardStance }
 
     /// The class label a recognizer attached to the detection that last
     /// matched this track, if any (e.g. `CoreMLCardDetector`'s YOLO class
@@ -116,12 +119,19 @@ public extension TrackedObject {
     /// those are printed **landscape**, so shape alone calls them exhausted
     /// the moment they're placed and never stops.
     ///
+    /// Also always `.ready` in the Battlefield zone, same as `stance` — a
+    /// Unit moved there to fight isn't tracked as Exhausted/Ready by shape
+    /// or printing either, so this doesn't fall through to
+    /// `CardPrinting.isExhausted` at all once an object is on the
+    /// Battlefield.
+    ///
     /// Defined here because two callers already needed it independently
     /// (durable board state and the phase auto-detector) and the second one
     /// got it wrong by reaching for `stance` — exactly the duplication
     /// CLAUDE.md warns about, where one copy silently disagrees with the
     /// other.
     func stance(knowing printing: CardPrinting?) -> CardStance {
+        guard currentZone != .battlefield else { return .ready }
         guard let printing else { return stance }
         return printing.isExhausted(observedBoundingBox: boundingBox) ? .exhausted : .ready
     }

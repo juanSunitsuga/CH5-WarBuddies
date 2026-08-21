@@ -95,8 +95,26 @@ struct CameraStageView: View {
                         .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                         .allowsHitTesting(false)
 
-                    VStack {
+                    VStack(spacing: 8) {
                         detectionCountBadge
+                        // Only ever visible when the trained model didn't
+                        // load. Sits under the card count rather than in
+                        // the transient error slot at the bottom because
+                        // it's true for the whole session, not a passing
+                        // camera condition — and because an app that
+                        // detects cards but names none of them otherwise
+                        // looks like it's simply working badly.
+                        if let warning = pipeline.detectorFallbackWarning {
+                            Text("Card recognition unavailable — \(warning)")
+                                .font(RiftboundFont.body)
+                                .foregroundStyle(RiftboundPalette.regularText)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 520)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(RiftboundPalette.primaryButton, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
                         Spacer()
                     }
                     .padding(.top, 12)
@@ -116,30 +134,24 @@ struct CameraStageView: View {
             }
     }
 
+    /// Player-facing: how many cards the pipeline currently believes are on
+    /// the table. Reads `trackedObjects`, not `detections` — the raw
+    /// per-poll count flickered between neighbouring numbers at the
+    /// detector's own noise level, several times a second, even with
+    /// nothing on the table actually changing (same class of bug the card
+    /// strip had). `trackedObjects` only changes in response to a real
+    /// tracked appearance/disappearance. fps and table-event counts used to
+    /// sit here too; those are developer telemetry, not game state, and now
+    /// live in Pipeline Settings (Help & Diagnostics) instead of a
+    /// permanent on-camera HUD.
     private var detectionCountBadge: some View {
-        HStack(spacing: 8) {
-            Text(pipeline.detections.isEmpty ? "No cards detected" : "\(pipeline.detections.count) card\(pipeline.detections.count == 1 ? "" : "s") detected")
-            // Visible proof the reconnected Object Tracking + Area of
-            // Region pipeline (expertSystemAdapter) is actually producing
-            // events, not just structurally wired — see
-            // CameraPipelineController.observedEvents' doc comment.
-            if !pipeline.observedEvents.isEmpty {
-                Text("· \(pipeline.observedEvents.count) table event\(pipeline.observedEvents.count == 1 ? "" : "s")")
-                    .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
-            }
-            // The measured detection rate, not a configured one — this is
-            // what the machine actually sustains.
-            if pipeline.detectionsPerSecond > 0 {
-                Text("· \(pipeline.detectionsPerSecond, specifier: "%.0f") fps")
-                    .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
-            }
-        }
-        .font(RiftboundFont.body)
-        .foregroundStyle(RiftboundPalette.regularText)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-        .background(RiftboundPalette.elementShadow.opacity(0.85), in: Capsule())
-        .overlay(Capsule().stroke(RiftboundPalette.elementStroke.opacity(0.7), lineWidth: 1))
+        Text(pipeline.trackedObjects.isEmpty ? "No cards detected" : "\(pipeline.trackedObjects.count) card\(pipeline.trackedObjects.count == 1 ? "" : "s") detected")
+            .font(RiftboundFont.body)
+            .foregroundStyle(RiftboundPalette.regularText)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(RiftboundPalette.elementShadow.opacity(0.85), in: Capsule())
+            .overlay(Capsule().stroke(RiftboundPalette.elementStroke.opacity(0.7), lineWidth: 1))
     }
 
     /// Aspect-fit scale factor, matching `.aspectRatio(contentMode: .fit)`

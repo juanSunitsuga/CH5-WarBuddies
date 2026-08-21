@@ -281,7 +281,19 @@ final class CameraPipelineController: ObservableObject {
     /// reconnected Object Tracking + Area of Region pipeline is really
     /// producing real events, and the seam a future GameEngine wiring
     /// would read from.
-    @Published private(set) var observedEvents: [RiftboundExpertSystem.ObservedTableEvent] = []
+    ///
+    /// Deliberately **not** `@Published`. This type is an
+    /// `ObservableObject`, whose change signal carries no information about
+    /// *which* property changed — so every mutation invalidates every view
+    /// observing it, which here is `ContentView` (the camera stage and all
+    /// three overlays) and `DetectedCardsPanel` (whose rows each fetch
+    /// full-size card art). Publishing this meant a full re-render of the
+    /// camera and the sidebar on every table event, to keep a diagnostic
+    /// count up to date and nothing else. The count still tracks live in
+    /// practice: the settings popover is re-rendered by the genuinely
+    /// published per-poll properties (`detections`, `trackedObjects`)
+    /// anyway, and re-reads this when it does.
+    private(set) var observedEvents: [RiftboundExpertSystem.ObservedTableEvent] = []
 
 
     /// The tracker's own view of the table — stable IDs and centroids,
@@ -341,7 +353,22 @@ final class CameraPipelineController: ObservableObject {
     let battlefieldSlotIDs: [Int: BattlefieldID] = [0: BattlefieldID()]
 
     private let camera = AVFoundationCameraCapture()
-    private let detector: any ObjectDetecting = CardDetectionModelLoader.loadDetector()
+    private let loadedDetector = CardDetectionModelLoader.loadDetector()
+    private var detector: any ObjectDetecting { loadedDetector.detector }
+
+    /// Set when the trained Core ML model couldn't be loaded and the app
+    /// is running on the geometric fallback detector, which finds cards
+    /// but can't say which card each one is.
+    ///
+    /// Separate from `errorMessage` on purpose: that one is for transient
+    /// camera conditions and gets cleared when they resolve (a reconnect,
+    /// an interruption ending). This is a condition fixed for the whole
+    /// session — the model either loaded at launch or it didn't — so it
+    /// must not be cleared by an unrelated camera event. Surfacing it at
+    /// all is the point: the fallback used to be a `print` nobody reads,
+    /// so a mis-filed model looked exactly like a working app that had
+    /// stopped recognizing anything.
+    var detectorFallbackWarning: String? { loadedDetector.fallbackReason }
     private let ciContext = CIContext()
 
     /// Preview refresh ceiling. The picture cannot usefully update faster
@@ -819,19 +846,38 @@ final class CameraPipelineController: ObservableObject {
         }.value
     }
 
-    /// Distinct printings behind the current detections, in the order they
-    /// were detected.
+    /// Distinct printings behind the currently-*tracked* cards, oldest track
+    /// first.
     ///
     /// Deduped because several boxes can resolve to the same printing (two
     /// copies of the same rune) and a list should name a card once. Lives
     /// here rather than in a view because two now need it — the card strip
     /// and the sidebar — and two copies of "what's on the table" could
     /// disagree about what the player is looking at.
+    ///
+    /// Reads `trackedObjects`, not `detections`, on purpose. `detections` is
+    /// the raw, per-poll detector output — no identity, no occlusion
+    /// tolerance, and (by design, for the live on-camera overlay) not run
+    /// through `ObjectTracker`'s label-vote stabilization at all. Building
+    /// this list from it meant every card flickered in and out, and renamed
+    /// itself, at the raw detector's own noise level — several times a
+    /// second, even for a card lying dead still — because that's exactly
+    /// what `detections` is supposed to expose for the overlay.
+    /// `trackedObjects` is the stabilized output of the same poll: a card
+    /// keeps its place through brief occlusion (a hand passing over it) and
+    /// its name only changes when the evidence for a different card is
+    /// actually decisive, not on every ambiguous frame.
+    ///
+    /// Sorted by `TrackedObjectID` rather than relying on the underlying
+    /// storage's order, which isn't guaranteed stable across mutations — IDs
+    /// are assigned in increasing order as cards first appear, so this
+    /// reproduces "in detection order" deterministically instead of by
+    /// accident.
     var cardsOnTable: [CardPrinting] {
         var seen = Set<String>()
         var result: [CardPrinting] = []
-        for detection in detections {
-            guard let label = detection.recognizedLabel,
+        for object in trackedObjects.sorted(by: { $0.id < $1.id }) {
+            guard let label = object.recognizedLabel,
                   let printing = cardDatabase.printing(approximatelyNamed: label),
                   seen.insert(printing.id).inserted else { continue }
             result.append(printing)
