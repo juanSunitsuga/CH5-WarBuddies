@@ -112,6 +112,7 @@ struct MascotInstructionPanel: View {
             type: printing.classification.type,
             energyCost: printing.attributes.energy,
             powerCost: printing.attributes.power ?? 0,
+            powerDomains: printing.classification.domain,
             printedText: printing.text.plain
         )
         return (summary.headline, summary.detail, false)
@@ -136,7 +137,7 @@ struct MascotInstructionPanel: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(CardPlainLanguage.simplify(message.headline))
+                Text(CardPlainLanguage.tidy(message.headline))
                     .font(RiftboundFont.iconic2)
                     .foregroundStyle(message.isAlert ? RiftboundPalette.highlightOverlay : RiftboundPalette.iconicText)
                     .minimumScaleFactor(0.45)

@@ -174,18 +174,24 @@ public struct PhaseAutoDetector: Sendable {
 
         guard !exhausted.isEmpty else {
             return Progress(
-                headline: "Everything is upright.",
-                detail: "Nothing left to ready — moving on.",
+                headline: "All upright.",
+                detail: "Nothing left to turn — moving on.",
                 isComplete: true
             )
         }
 
         let names = exhausted.prefix(3).map(\.name).joined(separator: ", ")
         return Progress(
+            // The headline is the thing to do, not the state of play. It is
+            // set at display size and read from across a table, so "3 cards
+            // are still exhausted" spends that space describing rather than
+            // instructing — and spends it on a word ("exhausted") the
+            // player then needs explained. "Turn 3 cards upright" says the
+            // same thing, as an action, in words nobody has to look up.
             headline: exhausted.count == 1
-                ? "1 card is still exhausted."
-                : "\(exhausted.count) cards are still exhausted.",
-            detail: "Turn \(names)\(exhausted.count > 3 ? " and others" : "") upright (Rule 515.1)."
+                ? "Turn 1 card upright."
+                : "Turn \(exhausted.count) cards upright.",
+            detail: "\(names)\(exhausted.count > 3 ? " and others" : "") \(exhausted.count == 1 ? "is" : "are") still sideways (Rule 515.1)."
         )
     }
 
@@ -239,7 +245,7 @@ public struct PhaseAutoDetector: Sendable {
 
         guard held > 0 else {
             return Progress(
-                headline: "No points to add this turn.",
+                headline: "No points this turn.",
                 detail: contested > 0
                     ? "\(contested) battlefield\(contested == 1 ? " is" : "s are") contested — no hold point for those (Rule 630.2)."
                     : "You hold no battlefields this turn, so there's nothing to score (Rule 630.2).",
@@ -248,10 +254,8 @@ public struct PhaseAutoDetector: Sendable {
         }
 
         return Progress(
-            headline: held == 1
-                ? "Add 1 point — you're holding a battlefield."
-                : "Add \(held) points — you're holding \(held) battlefields.",
-            detail: "Tap + on Player to add \(held == 1 ? "it" : "them"). You control \(held == 1 ? "that battlefield" : "those battlefields") at the start of your turn (Rule 630.2).",
+            headline: held == 1 ? "Add 1 point." : "Add \(held) points.",
+            detail: "Tap + on Player. You're holding \(held == 1 ? "a battlefield" : "\(held) battlefields") at the start of your turn (Rule 630.2).",
             isComplete: true,
             pointsToClaim: held
         )
@@ -269,15 +273,20 @@ public struct PhaseAutoDetector: Sendable {
 
         guard added < runesToChannel else {
             return Progress(
-                headline: "\(runesToChannel) runes channeled.",
-                detail: "They enter ready — turn one sideways when you need energy (Rule 157.2.a).",
+                headline: "Runes are out.",
+                detail: "They arrive upright — turn one sideways when you need energy (Rule 157.2.a).",
                 isComplete: true
             )
         }
 
         return Progress(
-            headline: "\(added) of \(runesToChannel) runes channeled.",
-            detail: "Put \(runesToChannel - added) more rune\(runesToChannel - added == 1 ? "" : "s") from your rune deck into your rune area (Rule 515.3)."
+            // Same rule as Awaken: the count belongs in the detail, and
+            // "channel" is the jargon this phase is named after — the
+            // headline can just say what the hands do.
+            headline: runesToChannel - added == 1
+                ? "Put out 1 more rune."
+                : "Put out \(runesToChannel - added) more runes.",
+            detail: "\(added) of \(runesToChannel) done. Take them off the top of your rune deck into your rune area (Rule 515.3)."
         )
     }
 

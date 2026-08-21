@@ -129,16 +129,53 @@ struct CardSummaryTests {
         )
 
         #expect(out.headline == "Noxian Drummer — Unit")
-        #expect(out.detail.hasPrefix("Costs 2 Energy and 1 Power."))
+        #expect(out.detail.hasPrefix("To play it, exhaust 2 runes and recycle 1 rune to the bottom of your rune deck."))
         #expect(out.detail.contains("When you move it to a battlefield: play a 1 Might Recruit unit token here."))
     }
 
-    @Test("Energy-only and power-only costs read naturally")
-    func costShapes() {
-        #expect(CardPlainLanguage.describeCard(name: "A", type: "Spell", energyCost: 3, powerCost: 0, printedText: "")
-            .detail.hasPrefix("Costs 3 Energy."))
-        #expect(CardPlainLanguage.describeCard(name: "B", type: "Spell", energyCost: nil, powerCost: 2, printedText: "")
-            .detail.hasPrefix("Costs 2 Power."))
+    /// A cost is two physical acts, not two numbers. "1 Power" is a symbol
+    /// to go and look up; "recycle 1 Fury rune to the bottom of your rune
+    /// deck" is something a player can do — and it names the destination,
+    /// because read as "discard" the rune goes somewhere it can't return
+    /// from (594.1.b).
+    @Test("A cost says what to do with the runes, not which symbols to count")
+    func costIsAnInstruction() {
+        let energyOnly = CardPlainLanguage.describeCard(
+            name: "A", type: "Spell", energyCost: 3, powerCost: 0, printedText: ""
+        )
+        #expect(energyOnly.detail.hasPrefix("To play it, exhaust 3 runes."))
+
+        let powerOnly = CardPlainLanguage.describeCard(
+            name: "B", type: "Spell", energyCost: nil, powerCost: 2, printedText: ""
+        )
+        #expect(powerOnly.detail.hasPrefix("To play it, recycle 2 runes to the bottom of your rune deck."))
+    }
+
+    /// 130.3: Power is usually domain-locked, so which rune matters.
+    @Test("A domain-locked Power cost names the domain")
+    func costNamesTheDomain() {
+        let single = CardPlainLanguage.describeCard(
+            name: "Annie - Fiery", type: "Unit",
+            energyCost: 5, powerCost: 1, powerDomains: ["Fury"], printedText: ""
+        )
+        #expect(single.detail.contains("recycle 1 Fury rune to the bottom of your rune deck"))
+
+        // Multi-domain cards accept either, and the line has to say so.
+        let either = CardPlainLanguage.describeCard(
+            name: "Decisive Strike", type: "Spell",
+            energyCost: 5, powerCost: 1, powerDomains: ["Body", "Order"], printedText: ""
+        )
+        #expect(either.detail.contains("recycle 1 Body or Order rune"))
+    }
+
+    /// A domain on a card with no Power cost isn't a cost to pay.
+    @Test("No Power cost means no recycle clause, domain or not")
+    func noPowerNoRecycle() {
+        let out = CardPlainLanguage.describeCard(
+            name: "Back to Back", type: "Spell",
+            energyCost: 3, powerCost: 0, powerDomains: ["Order"], printedText: ""
+        )
+        #expect(!out.detail.contains("recycle"))
     }
 
     /// A blank detail would read as a panel that failed to load, and send
