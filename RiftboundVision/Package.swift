@@ -45,7 +45,13 @@ let package = Package(
                 .copy("Resources/Rectangle 1.png"),
                 .copy("Resources/Rectangle 2.png"),
                 .copy("Resources/Rectangle 3.png"),
-                .copy("Resources/Rectangle 4.png")
+                .copy("Resources/Rectangle 4.png"),
+                // The board's swatches. A package can't read the app
+                // target's Assets.xcassets, so the overlays this module
+                // draws over the camera carry their own copy — see
+                // PlaymatPalette for why that copy exists and what keeps
+                // it honest.
+                .process("Resources/Palette.xcassets")
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)

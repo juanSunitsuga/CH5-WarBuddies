@@ -23,55 +23,62 @@ import CoreText
 /// Every swatch on the design board, named the way the board names it.
 /// Nothing here is invented: if a colour isn't on the board it isn't in
 /// this enum, which is what keeps a stray shade from creeping back in.
+///
+/// The values themselves live in `Assets.xcassets/Palette`, one colour set
+/// per swatch, so the board can be re-pointed in Xcode's colour editor
+/// without a code change — and so the swatches show up where a designer
+/// looks for them. This enum is now purely the *naming* layer: it says
+/// which role each swatch plays, which is the part that belongs in code.
 enum RiftboundPalette {
-    /// #1D3145 — shadow/stroke for elements. Also the fill behind the
-    /// Unit/Spell/Battlefield chip art, which is drawn on this blue.
-    static let elementShadow = Color(hex: 0x1D3145)
-    /// #10415E — main background. The window, the header, the bottom bar.
-    static let mainBackground = Color(hex: 0x10415E)
-    /// #0A496A — secondary background. The right-hand Score/Card Library
-    /// column, so it separates from the main field without a divider.
-    static let secondaryBackground = Color(hex: 0x0A496A)
-    /// #A36F18 — primary buttons. Also the Player/Opponent caption bar and
-    /// the −/+ stepper strip, which are the same "solid actionable gold".
-    static let primaryButton = Color(hex: 0xA36F18)
+    /// #1C3449 — the board's one navy. The window, and every panel that
+    /// isn't explicitly recessed.
+    static let mainBackground = Color("MainBackground")
+    /// Recessed surfaces — the control column. The board gives exactly one
+    /// darkening value (black at 20%), so "further back" is that scrim over
+    /// `mainBackground` rather than a second navy. It is deliberately
+    /// translucent: it composites over whatever it is drawn on.
+    static let secondaryBackground = Color("Scrim")
+    /// #1C3449 — shadow/stroke for elements, and the dark text on a lit
+    /// gold pip. Shares the navy with `mainBackground`: the board no longer
+    /// carries a separate element shadow, and the panels that used one are
+    /// bounded by `elementStroke` instead.
+    static let elementShadow = Color("MainBackground")
+    /// #A36F18 — primary buttons, the Player/Opponent caption bar, the −/+
+    /// stepper strip.
+    static let primaryButton = Color("PrimaryButton")
     /// #CEA73F — highlight overlay. Score numerals' backing, the active
     /// phase pip, the selected detection box.
-    static let highlightOverlay = Color(hex: 0xCEA73F)
-    /// #C5A560 — playmat overlay. The zone frames drawn over the camera
+    static let highlightOverlay = Color("HighlightOverlay")
+    /// #D5A250 — playmat overlay. The zone frames drawn over the camera
     /// feed, and a recognized card's detection box.
-    static let playmatOverlay = Color(hex: 0xC5A560)
-    /// #D9BC87 — element stroke. Card-art borders, panel card outlines.
-    static let elementStroke = Color(hex: 0xD9BC87)
-    /// #FFE0AD — iconic text. The 50pt/80pt display numerals and titles.
-    static let iconicText = Color(hex: 0xFFE0AD)
+    static let playmatOverlay = Color("PlaymatOverlay")
+    /// #D9BC87 — element stroke. Card-art borders, panel outlines.
+    static let elementStroke = Color("ElementStroke")
+    /// #FFF2D6 — the display numerals and titles. The board carries one
+    /// cream, so this and `regularText` are the same swatch; they stay
+    /// separately named because they are separate roles and only one of
+    /// them would move if the board grew a second cream.
+    static let iconicText = Color("RegularText")
     /// #FFF2D6 — regular text. Everything at 15pt.
-    static let regularText = Color(hex: 0xFFF2D6)
+    static let regularText = Color("RegularText")
     /// #545454 — disabled highlight overlay. A disabled button's fill, a
     /// disabled phase pip.
-    static let disabledHighlightOverlay = Color(hex: 0x545454)
+    static let disabledHighlightOverlay = Color("DisabledHighlightOverlay")
     /// #CBCBCB — disabled element stroke.
-    static let disabledElementStroke = Color(hex: 0xCBCBCB)
+    static let disabledElementStroke = Color("DisabledElementStroke")
+    /// #FFFFFF — pure white. Only the developer overlays drawn straight
+    /// onto the camera picture, which have to stay legible over an
+    /// arbitrary photograph rather than over the board's own colours.
+    static let pureWhite = Color("PureWhite")
+    /// #000000 at 20% — the board's only darkening value. Recessed fills
+    /// and the plate behind overlay text.
+    static let scrim = Color("Scrim")
 
     /// The board carries the last two swatches twice, once at full and
     /// once at 50%. That second pair isn't a different colour, it's the
     /// same colour under the opacity rule below — so it's expressed as the
     /// rule, not as two more constants that could drift.
     static let disabledComponentOpacity: Double = 0.5
-}
-
-extension Color {
-    /// 0xRRGGBB, so a token can be written the way the board writes it and
-    /// diffed against it by eye.
-    init(hex: UInt32) {
-        self.init(
-            .sRGB,
-            red: Double((hex >> 16) & 0xFF) / 255,
-            green: Double((hex >> 8) & 0xFF) / 255,
-            blue: Double(hex & 0xFF) / 255,
-            opacity: 1
-        )
-    }
 }
 
 // MARK: - Typography
