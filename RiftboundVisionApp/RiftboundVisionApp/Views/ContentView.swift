@@ -69,8 +69,16 @@ struct ContentView: View {
                     inactiveStage: pipeline.inactivePipelineNotice,
                     validatesPlayerMoves: pipeline.gameState.phase.validatesPlayerMoves,
                     selectedCard: selectedCard,
+                    // Before a Legend is seen the app doesn't know whose
+                    // deck it's looking at, and says so instead of
+                    // narrating a phase it can't scope. Occupies the
+                    // fallback slot rather than a new rank: it is what
+                    // there is to say when nothing else is happening, not
+                    // an alert.
                     fallback: pipeline.isPipelineRunning
-                        ? RiftboundPhaseCopy.blurb(for: pipeline.gameState.phase)
+                        ? (pipeline.activeDeckName == nil
+                            ? "Show me your Legend first."
+                            : RiftboundPhaseCopy.blurb(for: pipeline.gameState.phase))
                         : "Ready to play?"
                 )
                 // Matched to the camera's *drawn* width, not to the

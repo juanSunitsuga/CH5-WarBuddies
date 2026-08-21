@@ -909,12 +909,62 @@ final class CameraPipelineController: ObservableObject {
     /// are assigned in increasing order as cards first appear, so this
     /// reproduces "in detection order" deterministically instead of by
     /// accident.
+    /// Which deck is on the table, and the narrowing that follows from it.
+    ///
+    /// Empty rosters until the database loads; nothing is narrowed until a
+    /// Legend has actually been seen.
+    @Published private(set) var deckScope = DeckScope(rosters: [])
+
+    /// The deck the Legend on the table belongs to, once known.
+    var activeDeckName: String? { deckScope.activeDeckName }
+
+    /// A tracked object's card, subject to deck scope.
+    ///
+    /// The single place a label becomes a card, so the narrowing can't be
+    /// bypassed by a call site that forgot about it. A label the scope
+    /// rejects returns `nil` — the object stays tracked and drawn, it just
+    /// isn't claimed to be a specific card, which is the honest reading of
+    /// "that name can't be right".
+    func scopedPrinting(for object: TrackedObject) -> CardPrinting? {
+        guard let label = object.recognizedLabel,
+              let printing = cardDatabase.printing(approximatelyNamed: label) else { return nil }
+        let zone = zoneMapper.boardZone(for: object.center)?.type ?? object.currentZone
+        guard deckScope.allows(printing.riftboundID, in: zone) else { return nil }
+        return printing
+    }
+
+    /// Adopts the deck as soon as a Legend is identified on the table.
+    ///
+    /// Rule 166 puts exactly one Legend out during setup and it stays for
+    /// the game, so this fires once. Waits for `isIdentityCommitted`: the
+    /// deck is chosen off a single label, and choosing it from a reading
+    /// that is still wobbling would narrow everything else to the wrong
+    /// deck — the most expensive mistake available here.
+    func adoptDeckIfLegendSeen(in objects: [TrackedObject]) {
+        // Seeded here rather than at the declaration: a `@Published`
+        // property can't be `lazy`, and the rosters come from the bundled
+        // database, which is loaded as a stored property on the same type.
+        if deckScope.rosters.isEmpty, !cardDatabase.decks.isEmpty {
+            deckScope = DeckScope(rosters: cardDatabase.decks)
+        }
+        guard !deckScope.hasIdentifiedDeck else { return }
+        for object in objects where object.isIdentityCommitted {
+            guard let label = object.recognizedLabel,
+                  let printing = cardDatabase.printing(approximatelyNamed: label),
+                  CardKind.from(
+                      type: printing.classification.type,
+                      supertype: printing.classification.supertype
+                  ) == .legend
+            else { continue }
+            if deckScope.identifyDeck(fromLegend: printing.riftboundID) { return }
+        }
+    }
+
     var cardsOnTable: [CardPrinting] {
         var seen = Set<String>()
         var result: [CardPrinting] = []
         for object in trackedObjects.sorted(by: { $0.id < $1.id }) {
-            guard let label = object.recognizedLabel,
-                  let printing = cardDatabase.printing(approximatelyNamed: label),
+            guard let printing = scopedPrinting(for: object),
                   seen.insert(printing.id).inserted else { continue }
             result.append(printing)
         }
@@ -1190,6 +1240,7 @@ extension CameraPipelineController {
             return
         }
 
+        adoptDeckIfLegendSeen(in: objects)
         let observed = objects.compactMap { observedCard(from: $0) }
         noteAbilityTriggers(in: objects)
         autoDetectRunes = observed.compactMap { card in
@@ -1303,7 +1354,7 @@ extension CameraPipelineController {
         let zone = boardZone?.type ?? object.currentZone
         guard zone != .unknown else { return nil }
 
-        let printing = object.recognizedLabel.flatMap { cardDatabase.printing(approximatelyNamed: $0) }
+        let printing = scopedPrinting(for: object)
         let domains = (printing?.classification.domain ?? []).compactMap(Domain.init(caseInsensitive:))
 
         return ObservedCard(
@@ -1383,8 +1434,7 @@ extension CameraPipelineController {
             // nothing later corrects it. A track commits within about a
             // second of being seen properly, so the cost is a short wait.
             guard object.isIdentityCommitted else { continue }
-            guard let label = object.recognizedLabel,
-                  let printing = cardDatabase.printing(approximatelyNamed: label) else { continue }
+            guard let printing = scopedPrinting(for: object) else { continue }
 
             let fired = CardAbilityParser.triggers(in: printing.text.plain).filter { ability in
                 switch ability.trigger {
