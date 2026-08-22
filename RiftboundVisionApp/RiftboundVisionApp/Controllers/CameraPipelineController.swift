@@ -195,14 +195,9 @@ final class CameraPipelineController: ObservableObject {
     @Published private(set) var abilityNotice: PhaseAutoDetector.Progress?
     private var abilityNoticeRaisedAt: Date?
 
-    /// Which zone each track was last *announced* in.
-    ///
-    /// `TrackedObject.previousZone` keeps naming the old zone for as long
-    /// as the card sits still, so firing off that alone would re-announce
-    /// the same arrival on every poll — several times a second. This
-    /// records what the player has already been told, so an arrival fires
-    /// once and only fires again if the card genuinely leaves and returns.
-    private var announcedZones: [TrackedObjectID: Zone] = [:]
+    /// Watches for the zone changes that fire a card's printed text — see
+    /// `AbilityTriggerWatcher`, which owns the per-track memory.
+    private let abilityTriggers = AbilityTriggerWatcher(seat: .player1)
 
     @Published private(set) var paymentNotice: PhaseAutoDetector.Progress?
     private var paymentNoticeRaisedAt: Date?
@@ -539,8 +534,6 @@ final class CameraPipelineController: ObservableObject {
 
     private let underlayResolver = UnderlayResolver()
     private let misplacedMonitor = MisplacedCardMonitor()
-    /// Memo for `kind(forLabel:)` — see its doc comment.
-    private var cardKindByLabel: [String: CardKind] = [:]
     private var gameStateStore: GameStateStore?
 
     /// The starting calibration quad, sized so the *whole* active
@@ -763,8 +756,18 @@ final class CameraPipelineController: ObservableObject {
             zoneMapper: ZoneMapper(zones: calibration.boardZones()),
             playerCalibration: [.player1: localPlayerID],
             battlefieldCalibration: battlefieldSlotIDs,
-            resolveLabel: { label in
-                database.printing(approximatelyNamed: label).map { CardDefID(rawValue: $0.riftboundID) }
+            // Through the shared resolver, so the engine and the screen
+            // agree about what is on the table. These were two lookups with
+            // different rules: the UI applied deck scope and this didn't, so
+            // an out-of-deck card vanished from the strip while the engine
+            // went on proposing plays for it.
+            //
+            // Battlefield-scoped, because that is where an opponent's cards
+            // legitimately arrive and the engine has to name them to track
+            // combat — the same exception `DeckScope` already makes.
+            resolveLabel: { [resolver = identityResolver] label in
+                resolver.printing(forLabel: label, in: .battlefield)
+                    .map { CardDefID(rawValue: $0.riftboundID) }
             },
             // One physical mat, one seat: an event in an unowned zone (the
             // Battlefield) can only be this player's.
@@ -953,10 +956,23 @@ final class CameraPipelineController: ObservableObject {
     ///
     /// Empty rosters until the database loads; nothing is narrowed until a
     /// Legend has actually been seen.
-    @Published private(set) var deckScope = DeckScope(rosters: [])
+    /// Turns a detector label into a card, deck scope and all. One
+    /// instance, shared by every consumer — see `CardIdentityResolver`.
+    private lazy var identityResolver = CardIdentityResolver(database: cardDatabase)
+
+    /// Bumped whenever the resolver adopts a deck, so SwiftUI redraws.
+    ///
+    /// The resolver is a reference type and deliberately *not* `@Published`
+    /// itself: publishing a class doesn't observe its mutations, and
+    /// keeping a second copy of the scope here would be exactly the
+    /// duplicate source of truth this extraction removes.
+    @Published private(set) var deckIdentityRevision = 0
 
     /// The deck the Legend on the table belongs to, once known.
-    var activeDeckName: String? { deckScope.activeDeckName }
+    var activeDeckName: String? {
+        _ = deckIdentityRevision
+        return identityResolver.activeDeckName
+    }
 
     /// A tracked object's card, subject to deck scope.
     ///
@@ -966,11 +982,13 @@ final class CameraPipelineController: ObservableObject {
     /// isn't claimed to be a specific card, which is the honest reading of
     /// "that name can't be right".
     func scopedPrinting(for object: TrackedObject) -> CardPrinting? {
-        guard let label = object.recognizedLabel,
-              let printing = cardDatabase.printing(approximatelyNamed: label) else { return nil }
-        let zone = zoneMapper.boardZone(for: object.center)?.type ?? object.currentZone
-        guard deckScope.allows(printing.riftboundID, in: zone) else { return nil }
-        return printing
+        identityResolver.printing(forLabel: object.recognizedLabel, in: zone(of: object))
+    }
+
+    /// A track's zone, preferring the calibrated mapping over the tracker's
+    /// own last answer.
+    private func zone(of object: TrackedObject) -> Zone {
+        zoneMapper.boardZone(for: object.center)?.type ?? object.currentZone
     }
 
     /// Adopts the deck as soon as a Legend is identified on the table.
@@ -981,22 +999,8 @@ final class CameraPipelineController: ObservableObject {
     /// that is still wobbling would narrow everything else to the wrong
     /// deck — the most expensive mistake available here.
     func adoptDeckIfLegendSeen(in objects: [TrackedObject]) {
-        // Seeded here rather than at the declaration: a `@Published`
-        // property can't be `lazy`, and the rosters come from the bundled
-        // database, which is loaded as a stored property on the same type.
-        if deckScope.rosters.isEmpty, !cardDatabase.decks.isEmpty {
-            deckScope = DeckScope(rosters: cardDatabase.decks)
-        }
-        guard !deckScope.hasIdentifiedDeck else { return }
-        for object in objects where object.isIdentityCommitted {
-            guard let label = object.recognizedLabel,
-                  let printing = cardDatabase.printing(approximatelyNamed: label),
-                  CardKind.from(
-                      type: printing.classification.type,
-                      supertype: printing.classification.supertype
-                  ) == .legend
-            else { continue }
-            if deckScope.identifyDeck(fromLegend: printing.riftboundID) { return }
+        if identityResolver.adoptDeckIfLegendSeen(in: objects) {
+            deckIdentityRevision += 1
         }
     }
 
@@ -1023,12 +1027,7 @@ final class CameraPipelineController: ObservableObject {
     /// `CardPlacementRules` permits everywhere — an unrecognized card is
     /// still tracked, just not constrained.
     private func kind(forLabel label: String) -> CardKind {
-        if let cached = cardKindByLabel[label] { return cached }
-        let resolved = cardDatabase.printing(approximatelyNamed: label).map {
-            CardKind.from(type: $0.classification.type, supertype: $0.classification.supertype)
-        } ?? .unknown
-        cardKindByLabel[label] = resolved
-        return resolved
+        identityResolver.kind(forLabel: label)
     }
 
     private func recordUnprocessed(_ event: RiftboundExpertSystem.ObservedTableEvent) {
@@ -1276,7 +1275,7 @@ extension CameraPipelineController {
             phaseProgress = nil
             abilityNotice = nil
             abilityNoticeRaisedAt = nil
-            announcedZones.removeAll()
+            abilityTriggers.reset()
             return
         }
 
@@ -1478,52 +1477,37 @@ extension CameraPipelineController {
     /// stay in the standing ability list where the player can read them,
     /// rather than being guessed at from a card twitching on the mat.
     private func noteAbilityTriggers(in objects: [TrackedObject]) {
-        var seen: Set<TrackedObjectID> = []
-
-        for object in objects where object.type == .card {
-            seen.insert(object.id)
-            let zone = object.currentZone
-            let previouslyAnnounced = announcedZones[object.id]
-            announcedZones[object.id] = zone
-
-            // First sighting isn't a move. A card the tracker picks up
-            // already lying on a battlefield was not *moved* there while
-            // anyone was watching, and announcing it would fire every
-            // ability on the table the moment the pipeline starts.
-            guard let previouslyAnnounced, previouslyAnnounced != zone else { continue }
-            // Don't act on a card the tracker is still identifying. Naming
-            // the wrong card's ability is worse than naming none: the
-            // player resolves an effect that isn't on the table, and
-            // nothing later corrects it. A track commits within about a
-            // second of being seen properly, so the cost is a short wait.
-            guard object.isIdentityCommitted else { continue }
-            guard let printing = scopedPrinting(for: object) else { continue }
-
-            let fired = CardAbilityParser.triggers(in: printing.text.plain).filter { ability in
-                switch ability.trigger {
-                case .movedToBattlefield: return zone == .battlefield
-                case .moved: return true
-                // "When you play me" is a card arriving on the board from
-                // hand, which is a move *out of* the hand specifically —
-                // not any arrival, or tidying the mat would trigger it.
-                case .played: return previouslyAnnounced.isHand(for: .player1) && zone != .unknown
-                case .unobservable: return false
+        let fired = abilityTriggers.fired(
+            in: objects,
+            card: { [weak self] object in
+                guard let printing = self?.scopedPrinting(for: object) else { return nil }
+                return (name: printing.name, text: printing.text.plain)
+            },
+            triggers: { [weak self] text in
+                CardAbilityParser.triggers(in: text).map { ability in
+                    (
+                        fires: { previous, zone in
+                            switch ability.trigger {
+                            case .movedToBattlefield: return zone == .battlefield
+                            case .moved: return true
+                            case .played: return self?.abilityTriggers.isPlayFromHand(from: previous, to: zone) ?? false
+                            case .unobservable: return false
+                            }
+                        },
+                        effect: ability.effect
+                    )
                 }
             }
-            guard !fired.isEmpty else { continue }
+        )
 
-            abilityNotice = PhaseAutoDetector.Progress(
-                headline: "\(printing.name): \(CardPlainLanguage.simplify(fired[0].effect))",
-                detail: fired.count > 1
-                    ? fired.dropFirst().map(\.effect).joined(separator: " ")
-                    : "Its text triggered when you moved it. Resolve it before you carry on."
-            )
-            abilityNoticeRaisedAt = Date()
-        }
-
-        // Forget tracks that are gone, so a card that leaves the table and
-        // comes back is a fresh arrival rather than a stale comparison.
-        announcedZones = announcedZones.filter { seen.contains($0.key) }
+        guard let first = fired.first else { return }
+        abilityNotice = PhaseAutoDetector.Progress(
+            headline: "\(first.cardName): \(CardPlainLanguage.simplify(first.effects[0]))",
+            detail: first.effects.count > 1
+                ? first.effects.dropFirst().joined(separator: " ")
+                : "Its text triggered when you moved it. Resolve it before you carry on."
+        )
+        abilityNoticeRaisedAt = Date()
     }
 
     /// Rule 130.2/130.3: a card leaving the hand for the board has to be
