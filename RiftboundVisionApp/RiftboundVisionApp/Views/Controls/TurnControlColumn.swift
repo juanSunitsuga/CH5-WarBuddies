@@ -20,6 +20,10 @@ struct TurnControlColumn: View {
     @Binding var isAutoAdvancing: Bool
     @Binding var playerScore: Int
     @Binding var opponentScore: Int
+    /// The engine's own numbers — see `EnergySection`.
+    var engineEnergy: Int?
+    var engineReadyRunes: Int?
+    var engineTotalRunes: Int?
 
     @State private var hasDeclaredActions = false
     @State private var isPhaseSectionExpanded = true
@@ -32,6 +36,14 @@ struct TurnControlColumn: View {
                     isAutoAdvancing: $isAutoAdvancing,
                     hasDeclaredActions: $hasDeclaredActions,
                     isExpanded: $isPhaseSectionExpanded
+                )
+
+                Divider().overlay(RiftboundPalette.elementStroke.opacity(0.35))
+
+                EnergySection(
+                    energy: engineEnergy,
+                    readyRunes: engineReadyRunes,
+                    totalRunes: engineTotalRunes
                 )
 
                 Divider().overlay(RiftboundPalette.elementStroke.opacity(0.35))
