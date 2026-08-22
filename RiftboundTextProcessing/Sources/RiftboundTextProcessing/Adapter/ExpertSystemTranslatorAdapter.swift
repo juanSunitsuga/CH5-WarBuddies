@@ -117,11 +117,28 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
 
         switch event.kind {
         case .cardOrientationChanged(_, let nowExhausted):
-            // Rotation isn't a "card was played" signature — Exhaust/Ready
-            // (rules 592/593) is handled elsewhere in the pipeline, not by
-            // this translator.
-            onUntranslatable?("Turned \(nowExhausted ? "sideways (exhausted)" : "upright (readied)") — tracked, but not a move to propose.")
-            return nil
+            // 592/593: turning a card is a move in its own right, and for a
+            // Rune it is *the* move that produces Energy — 157.2.a's
+            // `[T]: Add [1]` fires on the Exhaust, not on the Channel.
+            //
+            // This used to return nil, saying Exhaust/Ready was "handled
+            // elsewhere in the pipeline". Nowhere else handled it, so no
+            // Energy could ever legally enter a pool from play and
+            // `GameSessionBuilder` seeded one to compensate. The vision
+            // layer can see the turn — stance comes from printed
+            // orientation, not the bounding box alone — so the last hop was
+            // the only thing missing.
+            guard let objectID = inPlayObjectID(
+                definitionID: card.cardDefinitionID,
+                domain: cardContext(card.cardDefinitionID)?.domains.first,
+                player: player,
+                nowExhausted: nowExhausted,
+                in: state
+            ) else {
+                onUntranslatable?("Turned \(nowExhausted ? "sideways" : "upright"), but the engine isn't tracking that card in play.")
+                return nil
+            }
+            return nowExhausted ? .exhaust(objects: [objectID]) : .ready(objects: [objectID])
 
         case .cardRemoved:
             // Leaving play is Cleanup's business, not a proposable action.
@@ -295,6 +312,57 @@ public final class ExpertSystemTranslatorAdapter: ActionTranslating, @unchecked 
             onUntranslatable?(reason)
             return nil
         }
+    }
+
+    /// The object on the board this orientation change refers to.
+    ///
+    /// Matched on the definition *and* on the stance being the opposite of
+    /// what was just seen, so a poll that re-reports a card already sideways
+    /// doesn't exhaust a second copy. With several identical Runes out, any
+    /// one still in the old stance is an equally correct answer — they are
+    /// interchangeable for cost purposes (157.2), so the first is fine.
+    private func inPlayObjectID(
+        definitionID: CardDefID,
+        domain: Domain?,
+        player: PlayerID,
+        nowExhausted: Bool,
+        in state: GameState
+    ) -> ObjectID? {
+        // Runes match on **domain**, not on definition.
+        //
+        // Two reasons, and the second is the one that decides it. Rules:
+        // runes of a domain are interchangeable for paying costs (157.2),
+        // so any ready Fury rune is as good as any other and picking a
+        // specific printing would be a distinction the rules don't make.
+        // Practically: `GameSessionBuilder` seeds the rune deck with
+        // placeholder cards ("rune-fury-0") because the camera can't see
+        // what went into the deck before play, while the detector reports
+        // real printings ("ogn-007-298"). Matching on definition would
+        // therefore never fire in the running app — the ids come from two
+        // different spaces — and this whole path would look wired while
+        // doing nothing.
+        if let domain, let match = state.runes.first(where: {
+            $0.value.controller == player
+                && $0.value.domain == domain
+                && $0.value.isExhausted != nowExhausted
+        }) {
+            return match.key
+        }
+        if let match = state.runes.first(where: {
+            $0.value.controller == player
+                && $0.value.card.definitionID == definitionID
+                && $0.value.isExhausted != nowExhausted
+        }) {
+            return match.key
+        }
+        if let match = state.units.first(where: {
+            $0.value.controller == player
+                && $0.value.cardDefinitionID == definitionID
+                && $0.value.isExhausted != nowExhausted
+        }) {
+            return match.key
+        }
+        return nil
     }
 
     private func handObjectID(definitionID: CardDefID, player: PlayerID, in state: GameState) -> ObjectID? {

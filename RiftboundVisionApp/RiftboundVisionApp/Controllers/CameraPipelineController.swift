@@ -744,6 +744,10 @@ final class CameraPipelineController: ObservableObject {
                 guard !deferredToSettlement else { continue }
                 let instruction = await engine.process(event)
                 self.recordInstruction(instruction, for: event)
+                // Read straight back, on the same hop that just mutated it.
+                // Refreshing anywhere else would let the screen show a state
+                // the engine had already moved past.
+                self.engineState = await session.store.currentState
             }
         }
 
@@ -875,6 +879,65 @@ final class CameraPipelineController: ObservableObject {
         _ = deckIdentityRevision
         return identityResolver.activeDeckName
     }
+
+    /// The engine's own view of the game, refreshed after every event it
+    /// processes.
+    ///
+    /// The app used to write to `GameState` and never read it back, which
+    /// made the engine a ledger nobody consulted: it recorded what happened
+    /// but nothing on screen was derived from it, so the two could disagree
+    /// indefinitely with no way to notice. Publishing the snapshot is what
+    /// closes that loop — anything the engine knows can now be shown, and a
+    /// disagreement between the board and the engine becomes visible
+    /// instead of silent.
+    ///
+    /// `nil` until the first event is processed.
+    @Published private(set) var engineState: GameState?
+
+    /// Energy currently in the local player's pool, as the *engine* has it —
+    /// the number a play is actually validated against (130.2).
+    var engineEnergy: Int? { engineState?.zones[localPlayerID]?.runePool.energy }
+
+    /// Runes the engine believes are on the board, and how many are still
+    /// upright and therefore still able to pay for something (157.2.a).
+    var engineRuneCount: Int? {
+        engineState.map { state in state.runes.values.filter { $0.controller == localPlayerID }.count }
+    }
+    var engineReadyRuneCount: Int? {
+        engineState.map { state in
+            state.runes.values.filter { $0.controller == localPlayerID && !$0.isExhausted }.count
+        }
+    }
+
+    /// Standing damage bonuses granted by cards currently on the table.
+    ///
+    /// Read from the board rather than from the deck, because that is where
+    /// they come from: Annie - Fiery is a Unit you play and Void Gate is a
+    /// Battlefield in the match, so both arrive and leave mid-game. Only
+    /// the zones where a card's text is live count — a card in hand or a
+    /// deck grants nothing (137–145).
+    var activeDamageBonuses: [ActiveDamageBonus] {
+        var found: [ActiveDamageBonus] = []
+        var seenSources = Set<String>()
+
+        for object in trackedObjects.sorted(by: { $0.id < $1.id }) {
+            let zone = zoneMapper.boardZone(for: object.center)?.type ?? object.currentZone
+            guard Self.abilityLiveZones.contains(zone),
+                  let printing = scopedPrinting(for: object),
+                  let bonus = CardAbilityParser.damageBonus(in: printing.text.plain),
+                  // Two copies of the same card would each grant their own
+                  // bonus in the rules; this list is advice, and naming the
+                  // same card twice reads as a bug rather than as a stack.
+                  seenSources.insert(printing.name).inserted
+            else { continue }
+            found.append(ActiveDamageBonus(source: printing.name, bonus: bonus))
+        }
+        return found
+    }
+
+    /// Where a card's printed text is live — its Base, a Battlefield, the
+    /// Legend and Champion slots.
+    private static let abilityLiveZones: Set<Zone> = [.base, .battlefield, .legend, .champion]
 
     /// A tracked object's card, subject to deck scope.
     ///

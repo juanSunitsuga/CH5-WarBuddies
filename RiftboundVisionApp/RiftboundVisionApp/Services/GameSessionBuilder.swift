@@ -101,13 +101,25 @@ enum GameSessionBuilder {
         // advance the phase.
         state = TurnSequencer.startTurn(state)
 
-        // Rule 157.2.a: Energy comes from Exhausting Runes, and the vision
-        // layer does not yet propose `.exhaust` when it sees a rune turn
-        // sideways — it only counts them (`observedExhaustedRuneCount`).
-        // Until that event exists, a real pool would leave every Play
-        // rejected for cost. Seeding one keeps cost from being the thing
-        // that blocks play; it is explicitly NOT a rules-accurate start,
-        // and the fix is the rune-exhaust event, not a bigger number.
+        // Rule 157.2.a: Energy comes from Exhausting Runes.
+        //
+        // The exhaust hop now exists — `ExpertSystemTranslatorAdapter` maps
+        // `.cardOrientationChanged` to `.exhaust`/`.ready`, matching runes
+        // by Domain, and the applier credits the pool. So this seed is no
+        // longer covering for *that*.
+        //
+        // What it still covers for is one step earlier: a rune has to be in
+        // `state.runes` before it can be exhausted, and getting it there is
+        // unreliable. A rune moving RuneDeck -> RuneArea is explicitly not
+        // proposed (see that branch: Channel is treated as a scripted phase
+        // step), so `.channel` only arrives when the tracker happens to
+        // report the rune *appearing* in the Rune Area rather than moving
+        // into it. Until channelling is proposed on the move as well, a real
+        // pool would leave most Plays rejected for cost.
+        //
+        // Still explicitly NOT a rules-accurate start. Removing it needs the
+        // channel path closed first, and then a real game in front of the
+        // camera to confirm — not a code review.
         state.zones[localPlayerID]?.runePool.energy = 99
 
         return Session(

@@ -70,6 +70,7 @@ struct ContentView: View {
                     inactiveStage: pipeline.inactivePipelineNotice,
                     validatesPlayerMoves: pipeline.gameState.phase.validatesPlayerMoves,
                     selectedCard: selectedCard,
+                    activeBonuses: pipeline.activeDamageBonuses,
                     // Before a Legend is seen the app doesn't know whose
                     // deck it's looking at, and says so instead of
                     // narrating a phase it can't scope. Occupies the
@@ -97,7 +98,10 @@ struct ContentView: View {
                 gameState: $pipeline.gameState,
                 isAutoAdvancing: $pipeline.isAutoDetectingPhase,
                 playerScore: $pipeline.playerScore,
-                opponentScore: $pipeline.opponentScore
+                opponentScore: $pipeline.opponentScore,
+                engineEnergy: pipeline.engineEnergy,
+                engineReadyRunes: pipeline.engineReadyRuneCount,
+                engineTotalRunes: pipeline.engineRuneCount
             )
         }
         .background(RiftboundPalette.mainBackground)

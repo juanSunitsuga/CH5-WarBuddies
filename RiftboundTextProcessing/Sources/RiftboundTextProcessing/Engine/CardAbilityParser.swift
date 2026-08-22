@@ -150,7 +150,11 @@ public enum CardAbilityParser {
         // fired against real card text; "deal N" alone is specific enough
         // in a rules-text context that dropping the requirement doesn't
         // risk false positives.
-        if let n = number(after: #"deal\s+"#, in: lower) {
+        // "Your spells and abilities deal 1 Bonus Damage" is a standing
+        // modifier on *other* cards, not an instruction to deal 1. Read as
+        // an action it told the player to do something the card never asks
+        // for — see `damageBonus(in:)`, which is what actually reads it.
+        if let n = number(after: #"deal\s+"#, in: lower), !lower.contains("bonus damage") {
             return ParsedAbility(action: "Deal damage", summary: "Deal \(n) damage.", timing: timing, target: target(in: sentence))
         }
         if let n = number(after: #"recycle\s+"#, in: lower) {
