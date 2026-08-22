@@ -241,3 +241,93 @@ struct DoubleProcessingTests {
         #expect(!out.detail.contains("Exhausted means turned sideways."))
     }
 }
+
+/// Damage bonuses granted by cards already on the table.
+///
+/// Every text here is copied from `CardData`. The bonus is printed on the
+/// card granting it, never on the card being played, so this is exactly the
+/// arithmetic a player misses — and they find out after the damage is dealt.
+struct DamageBonusTests {
+
+    private let annieFiery = "Your spells and abilities deal 1 Bonus Damage. (Each instance of damage the spell deals is increased by 1.)"
+    private let voidGate = "Spells and abilities affecting units here each deal 1 Bonus Damage. (Each instance of damage the spell deals is increased by 1.)"
+    private let tibbers = "When you play me, deal 3 to all units at battlefields."
+
+    // MARK: - Reading the bonus
+
+    @Test("An unqualified bonus applies anywhere; 'here' scopes it to a battlefield")
+    func scopeIsRead() {
+        #expect(CardAbilityParser.damageBonus(in: annieFiery) == DamageBonus(amount: 1, scope: .anywhere))
+        #expect(CardAbilityParser.damageBonus(in: voidGate) == DamageBonus(amount: 1, scope: .atThisBattlefield))
+    }
+
+    /// The misparse this fixes: a standing modifier read as an instruction
+    /// told the player to deal 1 damage the card never asks for.
+    @Test("A Bonus Damage clause is not an instruction to deal damage")
+    func bonusIsNotAnInstruction() {
+        #expect(CardAbilityParser.damageDealt(in: annieFiery) == nil)
+        #expect(!CardAbilityParser.read(annieFiery).abilities.contains { $0.action == "Deal damage" })
+
+        // A card that really does deal damage still reads as one.
+        #expect(CardAbilityParser.damageDealt(in: tibbers) == 3)
+    }
+
+    @Test("A card with no bonus grants none")
+    func noBonus() {
+        #expect(CardAbilityParser.damageBonus(in: tibbers) == nil)
+        #expect(CardAbilityParser.damageBonus(in: "") == nil)
+    }
+
+    // MARK: - The advice
+
+    @Test("A bonus in play is quoted as the number the card will actually deal")
+    func adviceNamesTheNewTotal() {
+        let advice = CardPlainLanguage.damageAdvice(
+            base: 3,
+            bonuses: [ActiveDamageBonus(source: "Annie - Fiery", bonus: DamageBonus(amount: 1, scope: .anywhere))]
+        )
+        #expect(advice == "Deals 4, not 3 — Annie - Fiery in play.")
+    }
+
+    /// A battlefield bonus only applies where that battlefield is, so
+    /// folding it into one total would overstate the damage everywhere else.
+    @Test("A battlefield bonus is reported separately, not folded into the total")
+    func battlefieldBonusIsSeparate() {
+        let both = CardPlainLanguage.damageAdvice(
+            base: 3,
+            bonuses: [
+                ActiveDamageBonus(source: "Annie - Fiery", bonus: DamageBonus(amount: 1, scope: .anywhere)),
+                ActiveDamageBonus(source: "Void Gate", bonus: DamageBonus(amount: 1, scope: .atThisBattlefield)),
+            ]
+        )
+        #expect(both == "Deals 4, not 3 — Annie - Fiery in play. At Void Gate, 5.")
+
+        let onlyThere = CardPlainLanguage.damageAdvice(
+            base: 3,
+            bonuses: [ActiveDamageBonus(source: "Void Gate", bonus: DamageBonus(amount: 1, scope: .atThisBattlefield))]
+        )
+        #expect(onlyThere == "Deals 4, not 3, at Void Gate.")
+    }
+
+    @Test("Nothing to say when no bonus is live, or the card deals no damage")
+    func silentWhenIrrelevant() {
+        #expect(CardPlainLanguage.damageAdvice(base: 3, bonuses: []) == nil)
+        #expect(CardPlainLanguage.damageAdvice(base: 0, bonuses: [
+            ActiveDamageBonus(source: "Annie - Fiery", bonus: DamageBonus(amount: 1, scope: .anywhere))
+        ]) == nil)
+    }
+
+    /// End to end: tap Tibbers with Annie - Fiery and Void Gate on the table.
+    @Test("Tapping a damage card quotes the real number")
+    func tappedCardCarriesTheAdvice() {
+        let out = CardPlainLanguage.describeCard(
+            name: "Tibbers", type: "Unit", energyCost: 6, powerCost: 1, powerDomains: ["Fury"],
+            printedText: tibbers,
+            activeBonuses: [
+                ActiveDamageBonus(source: "Annie - Fiery", bonus: DamageBonus(amount: 1, scope: .anywhere)),
+                ActiveDamageBonus(source: "Void Gate", bonus: DamageBonus(amount: 1, scope: .atThisBattlefield)),
+            ]
+        )
+        #expect(out.detail.hasSuffix("Deals 4, not 3 — Annie - Fiery in play. At Void Gate, 5."))
+    }
+}

@@ -958,6 +958,36 @@ final class CameraPipelineController: ObservableObject {
     /// The deck the Legend on the table belongs to, once known.
     var activeDeckName: String? { deckScope.activeDeckName }
 
+    /// Standing damage bonuses granted by cards currently on the table.
+    ///
+    /// Read from the board rather than from the deck, because that is where
+    /// they come from: Annie - Fiery is a Unit you play and Void Gate is a
+    /// Battlefield in the match, so both arrive and leave mid-game. Only
+    /// the zones where a card's text is live count — a card in hand or a
+    /// deck grants nothing (137–145).
+    var activeDamageBonuses: [ActiveDamageBonus] {
+        var found: [ActiveDamageBonus] = []
+        var seenSources = Set<String>()
+
+        for object in trackedObjects.sorted(by: { $0.id < $1.id }) {
+            let zone = zoneMapper.boardZone(for: object.center)?.type ?? object.currentZone
+            guard Self.abilityLiveZones.contains(zone),
+                  let printing = scopedPrinting(for: object),
+                  let bonus = CardAbilityParser.damageBonus(in: printing.text.plain),
+                  // Two copies of the same card would each grant their own
+                  // bonus in the rules; this list is advice, and naming the
+                  // same card twice reads as a bug rather than as a stack.
+                  seenSources.insert(printing.name).inserted
+            else { continue }
+            found.append(ActiveDamageBonus(source: printing.name, bonus: bonus))
+        }
+        return found
+    }
+
+    /// Where a card's printed text is live — its Base, a Battlefield, the
+    /// Legend and Champion slots.
+    private static let abilityLiveZones: Set<Zone> = [.base, .battlefield, .legend, .champion]
+
     /// A tracked object's card, subject to deck scope.
     ///
     /// The single place a label becomes a card, so the narrowing can't be

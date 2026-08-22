@@ -70,6 +70,7 @@ struct ContentView: View {
                     inactiveStage: pipeline.inactivePipelineNotice,
                     validatesPlayerMoves: pipeline.gameState.phase.validatesPlayerMoves,
                     selectedCard: selectedCard,
+                    activeBonuses: pipeline.activeDamageBonuses,
                     // Before a Legend is seen the app doesn't know whose
                     // deck it's looking at, and says so instead of
                     // narrating a phase it can't scope. Occupies the

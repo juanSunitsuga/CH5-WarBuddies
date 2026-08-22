@@ -41,6 +41,9 @@ struct MascotInstructionPanel: View {
     /// The card the player has tapped, in the strip or on the camera
     /// overlay. `nil` when nothing is selected.
     var selectedCard: CardPrinting?
+    /// Damage bonuses granted by cards already on the table, so a tapped
+    /// card can be quoted at the number it will actually deal.
+    var activeBonuses: [ActiveDamageBonus] = []
     /// Said when nothing else has anything to report, so the band is never
     /// empty — an empty speech panel reads as a broken one.
     var fallback: String
@@ -130,7 +133,8 @@ struct MascotInstructionPanel: View {
             energyCost: printing.attributes.energy,
             powerCost: printing.attributes.power ?? 0,
             powerDomains: printing.classification.domain,
-            printedText: printing.text.plain
+            printedText: printing.text.plain,
+            activeBonuses: activeBonuses
         )
         // `describeCard` has already run the plain-language pass. Saying so
         // is what stops the band running it a second time: a second pass

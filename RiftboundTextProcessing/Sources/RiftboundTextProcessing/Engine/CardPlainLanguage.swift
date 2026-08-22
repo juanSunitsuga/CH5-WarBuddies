@@ -89,7 +89,8 @@ public enum CardPlainLanguage {
         energyCost: Int?,
         powerCost: Int,
         powerDomains: [String] = [],
-        printedText: String
+        printedText: String,
+        activeBonuses: [ActiveDamageBonus] = []
     ) -> CardSummary {
         let trimmedType = type.trimmingCharacters(in: .whitespaces)
         let headline = trimmedType.isEmpty ? name : "\(name) — \(trimmedType)"
@@ -102,6 +103,15 @@ public enum CardPlainLanguage {
         // Shown as printed rather than paraphrased, same rule as everywhere
         // else here.
         parts.append(contentsOf: explanation.unexplained)
+
+        // What's on the table can change this card's numbers, and that
+        // bonus is printed on the *other* card — so it goes last, where a
+        // correction belongs, rather than being folded silently into the
+        // ability text as if the card said it.
+        if let damage = CardAbilityParser.damageDealt(in: printedText),
+           let advice = damageAdvice(base: damage, bonuses: activeBonuses) {
+            parts.append(advice)
+        }
 
         if parts.isEmpty {
             parts.append("No printed ability — it does what its type does, nothing more.")
@@ -141,6 +151,47 @@ public enum CardPlainLanguage {
             parts.append("recycle \(powerCost) \(domainPrefix)rune\(powerCost == 1 ? "" : "s") to the bottom of your rune deck")
         }
         return "To play it, " + parts.joined(separator: " and ") + "."
+    }
+
+    /// What a card will *actually* deal, given what's already on the table.
+    ///
+    /// The bonus is printed on the card granting it, not on the card being
+    /// played, so this is precisely the arithmetic a player is likely to
+    /// miss — and they only find out they were wrong after the damage is
+    /// dealt. Says the final number first, because that is the one being
+    /// acted on, and names the source so it can be checked rather than
+    /// taken on trust.
+    ///
+    /// Battlefield-scoped bonuses are reported separately: they only apply
+    /// where that battlefield is, so folding them into one total would
+    /// overstate the damage everywhere else.
+    static func damageAdvice(base: Int, bonuses: [ActiveDamageBonus]) -> String? {
+        guard base > 0, !bonuses.isEmpty else { return nil }
+
+        let everywhere = bonuses.filter { $0.bonus.scope == .anywhere }
+        let located = bonuses.filter { $0.bonus.scope == .atThisBattlefield }
+
+        let everywhereTotal = everywhere.reduce(0) { $0 + $1.bonus.amount }
+        let running = base + everywhereTotal
+
+        var sentences: [String] = []
+        if everywhereTotal > 0 {
+            let names = listing(everywhere.map(\.source))
+            sentences.append("Deals \(running), not \(base) — \(names) in play.")
+        }
+        for bonus in located {
+            let total = running + bonus.bonus.amount
+            sentences.append(everywhereTotal > 0
+                ? "At \(bonus.source), \(total)."
+                : "Deals \(total), not \(base), at \(bonus.source).")
+        }
+        return sentences.joined(separator: " ")
+    }
+
+    /// "a", "a and b", "a, b and c".
+    private static func listing(_ parts: [String]) -> String {
+        guard parts.count > 1 else { return parts.first ?? "" }
+        return parts.dropLast().joined(separator: ", ") + " and " + parts[parts.count - 1]
     }
 
     // MARK: - Instructions
