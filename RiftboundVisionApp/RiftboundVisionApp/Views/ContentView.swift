@@ -98,7 +98,10 @@ struct ContentView: View {
                 gameState: $pipeline.gameState,
                 isAutoAdvancing: $pipeline.isAutoDetectingPhase,
                 playerScore: $pipeline.playerScore,
-                opponentScore: $pipeline.opponentScore
+                opponentScore: $pipeline.opponentScore,
+                engineEnergy: pipeline.engineEnergy,
+                engineReadyRunes: pipeline.engineReadyRuneCount,
+                engineTotalRunes: pipeline.engineRuneCount
             )
         }
         .background(RiftboundPalette.mainBackground)

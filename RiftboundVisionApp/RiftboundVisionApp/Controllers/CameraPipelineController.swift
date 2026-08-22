@@ -839,6 +839,10 @@ final class CameraPipelineController: ObservableObject {
                 guard !deferredToSettlement else { continue }
                 let instruction = await engine.process(event)
                 self.recordInstruction(instruction, for: event)
+                // Read straight back, on the same hop that just mutated it.
+                // Refreshing anywhere else would let the screen show a state
+                // the engine had already moved past.
+                self.engineState = await session.store.currentState
             }
         }
 
@@ -957,6 +961,35 @@ final class CameraPipelineController: ObservableObject {
 
     /// The deck the Legend on the table belongs to, once known.
     var activeDeckName: String? { deckScope.activeDeckName }
+
+    /// The engine's own view of the game, refreshed after every event it
+    /// processes.
+    ///
+    /// The app used to write to `GameState` and never read it back, which
+    /// made the engine a ledger nobody consulted: it recorded what happened
+    /// but nothing on screen was derived from it, so the two could disagree
+    /// indefinitely with no way to notice. Publishing the snapshot is what
+    /// closes that loop — anything the engine knows can now be shown, and a
+    /// disagreement between the board and the engine becomes visible
+    /// instead of silent.
+    ///
+    /// `nil` until the first event is processed.
+    @Published private(set) var engineState: GameState?
+
+    /// Energy currently in the local player's pool, as the *engine* has it —
+    /// the number a play is actually validated against (130.2).
+    var engineEnergy: Int? { engineState?.zones[localPlayerID]?.runePool.energy }
+
+    /// Runes the engine believes are on the board, and how many are still
+    /// upright and therefore still able to pay for something (157.2.a).
+    var engineRuneCount: Int? {
+        engineState.map { state in state.runes.values.filter { $0.controller == localPlayerID }.count }
+    }
+    var engineReadyRuneCount: Int? {
+        engineState.map { state in
+            state.runes.values.filter { $0.controller == localPlayerID && !$0.isExhausted }.count
+        }
+    }
 
     /// Standing damage bonuses granted by cards currently on the table.
     ///
