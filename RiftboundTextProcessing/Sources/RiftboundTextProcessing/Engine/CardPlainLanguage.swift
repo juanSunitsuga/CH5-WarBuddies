@@ -188,6 +188,16 @@ public enum CardPlainLanguage {
                 of: #"\b"# + NSRegularExpression.escapedPattern(for: term.word),
                 options: [.regularExpression, .caseInsensitive]
             ) != nil else { continue }
+            // Belt and braces against a second pass over text that has
+            // already been glossed. The `glossed` set only guards within one
+            // call, and running this twice over the same string put "A token
+            // is a unit created during play." on screen twice. The caller
+            // shouldn't do that — but a gloss the text already contains is
+            // never worth adding, whoever asked.
+            guard !out.contains(term.note) else {
+                glossed.insert(term.word)
+                continue
+            }
             glossed.insert(term.word)
             notes.append(term.note)
         }
