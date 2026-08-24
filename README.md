@@ -481,6 +481,31 @@ packages — open it and run the `RiftboundVisionApp` scheme.
 | Swift | 6, strict concurrency |
 | Camera | Any AVFoundation device; Continuity Camera works well overhead |
 
+## Where the Card Data Comes From
+
+Every printing in this repo is an export from **[riftcodex.com](https://riftcodex.com)**,
+whose card API is documented at:
+
+> **https://riftcodex.com/docs/endpoints/cards/**
+
+That endpoint is the shape `CardPrinting` decodes — `riftbound_id`, `name`,
+`attributes` (energy / power / might), `classification` (type, supertype,
+rarity, domain), `text.plain`, and the `media` image URLs. The decoder
+mirrors it field for field rather than flattening it into something
+convenient, so a card that gains a field upstream shows up as a field here
+instead of being silently dropped.
+
+The bundled `CardData/*.json` files are per-deck exports fetched by deck
+code. Two things about them are worth knowing before you regenerate any:
+
+- **`riftbound_id` is the key**, not the catalogue's hex `id`. The whole
+  pipeline is keyed on it, and alternate arts stay distinct
+  (`ogn-214-298` vs `ogn-214a-298`).
+- **The exporter puts the whole deck in `mainDeck`**, leaving `legend`,
+  `runes` and `battlefields` empty. `CardDatabase` therefore reads each
+  printing's `classification.type` to build its deck rosters rather than
+  trusting which array a card sat in — see `DeckScope`.
+
 ## Updating the Card Database
 
 The detector finds cards generically and the index identifies them, so **new
@@ -503,10 +528,23 @@ all 75 printings, and alternate arts stay distinct (`ogn-214-298` vs
 Flagged rather than papered over. Two things that *did* land recently, so the
 list reads honestly: a played card's abilities now execute against
 `GameState` (`EffectExecutor`, with a real `TargetSpec` resolved from the
-action's declared choices), and card identification is scoped to the deck the
-Legend names.
+action's declared choices); card identification is scoped to the deck the
+Legend names; turning a rune sideways reaches the engine as `.exhaust` and
+credits the pool (157.2.a); and the app reads `GameState` back — `EnergySection`
+is the first thing on screen derived from the engine's ledger rather than
+from a second read of the mat.
 
-- **A rune turning sideways never becomes `.exhaust`.** The engine models the
+- **Channelling isn't proposed on a move.** A rune going RuneDeck → RuneArea
+  is treated as a scripted phase step and returns nil, so `.channel` only
+  reaches the engine when the tracker reports the rune *appearing* in the
+  Rune Area rather than moving into it. A rune must be in `GameState` before
+  it can be exhausted, so this — not the exhaust hop — is what still keeps
+  `GameSessionBuilder` seeding a stand-in Energy pool.
+- **A unit moving isn't tracked at all.** `CandidateGameAction` has no move
+  case, so Base → Battlefield falls through as unrecognised. `.standardMove`
+  exists in the engine and is unreachable from the camera path — which means
+  Showdowns and Conquers, most of the game, never fire from the table.
+- ~~**A rune turning sideways never becomes `.exhaust`.**~~ *Fixed.* The engine models the
   rune economy properly, both rune abilities are discretionary, and the camera
   now detects the turn (orientation comes from box shape, and the adapter emits
   `.cardOrientationChanged`). The break is the last hop: the NLP translator
@@ -539,7 +577,9 @@ Legend names.
 
 ## Roadmap
 
-- [ ] Map `.cardOrientationChanged` to `.exhaust`, and drop the seeded pool
+- [ ] Propose `.channel` on a RuneDeck → RuneArea move, then drop the seeded pool
+- [ ] Add a move case to the translation vocabulary, so Showdown and Conquer
+      can fire from the table
 - [ ] Derive player-facing instructions from `GameState` rather than from a
       second read of the table
 - [ ] Widen ability parsing — `CardAbilityParser` reads "deal damage" off a
