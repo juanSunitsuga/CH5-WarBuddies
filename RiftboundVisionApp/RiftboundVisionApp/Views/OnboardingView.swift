@@ -79,12 +79,12 @@ struct OnboardingView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Play with BonBon!")
+                Text("Play VisBound!")
                     .font(RiftboundFont.iconic2)
                     .foregroundStyle(RiftboundPalette.iconicText)
                     .fixedSize()
 
-                Text("Learn Riftbound with me and your opponent!")
+                Text("Learn Riftbound with BonBon and your opponent!")
                     .font(RiftboundFont.heading)
                     .foregroundStyle(RiftboundPalette.regularText)
             }

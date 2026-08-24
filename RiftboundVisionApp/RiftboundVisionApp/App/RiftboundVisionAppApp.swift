@@ -52,7 +52,10 @@ struct RiftboundVisionAppApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        // Titled explicitly rather than left to default to the bundle
+        // name — the target is still `RiftboundVisionApp`, and without
+        // this the title bar shows that build-system name to the player.
+        WindowGroup("VisBound") {
             ContentView(modelContext: container.mainContext)
                 // The window's own background shows through behind the
                 // toolbar and around the content during a live resize.

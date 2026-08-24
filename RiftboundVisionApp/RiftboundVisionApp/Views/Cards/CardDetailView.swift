@@ -1,106 +1,103 @@
 import SwiftUI
 import RiftboundVision
 
-/// "Info" panel for a detected card — printed stats and rules text pulled
-/// straight from `CardPrinting` (real card data, per the brief: no
-/// invented "best use case" commentary, just what's actually printed on
-/// the card).
+/// The Card Library's full-page browse view — art, name, Type/Cost/Ability,
+/// and a Description section, matching the "Card Details" hi-fi mockup.
 ///
-/// No call sites remain — the Card Library column in `DetectedCardsPanel`
-/// took over card inspection. Themed rather than deleted, since removing a
-/// file is a decision about the project, not the front end; it is dead
-/// code as it stands.
+/// Pure content, not a sheet of its own: `CardLibrarySheet` owns the popup's
+/// frame, background and Back/Close header, and swaps this in for the
+/// result list when a card is tapped, so browsing a card's details never
+/// leaves the library's window. Deliberately *not* `InlineCardDetail` —
+/// that one is sized to sit beside a thumbnail already on screen elsewhere
+/// and omits the artwork for exactly that reason; here the art gets its own
+/// full-width band at the top of the page.
 struct CardDetailView: View {
     let printing: CardPrinting
-    let onClose: () -> Void
+    /// Rules text for `printing`, resolved by the caller (see
+    /// `CameraPipelineController.description(for:)`) — the same
+    /// simplified, first-timer-friendly text `InlineCardDetail` shows, so a
+    /// card's Ability doesn't read differently depending on whether you
+    /// found it through the strip or the library.
+    let description: String
+
+    /// How wide the info column (rows, Description, footer) reads best —
+    /// text set to the full 480pt sheet width made "Give two friendly
+    /// units each +2 Might for this turn." span nearly the whole page in
+    /// one line, which doesn't read like a card. Centring a narrower
+    /// column under the art is closer to how the physical card itself
+    /// paces its own text.
+    private static let infoColumnWidth: CGFloat = 340
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(printing.name)
-                    .font(RiftboundFont.heading)
-                    .foregroundStyle(RiftboundPalette.regularText)
-                Spacer()
-                Button("Close", action: onClose)
-                    .buttonStyle(RiftSecondaryButtonStyle())
-                    .keyboardShortcut(.cancelAction)
-            }
+        VStack(alignment: .center, spacing: 16) {
+            // Battlefields print *landscape* — `CardOrientation`'s own doc
+            // comment notes it as the one exception to every other type
+            // being portrait. A fixed portrait frame around one just left
+            // the art letterboxed inside a too-tall box; swapping the two
+            // dimensions for a landscape printing keeps the same box area
+            // without stretching or shrinking the art itself.
+            CardArtView(printing: printing)
+                .frame(width: artSize.width, height: artSize.height)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(RiftboundPalette.elementStroke, lineWidth: 2)
+                )
 
-            HStack(alignment: .top, spacing: 16) {
-                CardArtView(printing: printing)
-                    .frame(width: 180, height: 251)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(RiftboundPalette.elementStroke, lineWidth: 2)
-                    )
+            Text(printing.name)
+                .font(RiftboundFont.iconic2)
+                .foregroundStyle(RiftboundPalette.iconicText)
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.5)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: Self.infoColumnWidth)
 
+            VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(printing.classification.type)
+                    CardAttributeRow(label: "Type", value: printing.classification.type)
+                    if let cost = printing.costLabel { CardAttributeRow(label: "Cost", value: cost) }
+                    CardAttributeRow(label: "Ability", value: abilityText)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Description")
                         .font(RiftboundFont.heading)
                         .foregroundStyle(RiftboundPalette.regularText)
-                    if let supertype = printing.classification.supertype {
-                        Text(supertype)
-                            .font(RiftboundFont.body)
-                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
-                    }
-
-                    statsRow
-
-                    if !printing.classification.domain.isEmpty {
-                        Text(printing.classification.domain.joined(separator: " / "))
-                            .font(RiftboundFont.body)
-                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
-                    }
-
-                    if let rarity = printing.classification.rarity {
-                        Text(rarity)
-                            .font(RiftboundFont.body)
-                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
-                    }
-
-                    Rectangle()
-                        .fill(RiftboundPalette.elementStroke.opacity(0.4))
-                        .frame(height: 1)
-
-                    Text(printing.text.plain.isEmpty ? "(No printed rules text)" : printing.text.plain)
+                    Text(descriptionText)
                         .font(RiftboundFont.body)
-                        .foregroundStyle(RiftboundPalette.regularText)
+                        .italic()
+                        .foregroundStyle(RiftboundPalette.regularText.opacity(0.8))
                         .fixedSize(horizontal: false, vertical: true)
-
-                    if let flavour = printing.text.flavour, !flavour.isEmpty {
-                        Text(flavour)
-                            .font(RiftboundFont.body)
-                            .italic()
-                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
-                    }
-
-                    Spacer()
-
-                    Text("\(printing.set.label) · #\(printing.collectorNumber.map(String.init) ?? "?") · \(printing.riftboundID)")
-                        .font(RiftboundFont.body)
-                        .foregroundStyle(RiftboundPalette.regularText.opacity(0.45))
                 }
+
+                Text("\(printing.set.label) · #\(printing.collectorNumber.map(String.init) ?? "?") · \(printing.riftboundID)")
+                    .font(RiftboundFont.body)
+                    .foregroundStyle(RiftboundPalette.regularText.opacity(0.45))
             }
+            .frame(width: Self.infoColumnWidth, alignment: .leading)
         }
-        .padding(20)
-        .frame(minWidth: 520, minHeight: 340)
-        .background(RiftboundPalette.secondaryBackground)
+        .frame(maxWidth: .infinity)
     }
 
-    @ViewBuilder
-    private var statsRow: some View {
-        HStack(spacing: 16) {
-            if let energy = printing.attributes.energy {
-                Label("\(energy)", systemImage: "bolt.fill")
-            }
-            if let might = printing.attributes.might {
-                Label("\(might)", systemImage: "shield.fill")
-            }
-            if let power = printing.attributes.power {
-                Label("\(power)", systemImage: "sparkles")
-            }
+    private var artSize: CGSize {
+        printing.orientation == .landscape
+            ? CGSize(width: 280, height: 200)
+            : CGSize(width: 200, height: 280)
+    }
+
+    private var abilityText: String {
+        let text = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "No printed ability." : text
+    }
+
+    /// The mockup's "Lorem ipsum" body under the Description header is the
+    /// card's flavour text — the one field `InlineCardDetail`'s Type/Cost/
+    /// Ability rows don't already cover.
+    private var descriptionText: String {
+        guard let flavour = printing.text.flavour?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !flavour.isEmpty else {
+            return "No flavour text."
         }
-        .font(RiftboundFont.body)
-        .foregroundStyle(RiftboundPalette.highlightOverlay)
+        return flavour
     }
 }

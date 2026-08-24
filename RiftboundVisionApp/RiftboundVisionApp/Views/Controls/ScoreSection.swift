@@ -5,6 +5,7 @@ import SwiftUI
 struct ScoreSection: View {
     @Binding var playerScore: Int
     @Binding var opponentScore: Int
+    let isGameRunning: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -17,7 +18,7 @@ struct ScoreSection: View {
                 .foregroundStyle(RiftboundPalette.regularText.opacity(0.75))
                 .fixedSize(horizontal: false, vertical: true)
 
-            ScoreTracker(playerScore: $playerScore, opponentScore: $opponentScore)
+            ScoreTracker(playerScore: $playerScore, opponentScore: $opponentScore, isGameRunning: isGameRunning)
         }
     }
 }

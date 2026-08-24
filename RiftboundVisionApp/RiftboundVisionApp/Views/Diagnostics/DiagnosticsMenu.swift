@@ -8,6 +8,9 @@ struct DiagnosticsMenu: View {
     /// Re-opens the welcome sheet. Owned by `ContentView`, which also
     /// shows it on first launch.
     let onShowOnboarding: () -> Void
+    /// Opens `OnboardingTourView` — the step-by-step BonBon walkthrough,
+    /// alongside the welcome sheet above rather than instead of it.
+    let onShowTour: () -> Void
 
     /// The three developer affordances, folded behind one control.
     ///
@@ -30,7 +33,13 @@ struct DiagnosticsMenu: View {
             Button {
                 onShowOnboarding()
             } label: {
-                Label("How to Play…", systemImage: "questionmark.circle")
+                Label("Quick Guide…", systemImage: "questionmark.circle")
+            }
+
+            Button {
+                onShowTour()
+            } label: {
+                Label("Take the Tour…", systemImage: "figure.walk")
             }
 
             Divider()
