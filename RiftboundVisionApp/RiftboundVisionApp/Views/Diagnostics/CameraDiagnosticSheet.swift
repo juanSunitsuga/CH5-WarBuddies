@@ -10,7 +10,7 @@ struct CameraDiagnosticSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Camera Diagnostic")
-                .font(RiftboundFont.heading)
+                .riftFont(.heading)
                 .foregroundStyle(RiftboundPalette.regularText)
             ScrollView {
                 // Monospaced on purpose — this is a device dump, and

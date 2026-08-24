@@ -36,6 +36,11 @@ struct TurnButtonRow: View {
             Button("Back") { gameState.back() }
                 .buttonStyle(RiftOutlineButtonStyle())
                 .disabled(!isGameRunning || !gameState.canGoBack)
+                // Spoken, the bare word "Back" doesn't say back to *what* —
+                // and the two buttons here move through an order a sighted
+                // player reads off the phase pips above, which VoiceOver
+                // reaches only as a separate visit.
+                .accessibilityHint(isGameRunning ? "Returns to the previous phase of your turn" : "Unavailable until the game is started")
 
             Button(nextTitle) {
                 if gameState.phase == .action {
@@ -46,7 +51,18 @@ struct TurnButtonRow: View {
             }
             .buttonStyle(RiftPrimaryButtonStyle())
             .disabled(!isGameRunning)
+            .accessibilityHint(nextHint)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Turn controls, \(gameState.phase.displayName) phase")
+    }
+
+    /// What pressing the primary button will actually do, said out loud.
+    private var nextHint: String {
+        guard isGameRunning else { return "Unavailable until the game is started" }
+        return gameState.phase == .action
+            ? "Ends your turn and passes play to your opponent"
+            : "Moves on to the next phase of your turn"
     }
 
     /// In the Action Phase there is no next phase to step to (516.6) — only

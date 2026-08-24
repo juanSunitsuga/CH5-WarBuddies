@@ -1,10 +1,18 @@
 import SwiftUI
-import RiftboundVision
 
-/// The developer affordances, gathered behind one control.
+/// The two ways into the app's own explanation of itself, behind one
+/// toolbar control.
+///
+/// This was "Help & Diagnostics" and carried four more items — an iPhone
+/// camera action, the pipeline stage toggles, a device dump and the text
+/// size setting. They've been removed one at a time; what's left is help,
+/// so the control says Help and nothing else.
+///
+/// Text size did not move *out* of the app when it left this menu — it
+/// lives in the View menu (see `RiftboundTextSizeCommands`), with the
+/// standard ⌘+ / ⌘− / ⌘0 shortcuts, which is where a Mac user looks for it
+/// anyway.
 struct DiagnosticsMenu: View {
-    @ObservedObject var pipeline: CameraPipelineController
-    @Binding var isShowingPipelineSettings: Bool
     /// Re-opens the welcome sheet. Owned by `ContentView`, which also
     /// shows it on first launch.
     let onShowOnboarding: () -> Void
@@ -12,24 +20,8 @@ struct DiagnosticsMenu: View {
     /// alongside the welcome sheet above rather than instead of it.
     let onShowTour: () -> Void
 
-    /// The three developer affordances, folded behind one control.
-    ///
-    /// They used to be three separate toolbar buttons — an iPhone glyph, a
-    /// gear and a ladybug — which put six items across the top bar and made
-    /// the two a player actually needs (pick a camera, calibrate the mat)
-    /// hard to find among them. None of them is used during a game: two are
-    /// for when a camera won't appear, and one is a pipeline kill-switch
-    /// panel.
-    ///
-    /// Nothing is removed, only gathered. A menu also lets each item carry
-    /// its full name instead of a glyph that has to be guessed at.
     var body: some View {
         Menu {
-            // Explicit action for the case passive discovery can't handle —
-            // an iPhone the user manually Disconnected on the phone side.
-            // This actively tries to open it, which is what triggers the
-            // reconnect/permission handshake, rather than waiting for it to
-            // reappear on its own.
             Button {
                 onShowOnboarding()
             } label: {
@@ -41,41 +33,8 @@ struct DiagnosticsMenu: View {
             } label: {
                 Label("Take the Tour…", systemImage: "figure.walk")
             }
-
-            Divider()
-
-            Button {
-                pipeline.useIPhoneCamera()
-            } label: {
-                Label("Use iPhone Camera", systemImage: "iphone")
-            }
-
-            // Per-stage toggles instead of one flat kill switch. Disabling
-            // an earlier stage cascades: everything downstream turns off
-            // too (enforced by `CameraPipelineController.setStage`/
-            // `isStageActive`), so there's no way to leave the pipeline in
-            // an inconsistent "stage 3 on, stage 2 off" state from here.
-            Button {
-                isShowingPipelineSettings = true
-            } label: {
-                Label("Pipeline Settings…", systemImage: "gearshape")
-            }
-
-            Divider()
-
-            // Diagnostic for "Continuity Camera works elsewhere but this
-            // app doesn't see it" — dumps every video device macOS reports
-            // (all device types, plus the legacy enumeration API).
-            Button {
-                pipeline.runCameraDiagnostic()
-            } label: {
-                Label("Debug Cameras…", systemImage: "ladybug")
-            }
         } label: {
-            Label("Help & Diagnostics", systemImage: "questionmark.circle")
-        }
-        .popover(isPresented: $isShowingPipelineSettings) {
-            PipelineSettingsView(pipeline: pipeline)
+            Label("Help", systemImage: "questionmark.circle")
         }
     }
 }

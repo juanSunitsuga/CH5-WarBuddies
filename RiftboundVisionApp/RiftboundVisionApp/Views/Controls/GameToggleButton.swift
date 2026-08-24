@@ -42,6 +42,18 @@ struct GameToggleButton: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(GameToggleButtonStyle(isRunning: isRunning, isEnabled: isEnabled))
+        .accessibilityHint(spokenHint)
+    }
+
+    /// Why the button is where it is. The disabled case matters most: the
+    /// label reads "Start Game" whether or not it can be pressed, so
+    /// without this a player who can't see it greyed out gets no reason
+    /// for the button doing nothing.
+    private var spokenHint: String {
+        if isRunning { return "Stops reading the table and ends the current game" }
+        return isCameraRunning
+            ? "Starts reading the table and begins tracking your turn"
+            : "Unavailable until the camera is running"
     }
 }
 
@@ -86,7 +98,7 @@ private struct GameToggleButtonBody: View {
 
     var body: some View {
         configuration.label
-            .font(RiftboundFont.heading)
+            .riftFont(.heading)
             .foregroundStyle(isRunning && isEnabled ? RiftboundPalette.dangerButton : RiftboundPalette.regularText)
             .padding(.vertical, 9)
             .glassEffect(

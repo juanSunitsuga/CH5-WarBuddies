@@ -44,7 +44,7 @@ struct PhasePipRow: View {
     private func pip(for phase: GamePhase) -> some View {
         let isCurrent = current == phase
         return Text(RiftboundPhaseCopy.pipLetter(for: phase))
-            .font(RiftboundFont.heading)
+            .riftFont(.heading)
             .foregroundStyle(isCurrent ? RiftboundPalette.elementShadow : RiftboundPalette.regularText.opacity(0.7))
             .frame(width: Self.pipDiameter, height: Self.pipDiameter)
             .background(Circle().fill(isCurrent ? RiftboundPalette.highlightOverlay : Color.clear))

@@ -12,14 +12,14 @@ struct RiftSectionHeader: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(RiftboundFont.heading)
+                .riftFont(.heading)
                 .foregroundStyle(RiftboundPalette.regularText)
             Spacer()
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() }
             } label: {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .riftIcon(size: 12, weight: .semibold)
                     .foregroundStyle(RiftboundPalette.regularText)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())

@@ -105,6 +105,14 @@ enum RiftboundPalette {
 /// "Iconics" is 80pt. That's deliberately a very short scale, so any
 /// `.font(.title)`/`.font(.caption)` left in a view is a deviation, not a
 /// judgement call — which is why those are all gone from the UI now.
+///
+/// The roles themselves live on `RiftFontRole`, and views ask for them
+/// with `.riftFont(.body)` rather than a baked-in `Font` constant. This
+/// type is now just the *face loader* — the part that turns a size and a
+/// weight into a real Sora face. There are deliberately no `static let`
+/// role constants here any more: a `Font` resolved at file scope can't see
+/// the player's text size setting, so every call site holding one would
+/// have silently opted out of it. See `RiftboundTextScale.swift`.
 enum RiftboundFont {
     /// Static instances are registered under their PostScript names.
     /// `Font.custom("Sora", …).weight(…)` would *look* tidier but silently
@@ -129,18 +137,6 @@ enum RiftboundFont {
         }
         return .custom(face(weight), size: size)
     }
-
-    /// 15pt Regular — running copy, phase blurbs, attribute values.
-    static let body = sora(15, .regular)
-    /// 15pt SemiBold — captions that label something ("Current Turn").
-    static let subheading = sora(15, .semibold)
-    /// 15pt Bold — section titles ("Score", "Card Library"), card names,
-    /// button labels, attribute labels.
-    static let heading = sora(15, .bold)
-    /// 50pt Bold — "Iconics 2" on the board: the turn banner.
-    static let iconic2 = sora(50, .bold)
-    /// 80pt Bold — "Iconics" on the board: the score numerals.
-    static let iconic = sora(80, .bold)
 }
 
 /// Registers the bundled Sora faces with Core Text.
@@ -366,7 +362,7 @@ private struct RiftButtonBody: View {
 
     var body: some View {
         configuration.label
-            .font(RiftboundFont.heading)
+            .riftFont(.heading)
             .foregroundStyle(isOutlined ? RiftboundPalette.primaryButton : RiftboundPalette.regularText)
             .padding(.horizontal, 18)
             .padding(.vertical, 9)
@@ -591,6 +587,16 @@ enum RiftboundArt {
     static let exhaustOrPay = "Exhaust or Pay"
     static let recycleARune = "Recycle a Rune"
     static let draw = "Draw"
+    /// The resize handle for the playmat overlay.
+    ///
+    /// Unlike the four above — multi-colour game symbols that carry their
+    /// own art — this is a single-colour control glyph, so its image set is
+    /// marked `template` rather than `original`. That means it takes
+    /// `.foregroundStyle(…)` like an SF Symbol does and can sit in the
+    /// palette with everything else, instead of being locked to the white
+    /// the SVG happens to be filled with. Use `.renderingMode(.original)`
+    /// at a call site that really does want it white regardless.
+    static let resizeOverlay = "ResizeOverlay"
 
     static func unit(active: Bool) -> String { active ? "Unit (Active)" : "Unit (Disabled)" }
     static func spell(active: Bool) -> String { active ? "Spell (Active)" : "Spell (Disabled)" }

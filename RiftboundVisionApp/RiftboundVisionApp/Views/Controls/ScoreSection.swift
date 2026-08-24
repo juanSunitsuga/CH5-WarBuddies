@@ -10,11 +10,11 @@ struct ScoreSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Score")
-                .font(RiftboundFont.heading)
+                .riftFont(.heading)
                 .foregroundStyle(RiftboundPalette.regularText)
 
             Text("Conquer and hold battlefields to get \(ScoreTracker.winningScore) points and win.")
-                .font(RiftboundFont.body)
+                .riftFont(.body)
                 .foregroundStyle(RiftboundPalette.regularText.opacity(0.75))
                 .fixedSize(horizontal: false, vertical: true)
 

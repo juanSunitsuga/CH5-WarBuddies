@@ -44,7 +44,7 @@ struct CardLibrarySheet: View {
 
                 if results.isEmpty {
                     Text("No cards match “\(searchText)”.")
-                        .font(RiftboundFont.body)
+                        .riftFont(.body)
                         .foregroundStyle(RiftboundPalette.regularText.opacity(0.7))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -127,7 +127,7 @@ struct CardLibrarySheet: View {
     private var header: some View {
         HStack {
             Text("Card Library")
-                .font(RiftboundFont.heading)
+                .riftFont(.heading)
                 .foregroundStyle(RiftboundPalette.regularText)
             Spacer()
             Button("Close", action: onClose)
@@ -146,7 +146,7 @@ struct CardLibrarySheet: View {
                 .foregroundStyle(RiftboundPalette.regularText.opacity(0.7))
             TextField("Search for card…", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(RiftboundFont.body)
+                .riftFont(.body)
                 .foregroundStyle(RiftboundPalette.regularText)
                 .focused($isSearchFocused)
             if !searchText.isEmpty {
@@ -189,10 +189,10 @@ struct CardLibrarySheet: View {
                 .frame(width: 44, height: 62)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(printing.name)
-                        .font(RiftboundFont.heading)
+                        .riftFont(.heading)
                         .foregroundStyle(RiftboundPalette.regularText)
                     Text(printing.classification.type)
-                        .font(RiftboundFont.body)
+                        .riftFont(.body)
                         .foregroundStyle(RiftboundPalette.regularText.opacity(0.7))
                 }
                 Spacer()

@@ -12,7 +12,7 @@ struct CardLibraryButton: View {
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: "books.vertical.fill")
-                .font(.system(size: 26, weight: .regular))
+                .riftIcon(size: 26, weight: .regular)
                 .foregroundStyle(RiftboundPalette.regularText)
             // A real gold pill, not plain text under the icon — the
             // reference draws this as the same button style as "Start

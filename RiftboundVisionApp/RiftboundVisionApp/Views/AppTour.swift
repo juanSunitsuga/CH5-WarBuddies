@@ -261,7 +261,10 @@ enum TourScript {
         },
 
         // Script 4
-        TourStep(.calibrate, "Cool, now let's set your playmat so that it's adjusted to the table. Hit {sf:square.dashed} up top and drag the corners.", buttons: .skipAndNext()),
+        // The glyph is interpolated from `RiftboundArt` rather than typed
+        // as a literal, so renaming the asset can't leave this sentence
+        // silently pointing at a picture that no longer exists.
+        TourStep(.calibrate, "Cool, now let's set your playmat so that it's adjusted to the table. Hit {img:\(RiftboundArt.resizeOverlay)} up top and drag the corners.", buttons: .skipAndNext()),
 
         // Script 5
         TourStep(.playmat, "Now that it's ready, you can put your cards based on their zone.", buttons: .skipAndNext()),
@@ -713,7 +716,7 @@ private struct TourCard: View {
                     .accessibilityHidden(true)
 
                 Self.styled(message)
-                    .font(RiftboundFont.body)
+                    .riftFont(.body)
                     .foregroundStyle(RiftboundPalette.regularText)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -739,36 +742,70 @@ private struct TourCard: View {
         }
     }
 
-    /// Renders a step's message, turning any `{sf:name}` token into the
-    /// live SF Symbol of that name, inline in the sentence.
+    /// Renders a step's message, turning a `{sf:name}` token into the live
+    /// SF Symbol of that name and a `{img:name}` token into the asset
+    /// catalogue image of that name, inline in the sentence.
     ///
-    /// This exists for the two steps that describe a **toolbar** control:
-    /// the tour cannot spotlight the title bar (see
+    /// This exists for the steps that describe a **toolbar** control: the
+    /// tour cannot spotlight the title bar (see
     /// `TourRegion.isTitleBarHosted`), so "the camera button up top" has
     /// to be identifiable from the sentence alone. Showing the actual
     /// glyph the player is looking for does that in a way no amount of
     /// describing it in words does.
     ///
+    /// Which is exactly why `{img:}` had to exist alongside `{sf:}`: once
+    /// a toolbar button started drawing a catalogue asset rather than a
+    /// symbol, a sentence that could only render symbols would have been
+    /// pointing confidently at the wrong picture — the one failure this
+    /// whole mechanism is meant to prevent.
+    ///
     /// Everything outside a token still goes through `LocalizedStringKey`,
     /// so `**bold**` keeps working either side of an icon.
     private static func styled(_ message: String) -> Text {
-        let token = "{sf:"
         var result = Text("")
         var remainder = Substring(message)
 
-        while let open = remainder.range(of: token),
-              let close = remainder[open.upperBound...].firstIndex(of: "}") {
-            let literal = remainder[..<open.lowerBound]
+        while let glyph = nextGlyph(in: remainder) {
+            let literal = remainder[..<glyph.range.lowerBound]
             if !literal.isEmpty { result = result + Text(.init(String(literal))) }
-            let name = String(remainder[open.upperBound..<close])
-            result = result + Text(Image(systemName: name))
-            remainder = remainder[remainder.index(after: close)...]
+            result = result + Text(glyph.isSystemSymbol ? Image(systemName: glyph.name) : Image(glyph.name))
+            remainder = remainder[glyph.range.upperBound...]
         }
 
         // Whatever follows the last token — and, when there were none at
         // all, the entire message.
         if !remainder.isEmpty { result = result + Text(.init(String(remainder))) }
         return result
+    }
+
+    /// One inline-icon token: where it sits, what it names, and which of
+    /// the two kinds it is.
+    private struct InlineGlyph {
+        /// The whole token including its braces, so the caller can skip it.
+        let range: Range<Substring.Index>
+        let name: String
+        let isSystemSymbol: Bool
+    }
+
+    /// The earliest `{sf:…}` or `{img:…}` in `text`, whichever comes first.
+    ///
+    /// Whichever *comes first* matters rather than checking one kind and
+    /// then the other: a sentence naming both would otherwise render them
+    /// out of order, with every token of the second kind jumping ahead of
+    /// the first kind's text.
+    private static func nextGlyph(in text: Substring) -> InlineGlyph? {
+        let kinds: [(token: String, isSystemSymbol: Bool)] = [("{sf:", true), ("{img:", false)]
+
+        return kinds.compactMap { kind -> InlineGlyph? in
+            guard let open = text.range(of: kind.token),
+                  let close = text[open.upperBound...].firstIndex(of: "}") else { return nil }
+            return InlineGlyph(
+                range: open.lowerBound..<text.index(after: close),
+                name: String(text[open.upperBound..<close]),
+                isSystemSymbol: kind.isSystemSymbol
+            )
+        }
+        .min { $0.range.lowerBound < $1.range.lowerBound }
     }
 
     @ViewBuilder

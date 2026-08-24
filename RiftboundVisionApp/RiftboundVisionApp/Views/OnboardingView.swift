@@ -37,6 +37,11 @@ struct OnboardingView: View {
     /// inside here.
     let onDismiss: () -> Void
 
+    /// Read here rather than left to `.riftFont(_:)` because `disclaimer`
+    /// joins two weights with `Text + Text`, which only works while both
+    /// sides are still `Text` — see `Text.riftFont(_:scale:)`.
+    @Environment(\.riftTextScale) private var textScale
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -59,12 +64,6 @@ struct OnboardingView: View {
 
                 disclaimer
                     .padding(.top, 24)
-
-                Button("Start Playing") { onDismiss() }
-                    .buttonStyle(RiftPrimaryButtonStyle())
-                    .keyboardShortcut(.defaultAction)
-                    .padding(.top, 24)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .padding(36)
         }
@@ -80,12 +79,12 @@ struct OnboardingView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Play VisBound!")
-                    .font(RiftboundFont.iconic2)
+                    .riftFont(.iconic2)
                     .foregroundStyle(RiftboundPalette.iconicText)
                     .fixedSize()
 
                 Text("Learn Riftbound with BonBon and your opponent!")
-                    .font(RiftboundFont.heading)
+                    .riftFont(.heading)
                     .foregroundStyle(RiftboundPalette.regularText)
             }
 
@@ -103,9 +102,9 @@ struct OnboardingView: View {
     /// check. Softening this would be the wrong kind of polish.
     private var disclaimer: some View {
         (
-            Text("Disclaimer: ").font(RiftboundFont.heading)
+            Text("Disclaimer: ").riftFont(.heading, scale: textScale)
             + Text("BonBon's card detection skill may be inaccurate, do double-check it first.")
-                .font(RiftboundFont.body)
+                .riftFont(.body, scale: textScale)
         )
         .foregroundStyle(RiftboundPalette.regularText)
         .fixedSize(horizontal: false, vertical: true)

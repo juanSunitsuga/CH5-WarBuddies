@@ -38,12 +38,12 @@ struct CardDetailView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(printing.name)
-                    .font(RiftboundFont.heading)
+                    .riftFont(.heading)
                     .foregroundStyle(RiftboundPalette.regularText)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(statLine)
-                    .font(RiftboundFont.heading)
+                    .riftFont(.heading)
                     .foregroundStyle(RiftboundPalette.regularText)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -75,7 +75,7 @@ struct CardDetailView: View {
     private var closeButton: some View {
         Button(action: onClose) {
             Image(systemName: "xmark")
-                .font(.system(size: 13, weight: .bold))
+                .riftIcon(size: 13, weight: .bold)
                 .foregroundStyle(RiftboundPalette.regularText)
                 .padding(10)
                 .contentShape(Rectangle())

@@ -100,7 +100,7 @@ struct TableCardStrip: View {
 
     private var emptyState: some View {
         Text("No cards on the table yet.")
-            .font(RiftboundFont.body)
+            .riftFont(.body)
             .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
             // `maxHeight: .infinity` is what actually centres this: the
             // outer `HStack` is `alignment: .top`, so without claiming the
