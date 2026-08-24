@@ -12,6 +12,15 @@ struct PhaseIndicatorSection: View {
     /// disabled.
     let isGameRunning: Bool
 
+    @State private var isShowingAutoAdvanceInfo = false
+
+    /// One string for the popover, the hover tooltip and the
+    /// accessibility label. They carried two different wordings before,
+    /// which meant VoiceOver described the control differently from what
+    /// everyone else could read.
+    private static let autoAdvanceInfo =
+        "Let BonBon scan the table and advance the steps automatically for you."
+
     /// Split into two nested stacks rather than one flat list of children
     /// purely so the guided tour can point at each half separately — it
     /// has a beat for reading the turn's state and a later one for the
@@ -84,11 +93,34 @@ struct PhaseIndicatorSection: View {
             // Auto-advance moves the four fixed phases and stops at the
             // Action Phase: 516.6 makes ending a turn the player's
             // declaration, and nothing the camera sees substitutes for it.
-            Image(systemName: "info.circle")
-                .font(.system(size: 13))
-                .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
-                .help("Moves through Awaken, Beginning, Channel and Draw when the table shows each step done. Your turn, and ending it, stay yours.")
-                .accessibilityLabel("Auto-advance moves the start-of-turn phases only.")
+            //
+            // A real `Button` with a `.popover`, not TipKit: a `Tip` is
+            // built to appear once on its own schedule and then stay
+            // dismissed for good, which is the opposite of what an info
+            // button owes you — it has to answer every time it's pressed.
+            // `.help` stays on top of it so hovering still gives the same
+            // sentence without a click.
+            Button { isShowingAutoAdvanceInfo.toggle() } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(Self.autoAdvanceInfo)
+            .accessibilityLabel(Self.autoAdvanceInfo)
+            .popover(isPresented: $isShowingAutoAdvanceInfo, arrowEdge: .bottom) {
+                Text(Self.autoAdvanceInfo)
+                    .font(RiftboundFont.body)
+                    .foregroundStyle(RiftboundPalette.regularText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 220, alignment: .leading)
+                    .padding(14)
+                    // The popover's own chrome is the system's, which is
+                    // light — without this the one panel in the app that
+                    // isn't the board's navy.
+                    .presentationBackground(RiftboundPalette.mainBackground)
+            }
         }
     }
 }
