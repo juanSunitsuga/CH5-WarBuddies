@@ -1,4 +1,4 @@
-# RiftChamps
+# VisBound
 
 A macOS app that watches a physical *Riftbound: League of Legends TCG* game
 through a camera, follows the cards across the table, and checks every move
