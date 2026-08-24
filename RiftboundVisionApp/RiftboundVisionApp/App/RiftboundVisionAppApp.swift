@@ -9,6 +9,12 @@ struct RiftboundVisionAppApp: App {
     /// trash-zone entry.
     let container: ModelContainer
 
+    /// The player's text size. Lives here, at the window root, because it
+    /// has to reach both the view tree (as an environment value) and the
+    /// menu bar (as commands) — `@AppStorage` reads the same UserDefaults
+    /// key from both, so the two can't drift.
+    @AppStorage("riftboundTextSize") private var textSize: RiftboundTextSize = .standard
+
     init() {
         // Sora has to be registered before any view builds, or the first
         // frame renders in the system fallback and only snaps to the real
@@ -63,8 +69,15 @@ struct RiftboundVisionAppApp: App {
                 // navy layout on every drag.
                 .background(RiftboundPalette.mainBackground)
                 .preferredColorScheme(.dark)
+                // Injected once, here. Every `.riftFont`/`.riftIcon` in the
+                // app reads it — which is the whole reason those exist
+                // instead of plain `.font(…)`.
+                .environment(\.riftTextScale, textSize.scale)
         }
         .modelContainer(container)
+        .commands {
+            RiftboundTextSizeCommands(textSize: $textSize)
+        }
         // The title bar stays visible, and that is load-bearing for the
         // toolbar rather than a style choice. `.automatic` toolbar items
         // trail the window title; with `.hiddenTitleBar` there is no title

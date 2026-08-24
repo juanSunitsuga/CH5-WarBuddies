@@ -21,7 +21,6 @@ import RiftboundVision
 struct ContentView: View {
     @StateObject private var pipeline: CameraPipelineController
     @StateObject private var tourCoordinator = TourCoordinator()
-    @State private var isShowingPipelineSettings = false
     @State private var isShowingOnboarding = false
     /// Whether the guided tour has already auto-started during this run.
     /// Plain `@State`, not `@AppStorage`, and that's the whole point: the
@@ -133,14 +132,29 @@ struct ContentView: View {
                 // corners as seen by the camera — a visual reference layer
                 // only, not consulted by detection.
                 Toggle(isOn: $pipeline.isCalibrating) {
-                    Label("Calibrate Playmat", systemImage: "square.dashed")
+                    Label {
+                        Text("Calibrate Playmat")
+                    } icon: {
+                        // The reference's own resize glyph, in place of the
+                        // `square.dashed` SF Symbol that stood in for it.
+                        //
+                        // Sized explicitly because a custom image renders at
+                        // its natural size — 23×22 here — which would sit
+                        // noticeably larger than the SF Symbols either side
+                        // of it in the same toolbar. The asset is a template
+                        // (see `RiftboundArt.resizeOverlay`), so it still
+                        // takes the toolbar's own tint and its selected
+                        // state, exactly as the symbol did.
+                        Image(RiftboundArt.resizeOverlay)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 16, height: 16)
+                    }
                 }
                 .toggleStyle(.button)
             }
             ToolbarItem {
                 DiagnosticsMenu(
-                    pipeline: pipeline,
-                    isShowingPipelineSettings: $isShowingPipelineSettings,
                     onShowOnboarding: { isShowingOnboarding = true },
                     onShowTour: { tourCoordinator.start() }
                 )
@@ -186,11 +200,25 @@ struct ContentView: View {
                 onClose: { isShowingCardLibrary = false }
             )
         }
-        // Bring the camera up as soon as the window opens, prompting for
-        // access the first time. Calibration needs a live picture, and
-        // aligning the mat after starting detection is what put cards in
-        // the wrong zones.
-        .task { await pipeline.openCamera() }
+        // Bring the camera up as soon as the window opens — but without
+        // ever raising the permission dialog here. Calibration needs a
+        // live picture, so an already-granted camera starts immediately;
+        // a first-run player instead meets the dialog at the tour step
+        // below, where BonBon has just explained what it's for.
+        .task { await pipeline.openCamera(promptingForAccess: false) }
+        // The ask, in context. This is the step whose script reads "Let's
+        // adjust the camera, so I can see the game and guide you" — the
+        // first point in the app where the dialog answers a question the
+        // player has actually been asked.
+        //
+        // Fires on the step the player *lands* on, so it covers arriving
+        // by Next and by any other route into it. `openCamera` returns
+        // immediately if the feed is already up, so a player who granted
+        // access on a previous launch sees nothing happen here at all.
+        .onChange(of: tourCoordinator.currentStep?.region) { _, region in
+            guard region == .cameraMenu else { return }
+            Task { await pipeline.openCamera() }
+        }
         // Release the camera when the window goes away. Without this the
         // capture session — and the OS camera indicator — stayed live for
         // the rest of the process's life.
@@ -280,12 +308,21 @@ struct ContentView: View {
                         // pointed at a phase from the game that just ended.
                         pipeline.gameState = ManualGameState()
                     } else {
-                        pipeline.startPipeline()
+                        // Safety net for the player who skipped the tour and
+                        // so never reached the step that asks. Without this,
+                        // deferring the prompt would leave them permanently
+                        // blind: `startPipeline` needs a running camera and
+                        // returns silently without one, so Start Game would
+                        // simply do nothing, forever, with no dialog to
+                        // explain why. Pressing Start Game is itself an
+                        // unambiguous request for the camera, so it's a fair
+                        // moment to ask.
+                        Task {
+                            await pipeline.openCamera()
+                            pipeline.startPipeline()
+                        }
                     }
-                },
-                engineEnergy: pipeline.engineEnergy,
-                engineReadyRunes: pipeline.engineReadyRuneCount,
-                engineTotalRunes: pipeline.engineRuneCount
+                }
             )
         }
         .background(RiftboundPalette.mainBackground)

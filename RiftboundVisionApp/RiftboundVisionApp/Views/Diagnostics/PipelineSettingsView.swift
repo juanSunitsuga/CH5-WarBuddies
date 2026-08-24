@@ -18,10 +18,10 @@ struct PipelineSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Pipeline Stages")
-                .font(RiftboundFont.heading)
+                .riftFont(.heading)
                 .foregroundStyle(RiftboundPalette.regularText)
             Text("Turning off a stage automatically turns off everything after it.")
-                .font(RiftboundFont.body)
+                .riftFont(.body)
                 .foregroundStyle(RiftboundPalette.regularText.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -35,14 +35,14 @@ struct PipelineSettingsView: View {
                         set: { pipeline.setStage(stage, enabled: $0) }
                     )) {
                         Text(stage.title)
-                            .font(RiftboundFont.body)
+                            .riftFont(.body)
                             .foregroundStyle(RiftboundPalette.regularText)
                     }
                     .toggleStyle(RiftSwitchToggleStyle())
 
                     if !stage.isWired {
                         Text("Not yet wired into the live pipeline.")
-                            .font(RiftboundFont.body)
+                            .riftFont(.body)
                             .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
                     }
                 }
@@ -61,7 +61,7 @@ struct PipelineSettingsView: View {
             // developer surface (see this type's doc comment), so it's
             // where they belong.
             Text("Live Telemetry")
-                .font(RiftboundFont.heading)
+                .riftFont(.heading)
                 .foregroundStyle(RiftboundPalette.regularText)
 
             telemetryRow(
@@ -80,11 +80,11 @@ struct PipelineSettingsView: View {
     private func telemetryRow(_ label: String, _ value: String) -> some View {
         HStack {
             Text(label)
-                .font(RiftboundFont.body)
+                .riftFont(.body)
                 .foregroundStyle(RiftboundPalette.regularText.opacity(0.7))
             Spacer()
             Text(value)
-                .font(RiftboundFont.body)
+                .riftFont(.body)
                 .foregroundStyle(RiftboundPalette.regularText)
         }
     }

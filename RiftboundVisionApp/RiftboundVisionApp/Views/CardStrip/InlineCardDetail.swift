@@ -66,7 +66,7 @@ struct CardAttributeRow<Value: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Text(label)
-                .font(RiftboundFont.heading)
+                .riftFont(.heading)
                 .foregroundStyle(RiftboundPalette.regularText)
                 .frame(width: RiftboundLayout.cardAttributeLabelWidth, alignment: .leading)
             value
@@ -93,7 +93,7 @@ struct CardAttributeText: View {
 
     var body: some View {
         Text(text)
-            .font(RiftboundFont.body)
+            .riftFont(.body)
             .foregroundStyle(RiftboundPalette.regularText.opacity(0.85))
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -133,7 +133,7 @@ struct CardKeywordChip: View {
 
     var body: some View {
         Text(keyword.uppercased())
-            .font(RiftboundFont.heading)
+            .riftFont(.heading)
             // Dark-on-gold, the same inversion the lit phase pip uses —
             // cream text on `highlightOverlay` is the one pairing in this
             // palette that doesn't hold up.

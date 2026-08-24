@@ -87,7 +87,7 @@ struct CameraStageView: View {
                             .aspectRatio(contentMode: .fit)
                     } else {
                         Text(pipeline.isCameraRunning ? "Waiting for camera frames…" : "Opening camera…")
-                            .font(RiftboundFont.body)
+                            .riftFont(.body)
                             .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
                     }
 
@@ -139,7 +139,7 @@ struct CameraStageView: View {
                         // looks like it's simply working badly.
                         if let warning = pipeline.detectorFallbackWarning {
                             Text("Card recognition unavailable — \(warning)")
-                                .font(RiftboundFont.body)
+                                .riftFont(.body)
                                 .foregroundStyle(RiftboundPalette.regularText)
                                 .multilineTextAlignment(.center)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -156,7 +156,7 @@ struct CameraStageView: View {
                         VStack {
                             Spacer()
                             Text(errorMessage)
-                                .font(RiftboundFont.body)
+                                .riftFont(.body)
                                 .foregroundStyle(RiftboundPalette.regularText)
                                 .padding(10)
                                 .background(RiftboundPalette.primaryButton, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -179,12 +179,39 @@ struct CameraStageView: View {
     /// permanent on-camera HUD.
     private var detectionCountBadge: some View {
         Text(pipeline.trackedObjects.isEmpty ? "No cards detected" : "\(pipeline.trackedObjects.count) card\(pipeline.trackedObjects.count == 1 ? "" : "s") detected")
-            .font(RiftboundFont.body)
+            .riftFont(.body)
             .foregroundStyle(RiftboundPalette.regularText)
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
             .background(RiftboundPalette.elementShadow.opacity(0.85), in: Capsule())
             .overlay(Capsule().stroke(RiftboundPalette.elementStroke.opacity(0.7), lineWidth: 1))
+            .accessibilityLabel(spokenDetections)
+            .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    /// The camera stage is the one part of this app with no spoken form at
+    /// all: it is a picture of a table, and every box drawn over it says
+    /// what it means by *where* it is. This badge is the only element in
+    /// that whole region VoiceOver can reach, so it carries the summary
+    /// the picture would otherwise be giving.
+    ///
+    /// Which is why the spoken version says more than the printed one. On
+    /// screen "3 cards detected" sits above three labelled boxes, so the
+    /// count is the only part not already visible. Spoken, the count is
+    /// the *least* useful part — the names are the content.
+    private var spokenDetections: String {
+        let objects = pipeline.trackedObjects
+        guard !objects.isEmpty else { return "No cards detected on the table" }
+
+        let count = "\(objects.count) card\(objects.count == 1 ? "" : "s") detected"
+        let names = objects.compactMap(\.recognizedLabel)
+        // Cards the detector found but couldn't name still count toward the
+        // total, so an unnamed one isn't silently dropped from it — the
+        // number and the list would then disagree with no way to tell why.
+        guard !names.isEmpty else { return count }
+        let unnamed = objects.count - names.count
+        let tail = unnamed > 0 ? ", and \(unnamed) not yet identified" : ""
+        return "\(count): \(names.joined(separator: ", "))\(tail)"
     }
 
     /// Aspect-fit scale factor, matching `.aspectRatio(contentMode: .fit)`

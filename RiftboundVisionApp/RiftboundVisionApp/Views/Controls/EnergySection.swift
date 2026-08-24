@@ -22,12 +22,12 @@ struct EnergySection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Energy")
-                .font(RiftboundFont.heading)
+                .riftFont(.heading)
                 .foregroundStyle(RiftboundPalette.regularText)
 
             if let energy {
                 Text(explanation(energy: energy))
-                    .font(RiftboundFont.body)
+                    .riftFont(.body)
                     .foregroundStyle(RiftboundPalette.regularText.opacity(0.75))
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -42,7 +42,7 @@ struct EnergySection: View {
                 // there is no number to report rather than a number that
                 // happens to be nothing.
                 Text("Start the game and I'll track what you can spend.")
-                    .font(RiftboundFont.body)
+                    .riftFont(.body)
                     .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -59,12 +59,12 @@ struct EnergySection: View {
     private func counter(_ title: String, _ value: Int, of total: Int? = nil) -> some View {
         VStack(spacing: 2) {
             Text(total.map { "\(value)/\($0)" } ?? "\(value)")
-                .font(RiftboundFont.iconic2)
+                .riftFont(.iconic2)
                 .foregroundStyle(RiftboundPalette.elementShadow)
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
             Text(title)
-                .font(RiftboundFont.body)
+                .riftFont(.body)
                 .foregroundStyle(RiftboundPalette.elementShadow.opacity(0.8))
         }
         .frame(maxWidth: .infinity)

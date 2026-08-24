@@ -572,14 +572,42 @@ final class CameraPipelineController: ObservableObject {
 
     // MARK: - Camera lifecycle
 
-    /// Asks for camera access and brings the feed up. Called when the app
-    /// opens, so the playmat can be aligned against a live picture before
-    /// anything is detected.
-    func openCamera() async {
+    /// Brings the feed up, optionally asking for access first.
+    ///
+    /// `promptingForAccess: false` means "open it if we're already allowed,
+    /// otherwise do nothing, quietly." That's what launch uses, and the
+    /// reason is the system permission dialog: asked at launch it lands
+    /// before the player has been told what the camera is *for*, on top of
+    /// an app they haven't seen yet, which is the moment someone is most
+    /// likely to decline — and on macOS a declined camera can only be
+    /// undone in System Settings.
+    ///
+    /// So the ask is deferred to the tour step where BonBon explains he
+    /// needs to see the table (see `ContentView`), which is the first
+    /// moment the dialog has a reason attached to it. Anyone who already
+    /// granted it still gets a live picture immediately at launch, because
+    /// `.authorized` never shows a dialog.
+    func openCamera(promptingForAccess: Bool = true) async {
         guard !isCameraRunning else { return }
 
-        guard await Self.requestCameraAccess() else {
-            errorMessage = "Camera access denied. Grant it in System Settings › Privacy & Security › Camera, then reopen the app."
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            break
+        case .notDetermined:
+            // The only state that actually shows the dialog — so it's the
+            // only one that has to wait for a good moment to show it.
+            guard promptingForAccess else { return }
+            guard await AVCaptureDevice.requestAccess(for: .video) else {
+                errorMessage = "Camera access denied. Grant it in System Settings › Privacy & Security › Camera, then reopen the app."
+                return
+            }
+        default:
+            // Already declined, or restricted by policy. Nothing to ask —
+            // and saying so at launch, unprompted, is just noise, so this
+            // only speaks up when the player asked for the camera.
+            if promptingForAccess {
+                errorMessage = "Camera access denied. Grant it in System Settings › Privacy & Security › Camera, then reopen the app."
+            }
             return
         }
 
@@ -623,16 +651,6 @@ final class CameraPipelineController: ObservableObject {
     private func cameraLost() {
         stopPipeline()
         isCameraRunning = false
-    }
-
-    /// `.notDetermined` is the only case that shows the system prompt;
-    /// everything else has already been decided by the user.
-    private static func requestCameraAccess() async -> Bool {
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized: return true
-        case .notDetermined: return await AVCaptureDevice.requestAccess(for: .video)
-        default: return false
-        }
     }
 
     // MARK: - Pipeline lifecycle

@@ -26,7 +26,7 @@ struct ScoreTracker: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("First to \(Self.winningScore) points win.")
-                    .font(RiftboundFont.body)
+                    .riftFont(.body)
                     .foregroundStyle(RiftboundPalette.regularText)
 
                 Spacer()
@@ -36,7 +36,7 @@ struct ScoreTracker: View {
                     opponentScore = 0
                 } label: {
                     Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 14, weight: .semibold))
+                        .riftIcon(size: 14, weight: .semibold)
                         .foregroundStyle(RiftboundPalette.regularText)
                         .contentShape(Rectangle())
                 }
@@ -57,7 +57,7 @@ struct ScoreTracker: View {
     private func counter(title: String, score: Binding<Int>) -> some View {
         VStack(spacing: 0) {
             Text(title)
-                .font(RiftboundFont.heading)
+                .riftFont(.heading)
                 .foregroundStyle(RiftboundPalette.regularText)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
@@ -67,7 +67,7 @@ struct ScoreTracker: View {
             // line box adds a lot of leading, which pushed the numeral
             // off-centre inside the gold panel.
             Text("\(score.wrappedValue)")
-                .font(RiftboundFont.iconic)
+                .riftFont(.iconic)
                 .monospacedDigit()
                 .foregroundStyle(RiftboundPalette.regularText)
                 .lineLimit(1)
@@ -99,7 +99,7 @@ struct ScoreTracker: View {
     private func stepButton(systemName: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 12, weight: .bold))
+                .riftIcon(size: 12, weight: .bold)
                 .foregroundStyle(RiftboundPalette.regularText)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)

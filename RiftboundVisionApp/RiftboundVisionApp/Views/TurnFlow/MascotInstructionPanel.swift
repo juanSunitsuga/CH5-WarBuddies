@@ -166,7 +166,7 @@ struct MascotInstructionPanel: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(message.isFinal ? message.headline : CardPlainLanguage.tidy(message.headline))
-                    .font(RiftboundFont.iconic2)
+                    .riftFont(.iconic2)
                     .foregroundStyle(message.isAlert ? RiftboundPalette.highlightOverlay : RiftboundPalette.iconicText)
                     .minimumScaleFactor(0.45)
                     .lineLimit(2)
@@ -174,7 +174,7 @@ struct MascotInstructionPanel: View {
 
                 if let detail = message.detail {
                     Text(message.isFinal ? detail : CardPlainLanguage.simplify(detail))
-                        .font(RiftboundFont.body)
+                        .riftFont(.body)
                         .foregroundStyle(RiftboundPalette.regularText.opacity(0.8))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -192,6 +192,38 @@ struct MascotInstructionPanel: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(RiftboundPalette.elementStroke, lineWidth: 2)
         )
+        // One element, not two. Headline and detail are one thought — read
+        // separately they arrive as two unrelated fragments, and the
+        // detail on its own ("A rune can't be there.") doesn't say which
+        // card it means.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spokenLabel(message))
+        // This band rewrites itself as the game moves. Without the trait
+        // VoiceOver treats each rewrite as a static label it happens to
+        // re-read on next visit, so a player who has navigated elsewhere
+        // never learns the instruction changed.
+        .accessibilityAddTraits(.updatesFrequently)
+        // …and the trait alone only helps once focus returns here. This is
+        // the app's primary output — the thing that says what to do next —
+        // so a change is announced where the player already is. Keyed on
+        // the headline, not the whole message: the detail line is
+        // supporting text, and re-announcing on a detail-only edit
+        // interrupts for something the player was already told.
+        .onChange(of: message.headline) { _, headline in
+            guard !headline.isEmpty else { return }
+            AccessibilityNotification.Announcement(headline).post()
+        }
+    }
+
+    /// The panel as one sentence. Named rather than inlined because it
+    /// carries the same plain-language pass the visible text does — the
+    /// spoken version shouldn't be the raw, un-tidied string when the
+    /// printed one isn't.
+    private func spokenLabel(_ message: Message) -> String {
+        let headline = message.isFinal ? message.headline : CardPlainLanguage.tidy(message.headline)
+        guard let detail = message.detail else { return headline }
+        let spokenDetail = message.isFinal ? detail : CardPlainLanguage.simplify(detail)
+        return "\(headline) \(spokenDetail)"
     }
 }
 

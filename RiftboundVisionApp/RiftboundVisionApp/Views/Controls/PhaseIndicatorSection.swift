@@ -33,21 +33,21 @@ struct PhaseIndicatorSection: View {
 
                 if isExpanded {
                     Text("Track your turn steps here.")
-                        .font(RiftboundFont.body)
+                        .riftFont(.body)
                         .foregroundStyle(RiftboundPalette.regularText.opacity(0.75))
 
                     Text("Start of Turn Phases")
-                        .font(RiftboundFont.subheading)
+                        .riftFont(.subheading)
                         .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
 
                     PhasePipRow(current: gameState.phase)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(RiftboundPhaseCopy.title(for: gameState.phase))
-                            .font(RiftboundFont.heading)
+                            .riftFont(.heading)
                             .foregroundStyle(RiftboundPalette.regularText)
                         Text(RiftboundPhaseCopy.blurb(for: gameState.phase))
-                            .font(RiftboundFont.body)
+                            .riftFont(.body)
                             .foregroundStyle(RiftboundPalette.regularText.opacity(0.75))
                             .fixedSize(horizontal: false, vertical: true)
                             // Reserves room for the longest blurb (Action's, at
@@ -73,7 +73,7 @@ struct PhaseIndicatorSection: View {
         HStack(spacing: 8) {
             Toggle(isOn: $isAutoAdvancing) {
                 Text("Auto-advance")
-                    .font(RiftboundFont.subheading)
+                    .riftFont(.subheading)
                     .foregroundStyle(
                         isAutoAdvancing
                             ? RiftboundPalette.highlightOverlay
@@ -102,7 +102,7 @@ struct PhaseIndicatorSection: View {
             // sentence without a click.
             Button { isShowingAutoAdvanceInfo.toggle() } label: {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 13))
+                    .riftIcon(size: 13)
                     .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
                     .contentShape(Rectangle())
             }
@@ -111,7 +111,7 @@ struct PhaseIndicatorSection: View {
             .accessibilityLabel(Self.autoAdvanceInfo)
             .popover(isPresented: $isShowingAutoAdvanceInfo, arrowEdge: .bottom) {
                 Text(Self.autoAdvanceInfo)
-                    .font(RiftboundFont.body)
+                    .riftFont(.body)
                     .foregroundStyle(RiftboundPalette.regularText)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(width: 220, alignment: .leading)
