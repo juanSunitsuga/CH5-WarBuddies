@@ -18,7 +18,10 @@ struct TableCardThumbnail: View {
                 printing: printing,
                 cornerRadius: 4,
                 contentMode: .fill,
-                showsFailureLabel: false
+                showsFailureLabel: false,
+                // Battlefields print landscape; stood upright so the
+                // strip stays one row of same-shaped cards.
+                uprightsLandscapeArt: true
             )
             .frame(width: RiftboundLayout.stripCardWidth, height: RiftboundLayout.stripCardHeight)
             .overlay(

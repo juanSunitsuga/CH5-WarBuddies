@@ -572,6 +572,18 @@ enum RiftboundLayout {
     /// height only while the Action Phase was showing, which reads as the
     /// whole panel twitching every time a turn reaches it.
     static let phaseBlurbMinHeight: CGFloat = 44
+
+    /// The "Type"/"Cost"/"Ability" label column in a card's attribute
+    /// list. One number rather than a literal in each row, because the
+    /// inline strip panel and the Card Library page both draw the list and
+    /// a drifting label width is the kind of difference that only shows up
+    /// when you happen to see the two side by side.
+    static let cardAttributeLabelWidth: CGFloat = 62
+    /// The keyword pill in a card's Ability line ("ASSAULT"). Tighter than
+    /// `buttonCornerRadius` on purpose: at chip height a button's radius
+    /// rounds most of the shape away and it stops reading as a printed
+    /// keyword box.
+    static let keywordChipCornerRadius: CGFloat = 4
 }
 
 enum RiftboundArt {
