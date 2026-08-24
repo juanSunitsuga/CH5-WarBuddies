@@ -538,10 +538,14 @@ so "whose turn" is strict.
 | 9 | Detection → `ObservedTableEvent` | — | ✅ live |
 | 10 | Instruction / feedback UI | — | ✅ live — mascot band, 8 ranked sources (§4b), card details |
 | 10a | Plain-language rendering | — | ✅ `CardPlainLanguage` renders card text *and* instructions; unglossed keywords shown as printed |
+| 10b | `GameState` read back | — | ✅ `EnergySection` — the first line on screen derived from the engine's ledger |
+| 10c | Damage bonuses in play | — | ✅ Annie - Fiery / Void Gate quoted on the tapped card, battlefield-scoped kept separate |
 | 11 | Play flow at the table | 515–516, 139.4, 157.2 | ✅ `PhaseAutoDetector`, `RunePayment`, `PendingPlay` — see §4b |
 | 12 | Auto-detect of the fixed phases | 515 | ✅ Awaken, Beginning, Channel, Draw; Action never auto-completes (516.2). Beginning no longer awards points — it asks the player to (§4b) |
 | 12a | Stable card identity | — | ✅ committed once per track, then followed; identity-aware matching, three-tier occlusion (§4b) |
 | 12b | Deck scope | 166 | ✅ the Legend names the deck; other decks' cards rejected outside a Battlefield (§4b) |
+| 12c | Rune Exhaust → Energy | 157.2.a | ✅ `.cardOrientationChanged` maps to `.exhaust`/`.ready`, runes matched by Domain |
+| 12d | Unit moves | 516.5 | ❌ no move case in `CandidateGameAction` — Showdown and Conquer can't fire from the table |
 | 13 | Onboarding | — | ✅ first-launch sheet, reachable later from Help |
 | 14 | Long-session stability | — | ✅ diagnostic buffers capped; no per-poll `@Model` writes |
 
@@ -562,7 +566,20 @@ describes.
    which is the change that would make this an expert system driven by a
    camera rather than a table-reader with an engine attached. Items 1 and 2
    are prerequisites, not alternatives.
-1. **Propose `.exhaust` when a rune turns.** The engine now models the real
+1. **Propose `.channel` on a move, and add a move case.** Two holes, both
+   upstream of work that is already done. A rune going RuneDeck → RuneArea
+   isn't proposed, so runes rarely reach `GameState` — which is what keeps
+   the seeded Energy pool alive even though the Exhaust hop now works.
+   And `CandidateGameAction` has no move case at all, so a unit going
+   Base → Battlefield is unrecognised and `.standardMove` stays unreachable
+   from the camera: Showdown and Conquer, most of the game, never fire.
+
+   *(Previously: propose `.exhaust` when a rune turns. Done —
+   `.cardOrientationChanged` now maps to `.exhaust`/`.ready`, matching runes
+   by Domain because the seeded rune deck and the detector use different id
+   spaces.)*
+
+   **Superseded, kept for the reasoning:** The engine now models the real
    rune economy — Channel puts a Rune on the board (606.1), Exhausting it is
    what adds Energy (157.2.a), Recycling returns the card to the Rune Deck for
    Power (157.2.b/594.1.b) — and both abilities are Discretionary, so no
