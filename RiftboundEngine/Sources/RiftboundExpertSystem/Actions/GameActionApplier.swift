@@ -258,7 +258,10 @@ public enum GameActionApplier {
     /// `GameAction`. For now this just draws as many as are available,
     /// same as 591.4.a alone, and stops; flagging rather than guessing at
     /// 591.4.b/c until Burn Out is built.
-    private static func applyDraw(count: Int, to state: inout GameState, player: PlayerID) {
+    /// Internal rather than private: `EffectExecutor` runs a card's parsed
+    /// abilities and must draw through the same path a `.draw` action does,
+    /// not a second copy of it.
+    static func applyDraw(count: Int, to state: inout GameState, player: PlayerID) {
         guard var zones = state.zones[player] else { return }
         let drawCount = min(count, zones.mainDeck.count)
         zones.hand.append(contentsOf: zones.mainDeck.prefix(drawCount))
@@ -287,7 +290,8 @@ public enum GameActionApplier {
     ///
     /// 515.3.b.1/606: fewer Runes than requested in the deck means channel
     /// as many as possible — not a failure.
-    private static func applyChannel(count: Int, exhausted: Bool, to state: inout GameState, player: PlayerID) {
+    /// Internal for the same reason as `applyDraw`.
+    static func applyChannel(count: Int, exhausted: Bool, to state: inout GameState, player: PlayerID) {
         guard var zones = state.zones[player] else { return }
         let channelCount = min(count, zones.runeDeck.count)
         for card in zones.runeDeck.prefix(channelCount) {

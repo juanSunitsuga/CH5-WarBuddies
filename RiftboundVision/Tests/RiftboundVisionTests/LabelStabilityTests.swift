@@ -57,12 +57,70 @@ struct LabelStabilityTests {
 
     /// The label mustn't be frozen either — a genuinely different card put
     /// in the same spot has to win once the evidence is there.
-    @Test("A sustained different reading eventually takes over")
-    func sustainedChangeWins() {
+    /// Only *before* the identity commits. Five readings accumulate 4.5,
+    /// short of the 6.0 commit threshold, so the track is still deciding
+    /// and better evidence is allowed to win. Past that point it isn't —
+    /// see `committedIdentityIgnoresLaterDisagreement`.
+    @Test("A sustained different reading takes over while the identity is still provisional")
+    func sustainedChangeWinsBeforeCommit() {
         var readings = Array(repeating: ("Crackshot Corsair", Float(0.9)), count: 5)
         readings += Array(repeating: ("Petty Officer", Float(0.95)), count: 25)
 
         #expect(Self.settledLabel(readings: readings) == "Petty Officer")
+    }
+
+    // MARK: - Committed identity
+
+    /// Feeds readings for one stationary card and returns the whole track,
+    /// so a test can see whether the identity settled as well as what it is.
+    private static func settledTrack(readings: [(String, Float)]) -> TrackedObject? {
+        let tracker = ObjectTracker()
+        let mapper = zoneMapper()
+        var last: TrackerUpdateResult?
+        for (index, reading) in readings.enumerated() {
+            last = tracker.update(
+                detections: [detection(label: reading.0, confidence: reading.1)],
+                zoneMapper: mapper, frameIndex: index + 1,
+                timestamp: Double(index) * 0.1,
+                previousTimestamp: index == 0 ? nil : Double(index - 1) * 0.1
+            )
+        }
+        return last?.objects.first
+    }
+
+    /// The reported bug: a card nobody touched changing into a different
+    /// card. Under vote-margin-only, a long enough run of misreads always
+    /// won eventually — and the periodic halving of votes meant "long
+    /// enough" kept coming around. A physical card doesn't become another
+    /// card, so once the identity is settled, disagreement is a misread.
+    @Test("A committed identity ignores later disagreement, however sustained")
+    func committedIdentityIgnoresLaterDisagreement() {
+        var readings = Array(repeating: ("Annie Fiery", Float(0.9)), count: 10)
+        readings += Array(repeating: ("Petty Officer", Float(0.95)), count: 60)
+
+        #expect(Self.settledLabel(readings: readings) == "Annie Fiery")
+    }
+
+    @Test("Identity is provisional at first and committed once the evidence is one-sided")
+    func commitmentIsReported() {
+        let early = Self.settledTrack(readings: Array(repeating: ("Annie Fiery", Float(0.9)), count: 3))
+        #expect(early?.isIdentityCommitted == false)
+
+        let settled = Self.settledTrack(readings: Array(repeating: ("Annie Fiery", Float(0.9)), count: 10))
+        #expect(settled?.isIdentityCommitted == true)
+        #expect(settled?.recognizedLabel == "Annie Fiery")
+    }
+
+    /// Committing on accumulated evidence alone would lock in whichever of
+    /// two confusable cards happened to lead when the counter tripped. The
+    /// margin requirement means a coin flip never settles.
+    @Test("Two confusable readings never commit while they're neck and neck")
+    func neckAndNeckNeverCommits() {
+        let readings: [(String, Float)] = (0..<30).map { index in
+            (index % 2 == 0 ? "Annie Fiery" : "Annie Stubborn", Float(0.9))
+        }
+
+        #expect(Self.settledTrack(readings: readings)?.isIdentityCommitted == false)
     }
 
     /// Feeds a sequence of readings for one stationary card and returns the

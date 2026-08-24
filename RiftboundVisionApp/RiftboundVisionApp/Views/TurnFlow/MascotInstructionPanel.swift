@@ -1,5 +1,6 @@
 import SwiftUI
 import RiftboundVision
+import RiftboundTextProcessing
 
 /// The bottom band: BonBon, and one line telling the player what to do.
 ///
@@ -28,10 +29,21 @@ struct MascotInstructionPanel: View {
     var misplacedCards: [MisplacedCard] = []
     /// Most cards are landing outside every calibrated zone.
     var needsCalibration = false
+    /// The first pipeline stage that is switched off, if any. Ranked high
+    /// because it changes what every other line here is worth: with the
+    /// Expert System off, nothing below is being computed at all, and a
+    /// band that just went quiet is indistinguishable from a broken one.
+    var inactiveStage: String?
     /// Whether the app should be judging moves at all — only the Action
     /// Phase (516.2). During the fixed phases a verdict on every card the
     /// player touches while following a script buries the instruction.
     var validatesPlayerMoves = false
+    /// The card the player has tapped, in the strip or on the camera
+    /// overlay. `nil` when nothing is selected.
+    var selectedCard: CardPrinting?
+    /// Damage bonuses granted by cards already on the table, so a tapped
+    /// card can be quoted at the number it will actually deal.
+    var activeBonuses: [ActiveDamageBonus] = []
     /// Said when nothing else has anything to report, so the band is never
     /// empty — an empty speech panel reads as a broken one.
     var fallback: String
@@ -41,36 +53,97 @@ struct MascotInstructionPanel: View {
     /// when it isn't.
     private static let verdictLifetime: TimeInterval = 12
 
+    /// One line for the band, and whether it still needs the plain-language
+    /// pass run over it.
+    private struct Message {
+        var headline: String
+        var detail: String?
+        var isAlert: Bool
+        /// `true` when the text arrived already worded for a player, so the
+        /// renderer must leave it alone. Only the card summary sets it.
+        var isFinal = false
+    }
+
     /// What BonBon says, in priority order. Same ranking the status strip
     /// used, because the ordering is the part that was reasoned about:
     /// calibration first (nothing else can be trusted while it's wrong),
     /// then a misplaced card, then a play that can't be paid for, then the
     /// engine's verdict, then the phase.
-    private func message(now: Date) -> (headline: String, detail: String?, isAlert: Bool) {
+    private func message(now: Date) -> Message {
+        if let inactiveStage {
+            return Message(
+                headline: "\(inactiveStage) is switched off.",
+                detail: "Turn it back on in Pipeline Settings and I'll read the table again. Until then the camera still shows the board, but nothing on it is being judged.",
+                isAlert: true
+            )
+        }
+        // A tap is the one message on this list the player *asked* for.
+        // Everything below is the app volunteering something; this is it
+        // answering a direct question, so it outranks the lot — with the
+        // single exception above, because with the pipeline off the app
+        // can't claim to know anything about the table.
+        //
+        // It outranks the corrections too, which looks aggressive until you
+        // try it the other way: tapping a card during a calibration warning
+        // then does nothing at all, and a button that does nothing reads as
+        // broken. This is dismissable — tap the card again — and the
+        // warning comes straight back, so nothing is lost, only deferred.
+        if let selectedCard {
+            return cardExplanation(selectedCard)
+        }
         if needsCalibration {
-            return ("Cards aren't landing on the mat.",
-                    "Turn on Calibrate Playmat and drag the outline onto your mat — until then nothing can be read as a move.",
-                    true)
+            return Message(headline: "Cards aren't landing on the mat.", detail: "Turn on Calibrate Playmat and drag the outline onto your mat — until then nothing can be read as a move.", isAlert: true)
         }
         if let misplaced = misplacedCards.first {
             let more = misplacedCards.count > 1 ? "  ·  \(misplacedCards.count - 1) more misplaced." : ""
-            return ("Put \(misplaced.label) back.",
-                    "A \(misplaced.kind.rawValue) can't be there." + more,
-                    true)
+            return Message(
+                headline: "Put \(misplaced.label) back.",
+                detail: "A \(misplaced.kind.rawValue) can't be there." + more,
+                isAlert: true
+            )
         }
         if let progress, progress.needsCorrection {
-            return (progress.headline, progress.detail, true)
+            return Message(headline: progress.headline, detail: progress.detail, isAlert: true)
         }
         if validatesPlayerMoves {
             let recent = instructions.filter { now.timeIntervalSince($0.timestamp) < Self.verdictLifetime }
             if let latest = recent.first(where: { $0.verdict == .accepted || $0.verdict == .rejected }) ?? recent.first {
-                return (latest.headline, latest.detail, latest.verdict == .rejected)
+                return Message(
+                    headline: latest.headline,
+                    detail: latest.detail,
+                    isAlert: latest.verdict == .rejected
+                )
             }
         }
         if let progress {
-            return (progress.headline, progress.detail, false)
+            return Message(headline: progress.headline, detail: progress.detail, isAlert: false)
         }
-        return (fallback, nil, false)
+        return Message(headline: fallback, detail: nil, isAlert: false)
+    }
+
+    /// What one card is, for a player who doesn't know it.
+    ///
+    /// The wording lives in `CardPlainLanguage.describeCard` so it can be
+    /// tested without a running app; this is only the translation from a
+    /// `CardPrinting` to the plain values it takes.
+    private func cardExplanation(_ printing: CardPrinting) -> Message {
+        let summary = CardPlainLanguage.describeCard(
+            name: printing.name,
+            type: printing.classification.type,
+            energyCost: printing.attributes.energy,
+            powerCost: printing.attributes.power ?? 0,
+            powerDomains: printing.classification.domain,
+            printedText: printing.text.plain,
+            activeBonuses: activeBonuses
+        )
+        // `describeCard` has already run the plain-language pass. Saying so
+        // is what stops the band running it a second time: a second pass
+        // has a fresh gloss set, so it re-explains every term the first
+        // pass already explained — "A token is a unit created during play."
+        // twice — and it glosses the cost sentence this file generated,
+        // which is how "Exhausted means turned sideways." ended up
+        // explaining wording that came from us rather than from the card.
+        return Message(headline: summary.headline, detail: summary.detail, isAlert: false, isFinal: true)
     }
 
     var body: some View {
@@ -81,7 +154,7 @@ struct MascotInstructionPanel: View {
         }
     }
 
-    private func panel(_ message: (headline: String, detail: String?, isAlert: Bool)) -> some View {
+    private func panel(_ message: Message) -> some View {
         HStack(alignment: .center, spacing: 20) {
             Image("BonBon")
                 .resizable()
@@ -92,7 +165,7 @@ struct MascotInstructionPanel: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(message.headline.strippingRuleCitation)
+                Text(message.isFinal ? message.headline : CardPlainLanguage.tidy(message.headline))
                     .font(RiftboundFont.iconic2)
                     .foregroundStyle(message.isAlert ? RiftboundPalette.highlightOverlay : RiftboundPalette.iconicText)
                     .minimumScaleFactor(0.45)
@@ -100,7 +173,7 @@ struct MascotInstructionPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let detail = message.detail {
-                    Text(detail.strippingRuleCitation)
+                    Text(message.isFinal ? detail : CardPlainLanguage.simplify(detail))
                         .font(RiftboundFont.body)
                         .foregroundStyle(RiftboundPalette.regularText.opacity(0.8))
                         .fixedSize(horizontal: false, vertical: true)
@@ -122,21 +195,6 @@ struct MascotInstructionPanel: View {
     }
 }
 
-
-private extension String {
-    /// Strips a trailing rules citation like " (Rule 515.1)" or
-    /// " (Rules 139.4, 157.2)" from `PhaseAutoDetector`/`CardAbilityParser`
-    /// text. Those citations are for a maintainer cross-referencing the
-    /// code against the rulebook — a player reading what BonBon says
-    /// mid-game just wants the instruction. Stripped here, at the one place
-    /// this panel renders any of that text, rather than at each of the
-    /// dozen-plus call sites the citations actually live in — this reads on
-    /// screen only, so the citations stay intact in the source (and in
-    /// whatever tests assert on them) for the case they're useful there.
-    var strippingRuleCitation: String {
-        replacingOccurrences(of: #"\s\((?:Rule|Rules)\s[0-9][^)]*\)"#, with: "", options: .regularExpression)
-    }
-}
 
 #Preview {
     VStack(spacing: 16) {

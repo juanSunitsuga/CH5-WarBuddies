@@ -12,6 +12,15 @@ import Foundation
 public struct CardDatabase: Sendable {
     public let printingsByRiftboundID: [String: CardPrinting]
 
+    /// One roster per deck file, kept alongside the flat index.
+    ///
+    /// The index deliberately merges every deck into one lookup — a
+    /// `riftboundID` means the same card whoever brought it. But *which
+    /// deck a card belongs to* is exactly what `DeckScope` needs to narrow
+    /// identification down to the deck actually in play, and flattening
+    /// threw it away. Both views are wanted, so both are kept.
+    public let decks: [DeckRoster]
+
     /// - Parameter synthetic: printings that didn't come from a
     ///   `RiftboundDeckFile` export because they were never actually
     ///   printed/sold (e.g. a spawned-unit token proxy) — merged in
@@ -22,18 +31,46 @@ public struct CardDatabase: Sendable {
     ///   which are fabricated stand-ins.
     public init(deckFiles: [RiftboundDeckFile], synthetic: [CardPrinting] = []) {
         var index: [String: CardPrinting] = [:]
+        var rosters: [DeckRoster] = []
+
         for file in deckFiles {
             let allEntries = file.legend + file.runes + file.battlefields + file.mainDeck
+            var memberIDs: Set<String> = []
+            var legendIDs: Set<String> = []
+            var battlefieldIDs: Set<String> = []
+
             for entry in allEntries {
                 for printing in entry.printings {
                     index[printing.riftboundID] = printing
+                    memberIDs.insert(printing.riftboundID)
+
+                    // Which array a printing sits in says nothing: every
+                    // riftcodex export bundled here puts the whole deck —
+                    // legend, runes, battlefields and all — in `mainDeck`,
+                    // leaving the other three empty. The card's own
+                    // classification is the only reliable answer, and it
+                    // stays right if a future export does populate them.
+                    switch printing.classification.type.lowercased() {
+                    case "legend": legendIDs.insert(printing.riftboundID)
+                    case "battlefield": battlefieldIDs.insert(printing.riftboundID)
+                    default: break
+                    }
                 }
             }
+
+            rosters.append(DeckRoster(
+                name: file.name,
+                legendIDs: legendIDs,
+                battlefieldIDs: battlefieldIDs,
+                memberIDs: memberIDs
+            ))
         }
+
         for printing in synthetic {
             index[printing.riftboundID] = printing
         }
         self.printingsByRiftboundID = index
+        self.decks = rosters
     }
 
     /// Decodes and merges deck files directly from JSON `Data` — the usual

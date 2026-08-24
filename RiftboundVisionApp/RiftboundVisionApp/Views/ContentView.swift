@@ -93,8 +93,7 @@ struct ContentView: View {
                 onShowMeAround: { tourCoordinator.showMeAround() },
                 onSkip: { tourCoordinator.skip() },
                 onAdvance: { tourCoordinator.advance() },
-                onFinish: { tourCoordinator.finish() }
-            )
+                onFinish: { tourCoordinator.finish() }            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         // The one ancestor both the left column's and right column's
@@ -236,9 +235,20 @@ struct ContentView: View {
                     progress: pipeline.isPipelineRunning ? pipeline.phaseProgress : nil,
                     misplacedCards: pipeline.isPipelineRunning ? pipeline.misplacedCards : [],
                     needsCalibration: pipeline.isPipelineRunning && pipeline.needsCalibration,
+                    inactiveStage: pipeline.isPipelineRunning ? pipeline.inactivePipelineNotice : nil,
                     validatesPlayerMoves: pipeline.gameState.phase.validatesPlayerMoves,
+                    selectedCard: selectedCard,
+                    activeBonuses: pipeline.activeDamageBonuses,
+                    // Before a Legend is seen the app doesn't know whose
+                    // deck it's looking at, and says so instead of
+                    // narrating a phase it can't scope. Occupies the
+                    // fallback slot rather than a new rank: it is what
+                    // there is to say when nothing else is happening, not
+                    // an alert.
                     fallback: pipeline.isPipelineRunning
-                        ? RiftboundPhaseCopy.blurb(for: pipeline.gameState.phase)
+                        ? (pipeline.activeDeckName == nil
+                            ? "Show me your Legend first."
+                            : RiftboundPhaseCopy.blurb(for: pipeline.gameState.phase))
                         : "Ready to play?"
                 )
                 // Matched to the camera's *drawn* width, not to the
@@ -272,7 +282,10 @@ struct ContentView: View {
                     } else {
                         pipeline.startPipeline()
                     }
-                }
+                },
+                engineEnergy: pipeline.engineEnergy,
+                engineReadyRunes: pipeline.engineReadyRuneCount,
+                engineTotalRunes: pipeline.engineRuneCount
             )
         }
         .background(RiftboundPalette.mainBackground)

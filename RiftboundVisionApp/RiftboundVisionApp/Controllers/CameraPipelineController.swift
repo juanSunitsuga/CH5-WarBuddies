@@ -6,104 +6,6 @@ import RiftboundVision
 import RiftboundExpertSystem
 import RiftboundTextProcessing
 
-/// One stage of the CV → Expert System pipeline, in dependency order —
-/// matches the 4-stage pipeline documented in the root README. Each
-/// stage needs the one before it enabled to produce anything worth
-/// consuming, which is what the settings overlay's cascade behavior
-/// enforces: turning a stage off also turns off everything after it.
-enum PipelineStage: Int, CaseIterable, Identifiable {
-    case detection = 1
-    case objectTracking = 2
-    case nlpTranslation = 3
-    case expertSystem = 4
-
-    var id: Int { rawValue }
-
-    var title: String {
-        switch self {
-        case .detection: return "① YOLO Detection"
-        case .objectTracking: return "② Object Tracking + Zones"
-        case .nlpTranslation: return "③ NLP Translation"
-        case .expertSystem: return "④ Expert System"
-        }
-    }
-
-    /// Whether this stage is actually implemented in the app's live
-    /// per-frame loop right now. All four are wired: ③/④ run inside
-    /// `GameEngine.process`, which calls the NLP translator
-    /// (`ExpertSystemTranslatorAdapter`) and then the Expert System's
-    /// validator/applier/Cleanup in sequence. Because ③ and ④ live behind
-    /// that single call, toggling ③ off stops the whole engine — there's
-    /// no way to run the Expert System on actions the translator never
-    /// produced, which is exactly the cascade the settings panel models.
-    var isWired: Bool { true }
-}
-
-/// One-slot, lock-guarded hand-off for the NLP translator's explanation of
-/// an event it declined to turn into an action. The translator runs inside
-/// `GameEngine.process` off the main actor, while the UI reads on it, so
-/// the value can't simply live on `CameraPipelineController`.
-/// Carries a value across a concurrency boundary Swift can't verify.
-/// Used only where the single-writer, in-order contract makes the crossing
-/// safe in fact — see `CameraPipelineController.detect(in:)`.
-struct UncheckedBox<Value>: @unchecked Sendable {
-    let value: Value
-}
-
-final class TranslationNoteBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: String?
-
-    func set(_ newValue: String?) {
-        lock.lock()
-        defer { lock.unlock() }
-        value = newValue
-    }
-
-    /// Reads and clears in one atomic step, so a note is attached to
-    /// exactly one instruction.
-    func take() -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        let current = value
-        value = nil
-        return current
-    }
-}
-
-/// Drives camera → detector and publishes what the live overlay needs to
-/// render. This is deliberately app-shell code (lives here, not in the
-/// `RiftboundVision` library) — it exists to make the detection pipeline's
-/// current state visible on screen.
-///
-/// Detection architecture matches `feature/riftbound-scanner-prototype`'s
-/// `DetectionCoordinator` on purpose: poll the latest frame on a fixed
-/// interval and republish a fresh, unfiltered-by-identity array every
-/// time — no `TrackedObjectID`, no zone history, no occlusion tolerance.
-/// Each poll is independent, so results can flicker frame to frame the
-/// way raw model output does; that's the tradeoff for not carrying any
-/// tracking state that could itself go stale or wrong. Card recognition
-/// is a fresh `cardDatabase` lookup per detection too, not cached.
-///
-/// A *second*, independent consumer reads the same polled detections for
-/// game-state purposes: `expertSystemAdapter` runs its own internal
-/// `ObjectTracker`/`ZoneMapper`/`TemporalEventDetector` (see
-/// `ExpertSystemAdapter`) to turn them into `ObservedTableEvent`s. This is
-/// deliberately not the same code path as the live overlay above — the
-/// overlay wants "what's visible right now," the Expert System wants
-/// "what changed, debounced and identity-stable." Reverting the overlay
-/// back to tracked mode to get that would have undone the whole point of
-/// the stateless redesign; running two consumers off the same detections
-/// keeps both needs met without forcing one architecture to serve both.
-///
-/// The playmat overlay (`calibration`) starts centered on the first frame
-/// and does nothing useful until the user drags its corners onto their
-/// actual physical mat (see `isCalibrating`). It's purely visual for the
-/// live-detection overlay above (which scans the full frame, matching the
-/// prototype), but it IS what `expertSystemAdapter`'s `ZoneMapper` is
-/// built from — dragging the corners into place is what makes Hand/Base/
-/// Battlefield resolve to real zones for game-state ingestion instead of
-/// `.unknown`.
 @MainActor
 final class CameraPipelineController: ObservableObject {
     @Published var backgroundImage: CGImage?
@@ -185,6 +87,20 @@ final class CameraPipelineController: ObservableObject {
     /// next frame's generic "Your move." — the player would see the
     /// warning flash and vanish. This one is event-driven and persists
     /// until it's stale or answered.
+    /// What a card's own text says to do, raised the moment the camera sees
+    /// the move that triggers it — "Play a 1 Might Recruit unit token here."
+    ///
+    /// This is the piece that makes a card's printed ability *reach* the
+    /// player. The ability list under the instruction is a standing
+    /// reminder of everything in play; this is the one thing that just
+    /// became true, which is why it gets the headline rather than a bullet.
+    @Published private(set) var abilityNotice: PhaseAutoDetector.Progress?
+    private var abilityNoticeRaisedAt: Date?
+
+    /// Watches for the zone changes that fire a card's printed text — see
+    /// `AbilityTriggerWatcher`, which owns the per-track memory.
+    private let abilityTriggers = AbilityTriggerWatcher(seat: .player1)
+
     @Published private(set) var paymentNotice: PhaseAutoDetector.Progress?
     private var paymentNoticeRaisedAt: Date?
 
@@ -261,10 +177,6 @@ final class CameraPipelineController: ObservableObject {
     /// are both once-per-phase, not per-frame.
     var lastSeenPhase: GamePhase?
 
-    /// 631: Holding scores once per battlefield per turn, so the Beginning
-    /// Phase must not keep paying out for every frame it lasts.
-    var hasAwardedHoldPoints = false
-
     /// Consecutive polls the current phase has reported itself finished.
     ///
     /// Auto-detect used to advance on the first poll that said "complete",
@@ -277,6 +189,14 @@ final class CameraPipelineController: ObservableObject {
     /// Polls a phase must agree it's finished before the turn moves on.
     private static let phaseAdvanceConfirmations = 3
 
+    /// The score is the player's to move, and only theirs.
+    ///
+    /// The Beginning Phase used to add hold points here by itself (630.2).
+    /// It stopped because this app reads a camera: it can misread who holds
+    /// a battlefield, and a score that moves on its own is one the player
+    /// has to re-audit before they can trust any of it — which costs more
+    /// than typing the number. `PhaseAutoDetector` still counts the holds
+    /// and says "add 2 points"; pressing + stays a person's decision.
     @Published var playerScore = 0
     @Published var opponentScore = 0
 
@@ -516,8 +436,6 @@ final class CameraPipelineController: ObservableObject {
 
     private let underlayResolver = UnderlayResolver()
     private let misplacedMonitor = MisplacedCardMonitor()
-    /// Memo for `kind(forLabel:)` — see its doc comment.
-    private var cardKindByLabel: [String: CardKind] = [:]
     private var gameStateStore: GameStateStore?
 
     /// The starting calibration quad, sized so the *whole* active
@@ -603,6 +521,19 @@ final class CameraPipelineController: ObservableObject {
     /// `enabledStages`), actually wired into the live loop, *and* every
     /// stage before it is active too. This is what `process(_:)` and the
     /// settings overlay should read, not `enabledStages` directly.
+    /// The earliest stage that is switched off while the pipeline runs, as
+    /// a sentence — or `nil` when the whole chain is live.
+    ///
+    /// Exists so the instruction band can say "the Expert System is off"
+    /// instead of going blank. A blank band and a broken app look identical
+    /// from the player's chair; naming the switch they flipped is the
+    /// difference between a setting and a bug.
+    var inactivePipelineNotice: String? {
+        guard isPipelineRunning else { return nil }
+        guard let firstOff = PipelineStage.allCases.first(where: { !isStageActive($0) }) else { return nil }
+        return firstOff.title
+    }
+
     func isStageActive(_ stage: PipelineStage) -> Bool {
         guard stage.isWired, enabledStages.contains(stage) else { return false }
         return PipelineStage.allCases
@@ -727,8 +658,18 @@ final class CameraPipelineController: ObservableObject {
             zoneMapper: ZoneMapper(zones: calibration.boardZones()),
             playerCalibration: [.player1: localPlayerID],
             battlefieldCalibration: battlefieldSlotIDs,
-            resolveLabel: { label in
-                database.printing(approximatelyNamed: label).map { CardDefID(rawValue: $0.riftboundID) }
+            // Through the shared resolver, so the engine and the screen
+            // agree about what is on the table. These were two lookups with
+            // different rules: the UI applied deck scope and this didn't, so
+            // an out-of-deck card vanished from the strip while the engine
+            // went on proposing plays for it.
+            //
+            // Battlefield-scoped, because that is where an opponent's cards
+            // legitimately arrive and the engine has to name them to track
+            // combat — the same exception `DeckScope` already makes.
+            resolveLabel: { [resolver = identityResolver] label in
+                resolver.printing(forLabel: label, in: .battlefield)
+                    .map { CardDefID(rawValue: $0.riftboundID) }
             },
             // One physical mat, one seat: an event in an unowned zone (the
             // Battlefield) can only be this player's.
@@ -803,6 +744,10 @@ final class CameraPipelineController: ObservableObject {
                 guard !deferredToSettlement else { continue }
                 let instruction = await engine.process(event)
                 self.recordInstruction(instruction, for: event)
+                // Read straight back, on the same hop that just mutated it.
+                // Refreshing anywhere else would let the screen show a state
+                // the engine had already moved past.
+                self.engineState = await session.store.currentState
             }
         }
 
@@ -913,12 +858,122 @@ final class CameraPipelineController: ObservableObject {
     /// are assigned in increasing order as cards first appear, so this
     /// reproduces "in detection order" deterministically instead of by
     /// accident.
+    /// Which deck is on the table, and the narrowing that follows from it.
+    ///
+    /// Empty rosters until the database loads; nothing is narrowed until a
+    /// Legend has actually been seen.
+    /// Turns a detector label into a card, deck scope and all. One
+    /// instance, shared by every consumer — see `CardIdentityResolver`.
+    private lazy var identityResolver = CardIdentityResolver(database: cardDatabase)
+
+    /// Bumped whenever the resolver adopts a deck, so SwiftUI redraws.
+    ///
+    /// The resolver is a reference type and deliberately *not* `@Published`
+    /// itself: publishing a class doesn't observe its mutations, and
+    /// keeping a second copy of the scope here would be exactly the
+    /// duplicate source of truth this extraction removes.
+    @Published private(set) var deckIdentityRevision = 0
+
+    /// The deck the Legend on the table belongs to, once known.
+    var activeDeckName: String? {
+        _ = deckIdentityRevision
+        return identityResolver.activeDeckName
+    }
+
+    /// The engine's own view of the game, refreshed after every event it
+    /// processes.
+    ///
+    /// The app used to write to `GameState` and never read it back, which
+    /// made the engine a ledger nobody consulted: it recorded what happened
+    /// but nothing on screen was derived from it, so the two could disagree
+    /// indefinitely with no way to notice. Publishing the snapshot is what
+    /// closes that loop — anything the engine knows can now be shown, and a
+    /// disagreement between the board and the engine becomes visible
+    /// instead of silent.
+    ///
+    /// `nil` until the first event is processed.
+    @Published private(set) var engineState: GameState?
+
+    /// Energy currently in the local player's pool, as the *engine* has it —
+    /// the number a play is actually validated against (130.2).
+    var engineEnergy: Int? { engineState?.zones[localPlayerID]?.runePool.energy }
+
+    /// Runes the engine believes are on the board, and how many are still
+    /// upright and therefore still able to pay for something (157.2.a).
+    var engineRuneCount: Int? {
+        engineState.map { state in state.runes.values.filter { $0.controller == localPlayerID }.count }
+    }
+    var engineReadyRuneCount: Int? {
+        engineState.map { state in
+            state.runes.values.filter { $0.controller == localPlayerID && !$0.isExhausted }.count
+        }
+    }
+
+    /// Standing damage bonuses granted by cards currently on the table.
+    ///
+    /// Read from the board rather than from the deck, because that is where
+    /// they come from: Annie - Fiery is a Unit you play and Void Gate is a
+    /// Battlefield in the match, so both arrive and leave mid-game. Only
+    /// the zones where a card's text is live count — a card in hand or a
+    /// deck grants nothing (137–145).
+    var activeDamageBonuses: [ActiveDamageBonus] {
+        var found: [ActiveDamageBonus] = []
+        var seenSources = Set<String>()
+
+        for object in trackedObjects.sorted(by: { $0.id < $1.id }) {
+            let zone = zoneMapper.boardZone(for: object.center)?.type ?? object.currentZone
+            guard Self.abilityLiveZones.contains(zone),
+                  let printing = scopedPrinting(for: object),
+                  let bonus = CardAbilityParser.damageBonus(in: printing.text.plain),
+                  // Two copies of the same card would each grant their own
+                  // bonus in the rules; this list is advice, and naming the
+                  // same card twice reads as a bug rather than as a stack.
+                  seenSources.insert(printing.name).inserted
+            else { continue }
+            found.append(ActiveDamageBonus(source: printing.name, bonus: bonus))
+        }
+        return found
+    }
+
+    /// Where a card's printed text is live — its Base, a Battlefield, the
+    /// Legend and Champion slots.
+    private static let abilityLiveZones: Set<Zone> = [.base, .battlefield, .legend, .champion]
+
+    /// A tracked object's card, subject to deck scope.
+    ///
+    /// The single place a label becomes a card, so the narrowing can't be
+    /// bypassed by a call site that forgot about it. A label the scope
+    /// rejects returns `nil` — the object stays tracked and drawn, it just
+    /// isn't claimed to be a specific card, which is the honest reading of
+    /// "that name can't be right".
+    func scopedPrinting(for object: TrackedObject) -> CardPrinting? {
+        identityResolver.printing(forLabel: object.recognizedLabel, in: zone(of: object))
+    }
+
+    /// A track's zone, preferring the calibrated mapping over the tracker's
+    /// own last answer.
+    private func zone(of object: TrackedObject) -> Zone {
+        zoneMapper.boardZone(for: object.center)?.type ?? object.currentZone
+    }
+
+    /// Adopts the deck as soon as a Legend is identified on the table.
+    ///
+    /// Rule 166 puts exactly one Legend out during setup and it stays for
+    /// the game, so this fires once. Waits for `isIdentityCommitted`: the
+    /// deck is chosen off a single label, and choosing it from a reading
+    /// that is still wobbling would narrow everything else to the wrong
+    /// deck — the most expensive mistake available here.
+    func adoptDeckIfLegendSeen(in objects: [TrackedObject]) {
+        if identityResolver.adoptDeckIfLegendSeen(in: objects) {
+            deckIdentityRevision += 1
+        }
+    }
+
     var cardsOnTable: [CardPrinting] {
         var seen = Set<String>()
         var result: [CardPrinting] = []
         for object in trackedObjects.sorted(by: { $0.id < $1.id }) {
-            guard let label = object.recognizedLabel,
-                  let printing = cardDatabase.printing(approximatelyNamed: label),
+            guard let printing = scopedPrinting(for: object),
                   seen.insert(printing.id).inserted else { continue }
             result.append(printing)
         }
@@ -937,12 +992,7 @@ final class CameraPipelineController: ObservableObject {
     /// `CardPlacementRules` permits everywhere — an unrecognized card is
     /// still tracked, just not constrained.
     private func kind(forLabel label: String) -> CardKind {
-        if let cached = cardKindByLabel[label] { return cached }
-        let resolved = cardDatabase.printing(approximatelyNamed: label).map {
-            CardKind.from(type: $0.classification.type, supertype: $0.classification.supertype)
-        } ?? .unknown
-        cardKindByLabel[label] = resolved
-        return resolved
+        identityResolver.kind(forLabel: label)
     }
 
     private func recordUnprocessed(_ event: RiftboundExpertSystem.ObservedTableEvent) {
@@ -1179,7 +1229,24 @@ extension CameraPipelineController {
     /// the Action Phase no completion condition — it ends when the player
     /// says so (516.6) — so Auto-detect narrates it and nothing more.
     func updateAutoDetect(with objects: [TrackedObject]) {
+        // Everything below this line is the Expert System stage: reading
+        // the table against the rules and saying what the turn needs next.
+        // It used to run whenever Object Tracking was on, which is why
+        // switching stages ③ and ④ off changed nothing a player could see —
+        // the overlays went quiet but the instruction band carried on
+        // narrating the turn, off a stage that was supposedly disabled.
+        // Now the band goes quiet too, and says why.
+        guard isStageActive(.expertSystem) else {
+            phaseProgress = nil
+            abilityNotice = nil
+            abilityNoticeRaisedAt = nil
+            abilityTriggers.reset()
+            return
+        }
+
+        adoptDeckIfLegendSeen(in: objects)
         let observed = objects.compactMap { observedCard(from: $0) }
+        noteAbilityTriggers(in: objects)
         autoDetectRunes = observed.compactMap { card in
             guard card.zone == .runeArea, let domain = card.domain else { return nil }
             return ObservedRune(domain: domain, stance: card.stance)
@@ -1201,7 +1268,6 @@ extension CameraPipelineController {
                 // asks for the opening three.
                 completedChannelPhases += 1
             }
-            hasAwardedHoldPoints = false
             completedPollStreak = 0
             // A play left unsettled when the phase changed isn't chased
             // into the next one. Ending the turn is the player asserting
@@ -1226,6 +1292,14 @@ extension CameraPipelineController {
            Date().timeIntervalSince(raisedAt) > Self.paymentNoticeLifetime {
             paymentNotice = nil
             paymentNoticeRaisedAt = nil
+        }
+        // Same clock, same reasoning: a triggered ability is about a move
+        // that just happened, and stale feedback claims the app is keeping
+        // up when it isn't.
+        if let raisedAt = abilityNoticeRaisedAt,
+           Date().timeIntervalSince(raisedAt) > Self.paymentNoticeLifetime {
+            abilityNotice = nil
+            abilityNoticeRaisedAt = nil
         }
 
         let progress = detector.progress(for: gameState.phase, cards: observed, seat: .player1)
@@ -1273,18 +1347,17 @@ extension CameraPipelineController {
         if var notice = paymentNotice {
             notice.steps = progress.steps
             phaseProgress = notice
+        } else if var triggered = abilityNotice {
+            // Below payment, above the phase. A cost the player still owes
+            // is the thing blocking the game; a triggered ability is the
+            // thing that just happened and has to be resolved next.
+            triggered.steps = progress.steps
+            phaseProgress = triggered
         } else {
             phaseProgress = progress
         }
 
         guard isAutoDetectingPhase else { return }
-
-        // 630.2: award the hold points once, on entering the Beginning
-        // Phase — not every frame it stays there.
-        if gameState.phase == .beginning, !hasAwardedHoldPoints {
-            hasAwardedHoldPoints = true
-            playerScore += progress.pointsToAward
-        }
 
         guard progress.isComplete else {
             completedPollStreak = 0
@@ -1308,7 +1381,7 @@ extension CameraPipelineController {
         let zone = boardZone?.type ?? object.currentZone
         guard zone != .unknown else { return nil }
 
-        let printing = object.recognizedLabel.flatMap { cardDatabase.printing(approximatelyNamed: $0) }
+        let printing = scopedPrinting(for: object)
         let domains = (printing?.classification.domain ?? []).compactMap(Domain.init(caseInsensitive:))
 
         return ObservedCard(
@@ -1347,11 +1420,59 @@ extension CameraPipelineController {
     /// the same text each time would be pure waste.
     func abilitySummaries(for printing: CardPrinting) -> [String] {
         if let cached = abilitySummaryCache[printing.riftboundID] { return cached }
-        let summaries = CardAbilityParser.read(printing.text.plain).abilities.map { ability in
-            ability.timing.map { "\(ability.summary) (\($0.prefix(while: { $0 != " " })))" } ?? ability.summary
-        }
+        // `CardAbilityParser.read` names Game Actions, which is the
+        // engine's vocabulary; these lines are read by a player mid-game,
+        // so they get the plain rendering instead. Falls back to the parsed
+        // summaries when a card's text has no plain form — better a terse
+        // line than a blank one.
+        let explanation = CardPlainLanguage.explain(printing.text.plain)
+        let summaries = explanation.lines.isEmpty
+            ? CardAbilityParser.read(printing.text.plain).abilities.map(\.summary)
+            : explanation.lines
         abilitySummaryCache[printing.riftboundID] = summaries
         return summaries
+    }
+
+    /// Fires a card's "when I move to a battlefield" text the moment the
+    /// camera sees that move.
+    ///
+    /// Only the triggers a camera can actually witness — a zone change —
+    /// are ever fired. `AbilityTrigger.unobservable` covers attacking,
+    /// conquering and defending, which this app has no way to see; those
+    /// stay in the standing ability list where the player can read them,
+    /// rather than being guessed at from a card twitching on the mat.
+    private func noteAbilityTriggers(in objects: [TrackedObject]) {
+        let fired = abilityTriggers.fired(
+            in: objects,
+            card: { [weak self] object in
+                guard let printing = self?.scopedPrinting(for: object) else { return nil }
+                return (name: printing.name, text: printing.text.plain)
+            },
+            triggers: { [weak self] text in
+                CardAbilityParser.triggers(in: text).map { ability in
+                    (
+                        fires: { previous, zone in
+                            switch ability.trigger {
+                            case .movedToBattlefield: return zone == .battlefield
+                            case .moved: return true
+                            case .played: return self?.abilityTriggers.isPlayFromHand(from: previous, to: zone) ?? false
+                            case .unobservable: return false
+                            }
+                        },
+                        effect: ability.effect
+                    )
+                }
+            }
+        )
+
+        guard let first = fired.first else { return }
+        abilityNotice = PhaseAutoDetector.Progress(
+            headline: "\(first.cardName): \(CardPlainLanguage.simplify(first.effects[0]))",
+            detail: first.effects.count > 1
+                ? first.effects.dropFirst().joined(separator: " ")
+                : "Its text triggered when you moved it. Resolve it before you carry on."
+        )
+        abilityNoticeRaisedAt = Date()
     }
 
     /// Rule 130.2/130.3: a card leaving the hand for the board has to be

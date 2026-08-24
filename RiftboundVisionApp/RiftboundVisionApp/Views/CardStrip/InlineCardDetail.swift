@@ -179,20 +179,35 @@ extension CardPrinting {
         }
     }
 
-    /// Energy and Power read as one cost line, the way the card prints
-    /// them — "2" or "2 + 1 Power". A card with neither returns `nil`
-    /// rather than an empty row, since a blank value reads as a loading
-    /// state. Shared by `InlineCardDetail` and `CardDetailView` so the two
-    /// "Cost" rows can't drift into reporting a card's cost two different
-    /// ways.
+    /// The cost as the two things the player physically does.
+    ///
+    /// "2 + 1 Power" is how the card prints it, and it tells someone who
+    /// doesn't already know the game nothing about what to do. Energy is
+    /// paid by *exhausting* runes (157.2.a); Power by *recycling* them to
+    /// the bottom of the rune deck (157.2.b/594.1.b) — and Power is usually
+    /// domain-locked (130.3), so which rune matters. The panels are narrow,
+    /// so this stays terse: the full sentence, with the destination spelled
+    /// out, is what the mascot band says while the play is being paid for.
+    ///
+    /// A card with neither returns `nil` rather than an empty row, since a
+    /// blank value reads as a loading state. Lives on `CardPrinting` so
+    /// `InlineCardDetail` and `CardDetailView` can't drift into reporting a
+    /// card's cost two different ways.
     var costLabel: String? {
-        let energy = attributes.energy
+        let energy = attributes.energy ?? 0
         let power = attributes.power ?? 0
-        switch (energy, power) {
-        case (nil, 0): return nil
-        case (let e?, 0): return "\(e)"
-        case (nil, let p): return "\(p) Power"
-        case (let e?, let p): return "\(e) + \(p) Power"
+        guard energy > 0 || power > 0 else { return nil }
+
+        var parts: [String] = []
+        if energy > 0 {
+            parts.append("exhaust \(energy) rune\(energy == 1 ? "" : "s")")
         }
+        if power > 0 {
+            let named = classification.domain
+                .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+                .joined(separator: " or ")
+            parts.append("recycle \(power) \(named.isEmpty ? "" : named + " ")rune\(power == 1 ? "" : "s")")
+        }
+        return parts.joined(separator: ", ")
     }
 }

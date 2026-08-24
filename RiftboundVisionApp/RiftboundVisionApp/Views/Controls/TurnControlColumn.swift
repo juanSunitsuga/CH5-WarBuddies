@@ -23,6 +23,10 @@ struct TurnControlColumn: View {
     let isPipelineRunning: Bool
     let isCameraRunning: Bool
     let onTogglePipeline: () -> Void
+    /// The engine's own numbers — see `EnergySection`.
+    var engineEnergy: Int?
+    var engineReadyRunes: Int?
+    var engineTotalRunes: Int?
 
     @State private var isPhaseSectionExpanded = true
 
@@ -39,6 +43,16 @@ struct TurnControlColumn: View {
                     // `.phaseIndicator` and `.turnControls` are declared
                     // inside `PhaseIndicatorSection`, which is the only
                     // place that can tell its two halves apart.
+
+                    Divider().overlay(RiftboundPalette.elementStroke.opacity(0.35))
+
+                    // Reads the engine's ledger rather than the mat, so a
+                    // disagreement between the two is visible.
+                    EnergySection(
+                        energy: engineEnergy,
+                        readyRunes: engineReadyRunes,
+                        totalRunes: engineTotalRunes
+                    )
 
                     Divider().overlay(RiftboundPalette.elementStroke.opacity(0.35))
 
