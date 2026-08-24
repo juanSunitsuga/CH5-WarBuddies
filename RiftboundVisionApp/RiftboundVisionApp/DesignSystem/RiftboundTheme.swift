@@ -66,6 +66,13 @@ enum RiftboundPalette {
     static let disabledHighlightOverlay = Color("DisabledHighlightOverlay")
     /// #CBCBCB — disabled element stroke.
     static let disabledElementStroke = Color("DisabledElementStroke")
+    /// #A32A1D — not on the board; there is no "stop/destructive" swatch in
+    /// the mockup or the palette board. Matched to `primaryButton`'s
+    /// brightness (red channel 0xA3) so it still reads as part of the same
+    /// warm palette rather than a system alert red. Used as the *text*
+    /// colour on `GameToggleButton`'s Stop Game state — the fill there
+    /// stays the ordinary grey, so this is a colour accent, not an alarm.
+    static let dangerButton = Color("DangerButton")
     /// #FFFFFF — pure white. Only the developer overlays drawn straight
     /// onto the camera picture, which have to stay legible over an
     /// arbitrary photograph rather than over the board's own colours.
@@ -73,6 +80,14 @@ enum RiftboundPalette {
     /// #000000 at 20% — the board's only darkening value. Recessed fills
     /// and the plate behind overlay text.
     static let scrim = Color("Scrim")
+    /// #000000 at 55% — not on the board. `scrim` reads correctly for a
+    /// recessed panel behind text, but the guided tour needs the *rest of
+    /// the window* to visibly stop being the thing in focus while one
+    /// region is spotlit; 20% didn't read as "the app just dimmed," it
+    /// read as a faint tint. Same black `scrim` already uses, more of it,
+    /// for the one place the board's single darkening value wasn't dark
+    /// enough — see `TourSpotlightOverlay` in `AppTour.swift`.
+    static let tourScrim = Color("TourScrim")
 
     /// The board carries the last two swatches twice, once at full and
     /// once at 50%. That second pair isn't a different colour, it's the
@@ -247,19 +262,53 @@ extension View {
 /// "End Turn". Disabled swaps the fill to #545454 *and* dims the whole
 /// button, which is the rule above applied to a component that genuinely
 /// is entirely off.
-struct RiftPrimaryButtonStyle: ButtonStyle {
+struct RiftPrimaryButtonStyle: PrimitiveButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        RiftButtonBody(configuration: configuration, enabledFill: RiftboundPalette.primaryButton)
+        RiftButtonBody(configuration: configuration, emphasis: .filled(RiftboundPalette.primaryButton))
     }
+}
+
+/// How much weight a button carries. Passed to the shared body rather
+/// than each style rebuilding a label — see `RiftButtonBody`.
+private enum RiftButtonEmphasis {
+    case filled(Color)
+    /// Outline and text in `primaryButton` over untinted glass, no fill.
+    /// For the subordinate half of a pair where both buttons are live and
+    /// equally pressable — the distinction has to survive *both* being
+    /// enabled, which is exactly what a second filled colour can't do
+    /// here: the only other fill in the palette is the one disabled
+    /// already uses.
+    ///
+    /// Deliberately the *same* colour as its filled partner rather than
+    /// `elementStroke`'s lighter gold. Borrowing the fill colour makes
+    /// the pair read as one control in two weights — outlined and filled
+    /// — where a second, lighter gold read as a third kind of button and
+    /// put the quiet one at *higher* contrast than the loud one.
+    case outlined
 }
 
 /// The quieter of the two buttons in the bottom row. The mockup pairs a
 /// gold button with a grey one and swaps which is which depending on what
 /// the step actually wants you to press, so this is a real style rather
 /// than "the primary one, disabled".
-struct RiftSecondaryButtonStyle: ButtonStyle {
+struct RiftSecondaryButtonStyle: PrimitiveButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        RiftButtonBody(configuration: configuration, enabledFill: RiftboundPalette.disabledHighlightOverlay)
+        RiftButtonBody(configuration: configuration, emphasis: .filled(RiftboundPalette.disabledHighlightOverlay))
+    }
+}
+
+/// Outlined in `primaryButton`, the same colour its filled partner uses
+/// as a fill — the quiet half of a live pair.
+///
+/// Use this, not `RiftSecondaryButtonStyle`, whenever the quieter button
+/// can also be *disabled*. That style's enabled fill is
+/// `disabledHighlightOverlay`, the same colour disabled paints with, so
+/// the two states differ only by the 50% dim — on Back, which disables
+/// itself at the first phase of a turn, "quieter" and "unavailable" would
+/// have been near-indistinguishable. An outline is unmistakably neither.
+struct RiftOutlineButtonStyle: PrimitiveButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        RiftButtonBody(configuration: configuration, emphasis: .outlined)
     }
 }
 
@@ -271,23 +320,120 @@ struct RiftSecondaryButtonStyle: ButtonStyle {
 /// the value is captured once and a button that later becomes disabled
 /// keeps drawing itself gold. Reading it from a real `View` is what makes
 /// the disabled fill and the 50% dim actually follow `.disabled(…)`.
+///
+/// The fill is real Liquid Glass (`.glassEffect`, macOS 26+), tinted with
+/// the button's own colour rather than drawn as a flat `RoundedRectangle`.
+///
+/// `PrimitiveButtonStyle`, not `ButtonStyle`: a light, fast click on a real
+/// `Button` could flip `configuration.isPressed` true and back to false
+/// within the same SwiftUI update, so the "pressed" frame this used to
+/// drive the bounce off of sometimes never actually got rendered — a slow,
+/// deliberate press-and-hold showed the animation, a quick tap didn't.
+/// `PrimitiveButtonStyle` hands over the whole gesture, so the bounce is
+/// driven by `pulse`, a plain `@State` stepped through two *scheduled*
+/// phases (down, then a spring back up after a fixed delay) every time
+/// `onTapGesture` fires — which is guaranteed to happen exactly once per
+/// completed tap, at a pace this code controls rather than however fast
+/// the click physically was.
 private struct RiftButtonBody: View {
-    let configuration: ButtonStyleConfiguration
-    let enabledFill: Color
+    let configuration: PrimitiveButtonStyleConfiguration
+    let emphasis: RiftButtonEmphasis
     @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+    @State private var pulse: CGFloat = 1
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: RiftboundLayout.buttonCornerRadius, style: .continuous)
+    }
+
+    /// `nil` means draw no tint at all — the outlined style's glass stays
+    /// untinted so the board shows through it.
+    private var fill: Color? {
+        // Disabled looks the same whichever style asked for it. Two
+        // different "off" appearances would be two things to learn for a
+        // state that means one thing.
+        guard isEnabled else { return RiftboundPalette.disabledHighlightOverlay }
+        switch emphasis {
+        case .filled(let color): return color
+        case .outlined: return nil
+        }
+    }
+
+    private var isOutlined: Bool {
+        guard isEnabled, case .outlined = emphasis else { return false }
+        return true
+    }
 
     var body: some View {
         configuration.label
             .font(RiftboundFont.heading)
-            .foregroundStyle(RiftboundPalette.regularText)
+            .foregroundStyle(isOutlined ? RiftboundPalette.primaryButton : RiftboundPalette.regularText)
             .padding(.horizontal, 18)
             .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isEnabled ? enabledFill : RiftboundPalette.disabledHighlightOverlay)
-            )
-            .opacity(configuration.isPressed ? 0.85 : 1)
+            .glassEffect(glass, in: shape)
+            .overlay {
+                if isOutlined {
+                    shape.stroke(RiftboundPalette.primaryButton, lineWidth: 1.5)
+                }
+            }
+            // Some callers relabel the same button as a direct result of
+            // clicking it — Next becomes End Turn once the click it just
+            // handled lands the phase on `.action`. That label swap and
+            // `bounce()`'s `pulse` change land in the same update, and
+            // `.animation(_:value:)` doesn't scope itself to only the value
+            // it names — it grabs *every* animatable change in that commit.
+            // Unscoped like the label change was, the bouncy spring meant
+            // for the scale visibly crossfaded "Next" through "End Turn"
+            // instead of just relabelling. This unconditional override
+            // (below, applied to the styled label; `.scaleEffect` stays
+            // outside it) forces the label/fill to always snap, regardless
+            // of which external value caused the change — unlike
+            // `GameToggleButton`'s equivalent fix, this body doesn't know
+            // which value a given caller's label depends on to name it.
+            .transaction { $0.animation = nil }
+            .scaleEffect(pulse * (isHovering && isEnabled ? 1.08 : 1))
+            .animation(.bouncy(duration: 0.32, extraBounce: 0.25), value: isHovering)
+            // The second phase of `bounce()` is what reads as the "click"
+            // — a spring that overshoots past full size on the way back
+            // rather than snapping straight to it. Deliberately settles
+            // faster and overshoots less than the hover spring above:
+            // hover is ambient and can afford to be playful, but a click
+            // is acknowledging something the player just did, and a long
+            // wobble there reads as the button still deciding.
+            .animation(.bouncy(duration: 0.34, extraBounce: 0.24), value: pulse)
+            .onHover { isHovering = isEnabled && $0 }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard isEnabled else { return }
+                bounce()
+                configuration.trigger()
+            }
             .riftComponentDisabled(!isEnabled)
+    }
+
+    /// Untinted for the outlined style, tinted for everything else.
+    /// Split out because the two build different `Glass` values and an
+    /// inline conditional inside `.glassEffect(_:in:)` reads as though
+    /// the *shape* changes too, which it doesn't.
+    private var glass: Glass {
+        guard let fill else { return .regular.interactive() }
+        return .regular.tint(fill).interactive()
+    }
+
+    /// Two scheduled phases, not one animation keyed off a live gesture
+    /// state — see the type's doc comment for why. `asyncAfter` is what
+    /// guarantees the down phase gets its own render before the up phase
+    /// starts, regardless of how fast the tap that triggered this was.
+    private func bounce() {
+        // A shallower dip than the 0.88 this started at. The spring's
+        // overshoot scales off how far it has to travel back, so easing
+        // the dip tones the whole bounce down along with the timing
+        // above — the two have to move together or the shorter spring
+        // just makes the same large travel look abrupt.
+        pulse = 0.93
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            pulse = 1
+        }
     }
 }
 
@@ -408,11 +554,36 @@ enum RiftboundLayout {
     /// Thumbnail size in the table strip.
     static let stripCardWidth: CGFloat = 96
     static let stripCardHeight: CGFloat = 134
-    /// Width of the detail that opens beside a selected card.
-    static let stripDetailWidth: CGFloat = 260
+    /// Width of the detail that opens beside a selected card. Derived from
+    /// `stripCardWidth` rather than its own arbitrary number — a fixed 260
+    /// (nearly 3x a thumbnail's 96) made the expanded slot balloon out of
+    /// proportion with the rest of the row instead of reading as part of
+    /// the same grid of cards.
+    static let stripDetailWidth: CGFloat = stripCardWidth * 2
 
     static let cornerRadius: CGFloat = 8
     static let hairline: CGFloat = 2
+    /// Corner radius shared by every `Rift*ButtonStyle` fill.
+    static let buttonCornerRadius: CGFloat = 6
+    /// Two lines of `RiftboundFont.body` at 15pt. The phase blurb runs one
+    /// line for four of the five phases and two for Action ("Play cards
+    /// from hand. Conquer and combat the battlefield with your units.") —
+    /// without a reserved floor, Back/Next/End Turn shifted down a line's
+    /// height only while the Action Phase was showing, which reads as the
+    /// whole panel twitching every time a turn reaches it.
+    static let phaseBlurbMinHeight: CGFloat = 44
+
+    /// The "Type"/"Cost"/"Ability" label column in a card's attribute
+    /// list. One number rather than a literal in each row, because the
+    /// inline strip panel and the Card Library page both draw the list and
+    /// a drifting label width is the kind of difference that only shows up
+    /// when you happen to see the two side by side.
+    static let cardAttributeLabelWidth: CGFloat = 62
+    /// The keyword pill in a card's Ability line ("ASSAULT"). Tighter than
+    /// `buttonCornerRadius` on purpose: at chip height a button's radius
+    /// rounds most of the shape away and it stops reading as a printed
+    /// keyword box.
+    static let keywordChipCornerRadius: CGFloat = 4
 }
 
 enum RiftboundArt {

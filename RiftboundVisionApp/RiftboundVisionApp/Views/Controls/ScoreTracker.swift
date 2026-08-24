@@ -12,15 +12,40 @@ import SwiftUI
 struct ScoreTracker: View {
     @Binding var playerScore: Int
     @Binding var opponentScore: Int
+    /// Whether `CameraPipelineController`'s pipeline is running. Points are
+    /// asserted by the person at the table (see the doc comment above), but
+    /// only during a game — there is nothing to score before Start Game,
+    /// so the whole tracker dims and its steppers stop responding rather
+    /// than offering a control that quietly edits the *next* game's score.
+    var isGameRunning: Bool = true
 
     /// Rule 191.1: first to 8 points wins.
     static let winningScore = 8
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("First to \(Self.winningScore) points win.")
-                .font(RiftboundFont.body)
-                .foregroundStyle(RiftboundPalette.regularText)
+            HStack {
+                Text("First to \(Self.winningScore) points win.")
+                    .font(RiftboundFont.body)
+                    .foregroundStyle(RiftboundPalette.regularText)
+
+                Spacer()
+
+                Button {
+                    playerScore = 0
+                    opponentScore = 0
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(RiftboundPalette.regularText)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!isGameRunning)
+                .riftComponentDisabled(!isGameRunning)
+                .help("Reset score to 0 – 0")
+                .accessibilityLabel("Reset score")
+            }
 
             HStack(spacing: 14) {
                 counter(title: "Player", score: $playerScore)
@@ -65,6 +90,7 @@ struct ScoreTracker: View {
             .background(RiftboundPalette.primaryButton)
         }
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .riftComponentDisabled(!isGameRunning)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(title) score")
         .accessibilityValue("\(score.wrappedValue) of \(Self.winningScore)")
@@ -80,6 +106,7 @@ struct ScoreTracker: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!isGameRunning)
         .accessibilityLabel(label)
     }
 }

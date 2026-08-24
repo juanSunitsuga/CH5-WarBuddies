@@ -10,19 +10,23 @@ struct CardLibraryButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: "books.vertical.fill")
-                    .font(.system(size: 34, weight: .regular))
-                    .foregroundStyle(RiftboundPalette.regularText)
-                Text("Card Library")
-                    .font(RiftboundFont.heading)
-                    .foregroundStyle(RiftboundPalette.regularText)
-            }
-            .frame(height: RiftboundLayout.stripCardHeight)
-            .contentShape(Rectangle())
+        VStack(spacing: 6) {
+            Image(systemName: "books.vertical.fill")
+                .font(.system(size: 26, weight: .regular))
+                .foregroundStyle(RiftboundPalette.regularText)
+            // A real gold pill, not plain text under the icon — the
+            // reference draws this as the same button style as "Start
+            // Game"/"Next", not a label. Matching that keeps every
+            // pressable gold button in the app looking like one family.
+            Button("Library", action: action)
+                .buttonStyle(RiftPrimaryButtonStyle())
         }
-        .buttonStyle(.plain)
+        // `maxHeight: .infinity` rather than a fixed height: the outer
+        // `HStack` in `TableCardStrip` is `alignment: .top` (so card
+        // thumbnails line up when the strip is full), which left this
+        // sitting flush against the top of the taller empty-state row
+        // instead of centred in it like the reference.
+        .frame(maxHeight: .infinity, alignment: .center)
         .accessibilityLabel("Open the card library")
     }
 }

@@ -8,6 +8,11 @@
     <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleName</key>
     <string>$(PRODUCT_NAME)</string>
+    <!-- The player-facing name, separate from the target/product name the
+         build system and bundle identifier use. This is what the menu bar,
+         Finder and the About box read. -->
+    <key>CFBundleDisplayName</key>
+    <string>VisBound</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key>

@@ -25,6 +25,21 @@ struct CardArtView: View {
     /// Thumbnails are too small for an icon and a caption, so they get the
     /// plain fill.
     var showsFailureLabel = true
+    /// Turn a Battlefield's landscape art upright so it fills a portrait
+    /// slot like every other card.
+    ///
+    /// Opt-in, because it's only right where cards are shown as a
+    /// *uniform row* — the library list and the table strip, where one
+    /// card printed the other way round makes the whole row look broken.
+    /// Somewhere a card is shown on its own, like the library's detail
+    /// popup, it should stay the shape it is actually printed
+    /// (`CardOrientation` notes Battlefields as the one landscape type),
+    /// because there is no row for it to disagree with.
+    var uprightsLandscapeArt = false
+
+    private var isRotated: Bool {
+        uprightsLandscapeArt && printing.orientation == .landscape
+    }
 
     var body: some View {
         Group {
@@ -48,6 +63,15 @@ struct CardArtView: View {
                 placeholder(icon: "photo", label: "No art")
             }
         }
+        .modifier(UprightLandscapeArt(isActive: isRotated))
+        // Claims the caller's slot as this view's own layout size before
+        // clipping to it. `aspectRatio(contentMode: .fill)` reports a
+        // layout size that *overflows* the proposal on one axis, and the
+        // clip shape is built from whatever bounds it's handed — so
+        // without this the rounded rect was being cut at the overflowed
+        // size and a landscape card visibly spilled out past the ends of
+        // its row instead of being cropped into it.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
     }
 
@@ -73,6 +97,35 @@ struct CardArtView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+}
+
+/// Rotates landscape art a quarter turn so it stands upright in a
+/// portrait slot, swapping the frame's axes so it still *occupies* the
+/// portrait slot rather than the landscape one it was drawn at.
+///
+/// `.rotationEffect` alone would not do: it's a render-time transform
+/// that leaves the view's reported layout size unrotated, so the art
+/// would turn but the space it reserves would stay landscape-shaped and
+/// push the row around it out of line. Drawing into the *swapped* frame
+/// first and then centring the result with `.position` is what makes the
+/// footprint match what you see — `.position` places a view by its
+/// centre and ignores its layout size, which is exactly the mismatch
+/// being worked around here.
+private struct UprightLandscapeArt: ViewModifier {
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        if isActive {
+            GeometryReader { geo in
+                content
+                    .frame(width: geo.size.height, height: geo.size.width)
+                    .rotationEffect(.degrees(90))
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            }
+        } else {
+            content
         }
     }
 }

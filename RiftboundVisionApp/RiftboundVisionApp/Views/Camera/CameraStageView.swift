@@ -56,6 +56,15 @@ struct CameraStageView: View {
                     Color.clear.preference(key: CameraStageWidthKey.self, value: proxy.size.width)
                 }
             )
+            // Declared here for the same reason the width above is, and it
+            // has to be *here* rather than on `CameraStageView` from the
+            // outside: the container below is the full column width and
+            // full remaining height, while the picture is aspect-fitted
+            // inside it and at most window sizes draws far narrower than
+            // that. A tour spotlight measured on the container was a wide
+            // rectangle with the framed stage floating somewhere in the
+            // middle of it.
+            .tourRegion(.playmat)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             // Same inset the strip and the mascot band use, so the three
             // line up down both edges (`RiftboundLayout.columnInset`).

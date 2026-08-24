@@ -28,11 +28,35 @@ struct TableCardStrip: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
-            scrollingCards
+            // Not inside `scrollingCards`'s `ScrollView`: a horizontally
+            // scrolling container sizes its content to exactly what needs
+            // to scroll, so a `maxWidth: .infinity` text placed inside it
+            // never actually gets the width to centre itself in. As a
+            // normal flexible sibling here it can claim the row's leftover
+            // space (same as `scrollingCards` does when there are cards).
+            // The tour points at the row of cards and at the Library
+            // button in separate beats, so they anchor separately. Both
+            // are declared here rather than on `TableCardStrip` from the
+            // outside, which would have measured one rectangle covering
+            // both plus the row's `columnInset` padding.
+            //
+            // `ZStack` rather than `Group`: `Group` is transparent to
+            // layout, so `.tourRegion` on it would attach to whichever
+            // branch is showing individually instead of to the pair as
+            // one measurable box.
+            ZStack {
+                if cards.isEmpty {
+                    emptyState
+                } else {
+                    scrollingCards
+                }
+            }
+            .tourRegion(.table)
 
             // Outside the ScrollView so it stays put. See
             // `CardLibraryButton` for why.
             CardLibraryButton(action: onOpenLibrary)
+                .tourRegion(.cardLibrary)
         }
         .frame(height: RiftboundLayout.stripCardHeight + 24)
         .padding(.horizontal, RiftboundLayout.columnInset)
@@ -42,26 +66,22 @@ struct TableCardStrip: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 12) {
-                    if cards.isEmpty {
-                        emptyState
-                    } else {
-                        ForEach(cards) { printing in
-                            TableCardThumbnail(
-                                printing: printing,
-                                isSelected: selection?.id == printing.id,
-                                // Tapping the open card closes it, so the
-                                // strip toggles rather than only ever opening.
-                                onTap: { selection = selection?.id == printing.id ? nil : printing }
-                            )
-                            .id(printing.id)
+                    ForEach(cards) { printing in
+                        TableCardThumbnail(
+                            printing: printing,
+                            isSelected: selection?.id == printing.id,
+                            // Tapping the open card closes it, so the
+                            // strip toggles rather than only ever opening.
+                            onTap: { selection = selection?.id == printing.id ? nil : printing }
+                        )
+                        .id(printing.id)
 
-                            // Immediately after the card it belongs to, so
-                            // the row reads left-to-right as "this card,
-                            // and here's what it is".
-                            if selection?.id == printing.id {
-                                InlineCardDetail(printing: printing, description: description(printing))
-                                    .transition(.opacity)
-                            }
+                        // Immediately after the card it belongs to, so
+                        // the row reads left-to-right as "this card,
+                        // and here's what it is".
+                        if selection?.id == printing.id {
+                            InlineCardDetail(printing: printing, description: description(printing))
+                                .transition(.opacity)
                         }
                     }
                 }
@@ -82,6 +102,10 @@ struct TableCardStrip: View {
         Text("No cards on the table yet.")
             .font(RiftboundFont.body)
             .foregroundStyle(RiftboundPalette.regularText.opacity(0.6))
-            .frame(height: RiftboundLayout.stripCardHeight, alignment: .center)
+            // `maxHeight: .infinity` is what actually centres this: the
+            // outer `HStack` is `alignment: .top`, so without claiming the
+            // full row height itself, a child sized only to its text sits
+            // pinned to the top rather than centred in it.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }

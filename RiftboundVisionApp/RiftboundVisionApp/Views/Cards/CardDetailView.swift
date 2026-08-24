@@ -1,106 +1,115 @@
 import SwiftUI
 import RiftboundVision
 
-/// "Info" panel for a detected card — printed stats and rules text pulled
-/// straight from `CardPrinting` (real card data, per the brief: no
-/// invented "best use case" commentary, just what's actually printed on
-/// the card).
+/// A card's details, as a compact popup over the Card Library's own
+/// result list — art on the left, the words on the right.
 ///
-/// No call sites remain — the Card Library column in `DetectedCardsPanel`
-/// took over card inspection. Themed rather than deleted, since removing a
-/// file is a decision about the project, not the front end; it is dead
-/// code as it stands.
+/// This used to be a full page that *replaced* the list, with a Back
+/// button in the library's header to return. The hi-fi puts it on top
+/// instead, and that's the better shape for what it's for: browsing a
+/// catalogue is a sequence of "what's this one?" glances, and a view that
+/// takes the whole window makes each glance cost a navigation there and
+/// back. Floating it keeps the grid you were reading still on screen
+/// behind, so closing is a dismissal rather than a return trip.
+///
+/// Deliberately *not* `InlineCardDetail` — that one sits beside a
+/// thumbnail already on screen in the table strip and omits the artwork
+/// for exactly that reason. Both share `CardAttributeText`,
+/// `CardAbilityValue` and `CardKeywordChip` so a card's Ability can't
+/// read differently depending on where you looked it up.
 struct CardDetailView: View {
     let printing: CardPrinting
+    /// Rules text for `printing`, resolved by the caller (see
+    /// `CameraPipelineController.description(for:)`) — the same
+    /// simplified, first-timer-friendly text `InlineCardDetail` shows.
+    let description: String
     let onClose: () -> Void
 
+    /// Wide enough for the stat line to stay on one line at the longest
+    /// real combination ("Battlefield | COST: 10 | MIGHT: 10") — it reads
+    /// as a single printed line on the card, and wrapping it in the
+    /// middle turns it back into a list.
+    private static let popupWidth: CGFloat = 420
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
+        HStack(alignment: .top, spacing: 16) {
+            CardArtView(printing: printing, cornerRadius: 4, showsFailureLabel: false)
+                .frame(width: artSize.width, height: artSize.height)
+
+            VStack(alignment: .leading, spacing: 8) {
                 Text(printing.name)
                     .font(RiftboundFont.heading)
                     .foregroundStyle(RiftboundPalette.regularText)
-                Spacer()
-                Button("Close", action: onClose)
-                    .buttonStyle(RiftSecondaryButtonStyle())
-                    .keyboardShortcut(.cancelAction)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(statLine)
+                    .font(RiftboundFont.heading)
+                    .foregroundStyle(RiftboundPalette.regularText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                CardAbilityValue(keywords: printing.printedKeywords, text: abilityText)
             }
-
-            HStack(alignment: .top, spacing: 16) {
-                CardArtView(printing: printing)
-                    .frame(width: 180, height: 251)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(RiftboundPalette.elementStroke, lineWidth: 2)
-                    )
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(printing.classification.type)
-                        .font(RiftboundFont.heading)
-                        .foregroundStyle(RiftboundPalette.regularText)
-                    if let supertype = printing.classification.supertype {
-                        Text(supertype)
-                            .font(RiftboundFont.body)
-                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
-                    }
-
-                    statsRow
-
-                    if !printing.classification.domain.isEmpty {
-                        Text(printing.classification.domain.joined(separator: " / "))
-                            .font(RiftboundFont.body)
-                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
-                    }
-
-                    if let rarity = printing.classification.rarity {
-                        Text(rarity)
-                            .font(RiftboundFont.body)
-                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
-                    }
-
-                    Rectangle()
-                        .fill(RiftboundPalette.elementStroke.opacity(0.4))
-                        .frame(height: 1)
-
-                    Text(printing.text.plain.isEmpty ? "(No printed rules text)" : printing.text.plain)
-                        .font(RiftboundFont.body)
-                        .foregroundStyle(RiftboundPalette.regularText)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if let flavour = printing.text.flavour, !flavour.isEmpty {
-                        Text(flavour)
-                            .font(RiftboundFont.body)
-                            .italic()
-                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
-                    }
-
-                    Spacer()
-
-                    Text("\(printing.set.label) · #\(printing.collectorNumber.map(String.init) ?? "?") · \(printing.riftboundID)")
-                        .font(RiftboundFont.body)
-                        .foregroundStyle(RiftboundPalette.regularText.opacity(0.45))
-                }
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // The extra trailing inset is the gutter the close button floats
+        // in, so a long card name wraps clear of it instead of running
+        // underneath. It's padding rather than a `Color.clear` spacer in
+        // the `HStack`: `Color` is infinitely flexible in *both* axes, so
+        // one sized only by width still stretched the row — and with it
+        // the whole popup — to the full height of whatever it was placed
+        // in, which is where all the empty space came from.
         .padding(20)
-        .frame(minWidth: 520, minHeight: 340)
-        .background(RiftboundPalette.secondaryBackground)
+        .padding(.trailing, 18)
+        .frame(width: Self.popupWidth)
+        .background(
+            RoundedRectangle(cornerRadius: RiftboundLayout.cornerRadius, style: .continuous)
+                .fill(RiftboundPalette.mainBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: RiftboundLayout.cornerRadius, style: .continuous)
+                .stroke(RiftboundPalette.elementStroke, lineWidth: RiftboundLayout.hairline)
+        )
+        .overlay(alignment: .topTrailing) { closeButton }
     }
 
-    @ViewBuilder
-    private var statsRow: some View {
-        HStack(spacing: 16) {
-            if let energy = printing.attributes.energy {
-                Label("\(energy)", systemImage: "bolt.fill")
-            }
-            if let might = printing.attributes.might {
-                Label("\(might)", systemImage: "shield.fill")
-            }
-            if let power = printing.attributes.power {
-                Label("\(power)", systemImage: "sparkles")
-            }
+    private var closeButton: some View {
+        Button(action: onClose) {
+            Image(systemName: "xmark")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(RiftboundPalette.regularText)
+                .padding(10)
+                .contentShape(Rectangle())
         }
-        .font(RiftboundFont.body)
-        .foregroundStyle(RiftboundPalette.highlightOverlay)
+        .buttonStyle(.plain)
+        .keyboardShortcut(.cancelAction)
+        .accessibilityLabel("Close card details")
+    }
+
+    /// Battlefields print *landscape* — `CardOrientation`'s own doc
+    /// comment notes it as the one exception to every other type being
+    /// portrait. A fixed portrait frame around one just left the art
+    /// letterboxed inside a too-tall box.
+    private var artSize: CGSize {
+        printing.orientation == .landscape
+            ? CGSize(width: 126, height: 90)
+            : CGSize(width: 108, height: 151)
+    }
+
+    /// "Unit | COST: 2 | MIGHT: 2", the hi-fi's one-line summary.
+    ///
+    /// Built by dropping the parts a card doesn't have rather than
+    /// printing them empty or zero: a Rune has no cost and no Might, and
+    /// "Rune | COST: — | MIGHT: —" states two absences where the card
+    /// itself simply says nothing.
+    private var statLine: String {
+        var parts = [printing.classification.type]
+        if let energy = printing.attributes.energy { parts.append("COST: \(energy)") }
+        if let might = printing.attributes.might { parts.append("MIGHT: \(might)") }
+        return parts.joined(separator: " | ")
+    }
+
+    private var abilityText: String {
+        let text = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "No printed ability." : text
     }
 }

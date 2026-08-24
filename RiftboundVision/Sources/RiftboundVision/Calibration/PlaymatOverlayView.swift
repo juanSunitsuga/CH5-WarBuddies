@@ -43,6 +43,12 @@ enum PlaymatPalette {
     /// #FFFFFF — pure white, for overlay marks that sit on the photograph
     /// itself rather than on any of the board's own colours.
     static let pureWhite = Color("PureWhite", bundle: .module)
+    /// #000000 — pure black. Only the zone-label stroke uses it: text drawn
+    /// directly over an arbitrary camera photograph needs a stroke that
+    /// reads against any background, which is exactly the exception
+    /// `RiftboundTheme.swift` carves out for `Color.black` (never for a
+    /// fill or background — those read as a hole in the palette).
+    static let pureBlack = Color("PureBlack", bundle: .module)
     /// #000000 at 20% — the board's one darkening value.
     static let scrim = Color("Scrim", bundle: .module)
 }
@@ -134,7 +140,7 @@ public struct PlaymatOverlayView: View {
 
                     if showLabels {
                         let anchorPoint = labelAnchor(of: rect)
-                        // Cream halo (offsets) under a dark centre, so the
+                        // Black halo (offsets) under a cream centre, so the
                         // label survives being drawn over both pale mat and
                         // dark card art.
                         //
@@ -149,14 +155,14 @@ public struct PlaymatOverlayView: View {
                         // scaled by `ContentView`'s aspect-fit factor, so
                         // its number has no fixed relationship to on-screen
                         // points. Sizing it at 15 made it illegible.
-                        let text = Text(label(for: zoneTemplate)).font(.custom("Sora-Bold", size: 24))
+                        let text = Text(label(for: zoneTemplate)).font(.custom("Sora-Bold", size: Self.labelFontSize))
                         for offset in [CGPoint(x: -1.5, y: -1.5), CGPoint(x: 1.5, y: -1.5), CGPoint(x: -1.5, y: 1.5), CGPoint(x: 1.5, y: 1.5)] {
                             context.draw(
-                                text.foregroundStyle(PlaymatPalette.regularText),
+                                text.foregroundStyle(PlaymatPalette.pureBlack),
                                 at: CGPoint(x: anchorPoint.x + offset.x, y: anchorPoint.y + offset.y)
                             )
                         }
-                        context.draw(text.foregroundStyle(PlaymatPalette.elementShadow), at: anchorPoint)
+                        context.draw(text.foregroundStyle(PlaymatPalette.regularText), at: anchorPoint)
                     }
                 }
 
@@ -343,8 +349,15 @@ public struct PlaymatOverlayView: View {
         }
     }
 
-    /// Where a zone's label sits: horizontally centred, vertically on the
-    /// zone's *bottom* border.
+    /// The label's point size — in the *camera frame's* pixel space, not
+    /// the design system's 15pt, since this is scaled by `ContentView`'s
+    /// aspect-fit factor afterward and has no fixed relationship to
+    /// on-screen points. Named so `labelAnchor` can size its clearance off
+    /// the same number the text is actually drawn at.
+    private static let labelFontSize: CGFloat = 24
+
+    /// Where a zone's label sits: horizontally centred, sitting just above
+    /// the zone's *bottom* border.
     ///
     /// This used to be the polygon's centroid, which put every label in
     /// the middle of its box — directly over the part of the mat where
@@ -354,10 +367,13 @@ public struct PlaymatOverlayView: View {
     /// reference does.
     ///
     /// `Canvas.draw(_:at:)` anchors at the text's centre by default, so
-    /// returning `maxY` straddles the text across the border line rather
-    /// than hanging it below.
+    /// `maxY` on its own straddled the text across the border line — half
+    /// the glyph hanging down into the zone below rather than sitting on
+    /// top of the border like the reference. Lifting the anchor by roughly
+    /// half the label's own line height clears the border entirely instead
+    /// of centring on it.
     private func labelAnchor(of rect: CGRect) -> CGPoint {
-        CGPoint(x: rect.midX, y: rect.maxY)
+        CGPoint(x: rect.midX, y: rect.maxY - Self.labelFontSize * 0.65)
     }
 
     private func boundingRect(of points: [CGPoint]) -> CGRect {
