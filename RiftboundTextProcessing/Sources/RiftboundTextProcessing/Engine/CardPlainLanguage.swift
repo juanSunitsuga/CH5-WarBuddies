@@ -328,7 +328,7 @@ public enum CardPlainLanguage {
         case "legion":      return "This only goes off if you already played another main deck card this turn."
         case "vision":      return "When you play it, look at the top card of the deck to either put it on top or recycle it."
         case "hidden":      return "You can hide it face down at a battlefield you control."
-        case "action":      return "You can play this when no one is playing any spells/abilities."
+        case "action":      return "You can play this during your turn, or during a Showdown, as long as nothing else is currently resolving."
         case "reaction":    return "You can play this card to respond to you or your opponent's action."
         default:            return nil
         }
