@@ -70,4 +70,40 @@ struct CardDatabaseServiceTests {
         let result = dbService.simplifiedText(for: "not-a-real-id", name: "Not A Real Card")
         #expect(result == nil)
     }
+
+    /// Same "Card Description + Comment Fix" pass, but this column is read
+    /// live at runtime (`MascotInstructionPanel`'s BonBon comment) rather
+    /// than just being descriptive text — so this checks the exact same
+    /// resolution path as `simplifiedText`, not just that the column exists.
+    @Test("bonbonComment finds a card's curated comment by its hex id")
+    func bonbonCommentResolvesByHexID() {
+        let hexID = "69bc5bd2d308c64675ca879e" // Daring Poro
+        let result = dbService.bonbonComment(for: hexID)
+
+        #expect(result == "To play it, exhaust 2 runes. When it attacks, it gets +1 Might.")
+    }
+
+    @Test("bonbonComment falls back to a name match when the id doesn't resolve")
+    func bonbonCommentFallsBackToName() {
+        let result = dbService.bonbonComment(for: "not-the-real-id", name: "Daring Poro")
+        #expect(result == "To play it, exhaust 2 runes. When it attacks, it gets +1 Might.")
+    }
+
+    @Test("bonbonComment returns nil rather than a stale id when neither key matches")
+    func bonbonCommentReturnsNilWhenUnresolved() {
+        let result = dbService.bonbonComment(for: "not-a-real-id", name: "Not A Real Card")
+        #expect(result == nil)
+    }
+
+    /// A card the fix pass has blanked out (a Rune, or any other card with
+    /// no printed ability) stores an empty column value, not the sheet's
+    /// "leave it blank" instruction text — the caller reads this as "no
+    /// curated comment yet" the same as a card the pass hasn't reached.
+    @Test("bonbonComment returns nil for a card the fix pass left blank on purpose")
+    func bonbonCommentNilForIntentionallyBlankCard() {
+        let hexID = "69bc5bcbd308c64675ca8718" // Mind Rune
+        let result = dbService.bonbonComment(for: hexID)
+
+        #expect(result == nil)
+    }
 }

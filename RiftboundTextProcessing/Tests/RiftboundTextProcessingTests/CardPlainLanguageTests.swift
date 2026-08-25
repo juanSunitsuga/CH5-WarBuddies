@@ -24,14 +24,31 @@ struct CardPlainLanguageTests {
             "[Tank] (I must be assigned combat damage first.)When you play me, move a unit from a battlefield to its base."
         )
 
-        #expect(out.lines.first == "Tank — this unit takes combat damage first.")
+        #expect(out.lines.first == "During combat, this unit receives damage first.")
         #expect(out.lines.contains { $0.hasPrefix("When you play it:") })
     }
 
     @Test("Shield and Assault carry their number through")
     func valuedKeywords() {
-        #expect(CardPlainLanguage.explain("[Shield 2]").lines == ["Shield 2 — it gets +2 Might while defending."])
-        #expect(CardPlainLanguage.explain("[Assault 2]").lines == ["Assault 2 — it gets +2 Might while attacking."])
+        #expect(CardPlainLanguage.explain("[Shield 2]").lines == ["It gets +2 Might when it defends."])
+        #expect(CardPlainLanguage.explain("[Assault 2]").lines == ["It gets +2 Might when it attacks."])
+    }
+
+    /// Garen — Rugged prints both at the same value: "it gets +2 Might
+    /// whichever side of combat it's on" is one rule, not two keyword
+    /// reminders that happen to share a number.
+    @Test("Assault and Shield of equal value fold into one line")
+    func matchedAssaultAndShieldMerge() {
+        let out = CardPlainLanguage.explain("[Assault 2] [Shield 2]")
+        #expect(out.lines == ["When this unit attacks or defends, it gets +2 Might."])
+    }
+
+    /// A mismatched pair keeps its two separate lines — merging would
+    /// silently drop which number applies to which side of combat.
+    @Test("Assault and Shield of different values stay separate")
+    func mismatchedAssaultAndShieldStaySeparate() {
+        let out = CardPlainLanguage.explain("[Assault 1] [Shield 2]")
+        #expect(out.lines == ["It gets +1 Might when it attacks.", "It gets +2 Might when it defends."])
     }
 
     /// The whole point of the `unexplained` channel: a keyword with no
@@ -141,12 +158,12 @@ struct CardSummaryTests {
     @Test("A cost says what to do with the runes, not which symbols to count")
     func costIsAnInstruction() {
         let energyOnly = CardPlainLanguage.describeCard(
-            name: "A", type: "Spell", energyCost: 3, powerCost: 0, printedText: ""
+            name: "A", type: "Spell", energyCost: 3, powerCost: 0, printedText: "Draw 1."
         )
         #expect(energyOnly.detail.hasPrefix("To play it, exhaust 3 runes."))
 
         let powerOnly = CardPlainLanguage.describeCard(
-            name: "B", type: "Spell", energyCost: nil, powerCost: 2, printedText: ""
+            name: "B", type: "Spell", energyCost: nil, powerCost: 2, printedText: "Draw 1."
         )
         #expect(powerOnly.detail.hasPrefix("To play it, recycle 2 runes to the bottom of your rune deck."))
     }
@@ -156,14 +173,14 @@ struct CardSummaryTests {
     func costNamesTheDomain() {
         let single = CardPlainLanguage.describeCard(
             name: "Annie - Fiery", type: "Unit",
-            energyCost: 5, powerCost: 1, powerDomains: ["Fury"], printedText: ""
+            energyCost: 5, powerCost: 1, powerDomains: ["Fury"], printedText: "Draw 1."
         )
         #expect(single.detail.contains("recycle 1 Fury rune to the bottom of your rune deck"))
 
         // Multi-domain cards accept either, and the line has to say so.
         let either = CardPlainLanguage.describeCard(
             name: "Decisive Strike", type: "Spell",
-            energyCost: 5, powerCost: 1, powerDomains: ["Body", "Order"], printedText: ""
+            energyCost: 5, powerCost: 1, powerDomains: ["Body", "Order"], printedText: "Draw 1."
         )
         #expect(either.detail.contains("recycle 1 Body or Order rune"))
     }
@@ -173,21 +190,34 @@ struct CardSummaryTests {
     func noPowerNoRecycle() {
         let out = CardPlainLanguage.describeCard(
             name: "Back to Back", type: "Spell",
-            energyCost: 3, powerCost: 0, powerDomains: ["Order"], printedText: ""
+            energyCost: 3, powerCost: 0, powerDomains: ["Order"], printedText: "Draw 1."
         )
         #expect(!out.detail.contains("recycle"))
     }
 
-    /// A blank detail would read as a panel that failed to load, and send
-    /// the player looking at the card for text that isn't there.
-    @Test("A card with no cost and no text still says something")
+    /// A card with nothing printed on it gets no comment at all — not a
+    /// canned "no printed ability" line, which read as filler on every one
+    /// of a deck's dozen blank runes.
+    @Test("A card with no printed text says nothing")
     func emptyCard() {
         let out = CardPlainLanguage.describeCard(
             name: "Fury Rune", type: "Rune", energyCost: nil, powerCost: 0, printedText: ""
         )
 
         #expect(out.headline == "Fury Rune — Rune")
-        #expect(out.detail == "No printed ability — it does what its type does, nothing more.")
+        #expect(out.detail.isEmpty)
+    }
+
+    /// A real cost doesn't earn a card a comment either — the cost line
+    /// only exists to explain what the ability underneath it costs, and
+    /// there's nothing underneath it here.
+    @Test("A card with a cost but no printed ability still says nothing")
+    func costButNoAbilityStillBlank() {
+        let out = CardPlainLanguage.describeCard(
+            name: "Vanguard Sergeant", type: "Unit", energyCost: 4, powerCost: 0, printedText: ""
+        )
+
+        #expect(out.detail.isEmpty)
     }
 
     @Test("A missing type doesn't leave a dangling dash")

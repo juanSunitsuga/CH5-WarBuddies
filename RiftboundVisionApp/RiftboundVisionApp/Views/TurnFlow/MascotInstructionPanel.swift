@@ -44,6 +44,13 @@ struct MascotInstructionPanel: View {
     /// Damage bonuses granted by cards already on the table, so a tapped
     /// card can be quoted at the number it will actually deal.
     var activeBonuses: [ActiveDamageBonus] = []
+    /// BonBon's hand-curated comment for a card (see
+    /// `CameraPipelineController.bonbonComment(for:)`), if the "Card
+    /// Description + Comment Fix" pass has reached it. Preferred over
+    /// `CardPlainLanguage.describeCard`'s algorithmic rewrite when it
+    /// resolves — that pass is a fallback for the cards nobody has
+    /// hand-reviewed yet, not the primary source.
+    var bonbonComment: (CardPrinting) -> String? = { _ in nil }
     /// Said when nothing else has anything to report, so the band is never
     /// empty — an empty speech panel reads as a broken one.
     var fallback: String
@@ -136,6 +143,13 @@ struct MascotInstructionPanel: View {
             printedText: printing.text.plain,
             activeBonuses: activeBonuses
         )
+        // The curated comment, where one exists, replaces `describeCard`'s
+        // algorithmic detail outright rather than being appended to it —
+        // the two are two different attempts at describing the same card,
+        // not complementary halves of one description.
+        let curated = bonbonComment(printing)
+        let detail = curated ?? summary.detail
+
         // `describeCard` has already run the plain-language pass. Saying so
         // is what stops the band running it a second time: a second pass
         // has a fresh gloss set, so it re-explains every term the first
@@ -143,7 +157,12 @@ struct MascotInstructionPanel: View {
         // twice — and it glosses the cost sentence this file generated,
         // which is how "Exhausted means turned sideways." ended up
         // explaining wording that came from us rather than from the card.
-        return Message(headline: summary.headline, detail: summary.detail, isAlert: false, isFinal: true)
+        return Message(
+            headline: summary.headline,
+            detail: detail.isEmpty ? nil : detail,
+            isAlert: false,
+            isFinal: true
+        )
     }
 
     var body: some View {

@@ -40,7 +40,22 @@ public enum CardPlainLanguage {
 
         // 1. Keywords. They modify everything else on the card, so they read
         //    first — and they're the densest jargon, so they benefit most.
-        for keyword in keywords(in: trimmed) {
+        //
+        //    Assault and Shield of the *same* value are folded into one
+        //    line rather than two: a card that gets +N Might whichever side
+        //    of combat it's on ("Garen — Rugged") reads as one rule, not
+        //    two separate keyword reminders that happen to share a number.
+        let found = keywords(in: trimmed)
+        var handled: Set<String> = []
+        if let assault = found.first(where: { $0.name == "assault" }),
+           let shield = found.first(where: { $0.name == "shield" }),
+           assault.value == shield.value {
+            let n = assault.value.map(String.init) ?? "some"
+            lines.append("When this unit attacks or defends, it gets +\(n) Might.")
+            handled.insert("assault")
+            handled.insert("shield")
+        }
+        for keyword in found where !handled.contains(keyword.name) {
             if let plain = keywordGloss(keyword) {
                 lines.append(plain)
             } else {
@@ -113,8 +128,11 @@ public enum CardPlainLanguage {
             parts.append(advice)
         }
 
-        if parts.isEmpty {
-            parts.append("No printed ability — it does what its type does, nothing more.")
+        // A card with no printed ability gets no comment at all — not even
+        // the cost line. Naming a rune's cost as if it were noteworthy
+        // implies there's a rule attached to it, and there isn't one.
+        guard !printedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return CardSummary(headline: headline, detail: "")
         }
         return CardSummary(headline: headline, detail: parts.joined(separator: " "))
     }
@@ -299,19 +317,19 @@ public enum CardPlainLanguage {
     private static func keywordGloss(_ keyword: Keyword) -> String? {
         let n = keyword.value.map(String.init) ?? "some"
         switch keyword.name {
-        case "tank":        return "Tank — this unit takes combat damage first."
-        case "assault":     return "Assault \(n) — it gets +\(n) Might while attacking."
-        case "shield":      return "Shield \(n) — it gets +\(n) Might while defending."
-        case "deathknell":  return "Deathknell — this goes off when the unit dies."
-        case "deflect":     return "Deflect — opponents pay extra Power to target it."
-        case "ganking":     return "Ganking — it can move straight from one battlefield to another."
-        case "accelerate":  return "Accelerate — for a cost, it arrives upright instead of sideways."
-        case "temporary":   return "Temporary — it dies at the start of your turn."
-        case "legion":      return "Legion — this only goes off if you already played another main deck card this turn."
-        case "vision":      return "Vision — when you play it, look at the top card of your main deck; you may put it on the bottom."
-        case "hidden":      return "Hidden — you can hide it face down at a battlefield you control."
-        case "action":      return "Action — you can only play this during a fight at a battlefield, when it's your turn to act."
-        case "reaction":    return "Reaction — you can play this while something else is still resolving."
+        case "tank":        return "During combat, this unit receives damage first."
+        case "assault":     return "It gets +\(n) Might when it attacks."
+        case "shield":      return "It gets +\(n) Might when it defends."
+        case "deathknell":  return "This goes off when the unit dies."
+        case "deflect":     return "Opponents pay extra Power to target it."
+        case "ganking":     return "It can move straight from one battlefield to another."
+        case "accelerate":  return "For a cost, it arrives upright instead of sideways."
+        case "temporary":   return "It dies at the start of your turn."
+        case "legion":      return "This only goes off if you already played another main deck card this turn."
+        case "vision":      return "When you play it, look at the top card of the deck to either put it on top or recycle it."
+        case "hidden":      return "You can hide it face down at a battlefield you control."
+        case "action":      return "You can play this when no one is playing any spells/abilities."
+        case "reaction":    return "You can play this card to respond to you or your opponent's action."
         default:            return nil
         }
     }

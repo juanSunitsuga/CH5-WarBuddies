@@ -30,8 +30,14 @@ struct InlineCardDetail: View {
             VStack(alignment: .leading, spacing: 8) {
                 CardAttributeRow(label: "Type", value: printing.classification.type)
                 if let cost = printing.costLabel { CardAttributeRow(label: "Cost", value: cost) }
-                CardAttributeRow(label: "Ability") {
-                    CardAbilityValue(keywords: printing.printedKeywords, text: abilityText)
+                // Omitted entirely for a card with nothing to say — a Rune,
+                // a vanilla unit — rather than printing "No printed
+                // ability.": the row's own presence already implies there's
+                // a rule underneath it, which isn't true here.
+                if !abilityText.isEmpty || !printing.printedKeywords.isEmpty {
+                    CardAttributeRow(label: "Ability") {
+                        CardAbilityValue(keywords: printing.printedKeywords, text: abilityText)
+                    }
                 }
             }
         }
@@ -46,8 +52,7 @@ struct InlineCardDetail: View {
     }
 
     private var abilityText: String {
-        let text = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? "No printed ability." : text
+        description.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
