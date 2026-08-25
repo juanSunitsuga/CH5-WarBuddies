@@ -134,7 +134,22 @@ public final class CardDatabaseService: @unchecked Sendable {
             return byID
         }
         guard let name else { return nil }
-        return simpleTextByName(name)
+        return textByName("simple_text", name)
+    }
+
+    /// BonBon's hand-curated comment for a card (the `bonbons_comment_changes`
+    /// column) — the exact wording from the "Card Description + Comment Fix"
+    /// pass, not the algorithmic rewrite `CardPlainLanguage.describeCard`
+    /// produces from raw printed text. Callers should prefer this over that
+    /// dynamic pass when it resolves, and fall back to the dynamic one
+    /// otherwise — the curated wording only covers the cards someone has
+    /// actually reviewed so far.
+    public func bonbonComment(for cardID: String, name: String? = nil) -> String? {
+        if let byID = textColumn("bonbons_comment_changes", forCardID: cardID), !byID.isEmpty {
+            return byID
+        }
+        guard let name else { return nil }
+        return textByName("bonbons_comment_changes", name)
     }
 
     /// Shared `SELECT <column> ... WHERE card_id = ?` — `column` is always
@@ -155,19 +170,19 @@ public final class CardDatabaseService: @unchecked Sendable {
         return value.isEmpty ? nil : value
     }
 
-    /// Full-table scan for `simple_text` by normalized `clean_name` — same
-    /// idiom as `fetchCard(named:)`. A separate query rather than routing
-    /// through `fetchAllCards()`/`CardMetadata`, which don't carry
-    /// `plain_text`/`simple_text` at all. Still guards against a matching
-    /// name with an empty `simple_text` rather than assuming one row per
-    /// name — a defensive leftover from before the migration, cheap to
-    /// keep in case a future notebook run reintroduces duplicates.
-    private func simpleTextByName(_ name: String) -> String? {
+    /// Full-table scan for `column` by normalized `clean_name` — same idiom
+    /// as `fetchCard(named:)`. A separate query rather than routing through
+    /// `fetchAllCards()`/`CardMetadata`, which don't carry any of this
+    /// table's free-text columns. Still guards against a matching name with
+    /// an empty value rather than assuming one row per name — a defensive
+    /// leftover from before the `simple_text` migration, cheap to keep in
+    /// case a future notebook run reintroduces duplicates.
+    private func textByName(_ column: String, _ name: String) -> String? {
         let normalized = Self.normalize(name)
         guard !normalized.isEmpty, let db else { return nil }
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
-        let query = "SELECT clean_name, simple_text FROM cards;"
+        let query = "SELECT clean_name, \(column) FROM cards;"
         guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else { return nil }
         while sqlite3_step(statement) == SQLITE_ROW {
             guard Self.normalize(Self.text(statement, 0)) == normalized else { continue }

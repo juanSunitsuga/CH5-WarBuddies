@@ -47,7 +47,11 @@ struct CardDetailView: View {
                     .foregroundStyle(RiftboundPalette.regularText)
                     .fixedSize(horizontal: false, vertical: true)
 
-                CardAbilityValue(keywords: printing.printedKeywords, text: abilityText)
+                // Omitted entirely for a card with nothing to say — see
+                // `InlineCardDetail`'s matching comment.
+                if !abilityText.isEmpty || !printing.printedKeywords.isEmpty {
+                    CardAbilityValue(keywords: printing.printedKeywords, text: abilityText)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -109,7 +113,6 @@ struct CardDetailView: View {
     }
 
     private var abilityText: String {
-        let text = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? "No printed ability." : text
+        description.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

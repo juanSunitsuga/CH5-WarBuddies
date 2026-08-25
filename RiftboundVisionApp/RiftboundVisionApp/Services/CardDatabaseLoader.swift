@@ -33,7 +33,7 @@ enum CardDatabaseLoader {
         attributes: CardPrinting.Attributes(energy: nil, might: nil, power: nil),
         classification: CardPrinting.Classification(type: "Unit", supertype: "Token", rarity: nil, domain: []),
         text: CardPrinting.CardText(
-            plain: "A spawned unit token. Not a printed/sold card — this is a synthetic catalogue entry so the vision pipeline can show a name instead of \"unidentified,\" not a real card record.",
+            plain: "A 1 Might unit card that can only be called by a card's ability.",
             flavour: nil
         ),
         set: CardPrinting.CardSet(setID: "SYN", label: "Synthetic (not a real set)"),

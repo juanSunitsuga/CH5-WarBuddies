@@ -288,6 +288,16 @@ final class CameraPipelineController: ObservableObject {
             ?? printing.text.plain
     }
 
+    /// BonBon's hand-curated comment for `printing` (`textDatabase`'s
+    /// `bonbons_comment_changes` column), if the "Card Description +
+    /// Comment Fix" pass has reached this card yet. `nil` when it hasn't —
+    /// the caller falls back to `CardPlainLanguage.describeCard`'s
+    /// algorithmic rewrite of the raw printed text for everything the
+    /// curated pass hasn't covered.
+    func bonbonComment(for printing: CardPrinting) -> String? {
+        textDatabase.bonbonComment(for: printing.id, name: printing.name)
+    }
+
     /// Overlaps the rules forbid (currently Unit-on-Unit), recomputed each
     /// detection poll by `UnderlayResolver` — surfaced so the UI can warn
     /// the player instead of silently mis-modeling an illegal stack.
