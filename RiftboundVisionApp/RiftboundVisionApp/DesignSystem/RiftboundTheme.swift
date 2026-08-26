@@ -30,16 +30,23 @@ import CoreText
 /// looks for them. This enum is now purely the *naming* layer: it says
 /// which role each swatch plays, which is the part that belongs in code.
 enum RiftboundPalette {
-    /// #1C3449 — the board's one navy. The window, and every panel that
+    /// #10415E — the board's one blue. The window, and every panel that
     /// isn't explicitly recessed.
     static let mainBackground = Color("MainBackground")
-    /// Recessed surfaces — the control column. The board gives exactly one
-    /// darkening value (black at 20%), so "further back" is that scrim over
-    /// `mainBackground` rather than a second navy. It is deliberately
-    /// translucent: it composites over whatever it is drawn on.
-    static let secondaryBackground = Color("Scrim")
-    /// #1C3449 — shadow/stroke for elements, and the dark text on a lit
-    /// gold pip. Shares the navy with `mainBackground`: the board no longer
+    /// #0A496A — recessed surfaces: the control column, the score
+    /// panels, the settings sheet.
+    ///
+    /// A swatch of its own, not `Scrim` over `mainBackground` as it was
+    /// before the board grew one. The translucent version composited with
+    /// whatever it happened to be drawn on, so the "same" recessed
+    /// surface came out a different colour over the navy than it did over
+    /// a panel — and being a darkening of the main colour, it could only
+    /// ever read as *shadow*. An opaque swatch is one value everywhere
+    /// and can sit slightly cooler than `mainBackground` rather than
+    /// merely darker.
+    static let secondaryBackground = Color("SecondaryBackground")
+    /// #10415E — shadow/stroke for elements, and the dark text on a lit
+    /// gold pip. Shares the blue with `mainBackground`: the board no longer
     /// carries a separate element shadow, and the panels that used one are
     /// bounded by `elementStroke` instead.
     static let elementShadow = Color("MainBackground")
@@ -73,9 +80,14 @@ enum RiftboundPalette {
     /// colour on `GameToggleButton`'s Stop Game state — the fill there
     /// stays the ordinary grey, so this is a colour accent, not an alarm.
     static let dangerButton = Color("DangerButton")
-    /// #FFFFFF — pure white. Only the developer overlays drawn straight
-    /// onto the camera picture, which have to stay legible over an
-    /// arbitrary photograph rather than over the board's own colours.
+    /// #FFFFFF — pure white. For labels that sit on a filled control
+    /// rather than on the board: the phase pips' letters, and the
+    /// developer overlays drawn straight onto the camera picture, which
+    /// have to stay legible over an arbitrary photograph.
+    ///
+    /// Text *on the board* is `regularText`'s cream. The distinction is
+    /// the point — cream over the pips' #A36F18 reads as stained rather
+    /// than as a label.
     static let pureWhite = Color("PureWhite")
     /// #000000 at 20% — the board's only darkening value. Recessed fills
     /// and the plate behind overlay text.
@@ -574,6 +586,15 @@ enum RiftboundLayout {
     /// inline strip panel and the Card Library page both draw the list and
     /// a drifting label width is the kind of difference that only shows up
     /// when you happen to see the two side by side.
+    /// An extra blank line's worth of space, added *on top of* a stack's
+    /// own spacing where a sidebar section changes subject — between the
+    /// sentence explaining a panel and the controls it explains.
+    ///
+    /// Roughly one line of 15pt body text. Expressed as padding rather
+    /// than by widening the stack's `spacing`, because it applies at one
+    /// seam rather than between every pair of rows.
+    static let paragraphBreak: CGFloat = 18
+
     static let cardAttributeLabelWidth: CGFloat = 62
     /// The keyword pill in a card's Ability line ("ASSAULT"). Tighter than
     /// `buttonCornerRadius` on purpose: at chip height a button's radius

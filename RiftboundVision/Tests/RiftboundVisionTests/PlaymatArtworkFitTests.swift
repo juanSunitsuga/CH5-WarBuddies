@@ -4,7 +4,7 @@ import CoreGraphics
 import AppKit
 @testable import RiftboundVision
 
-/// The border artwork is drawn by stretching each PNG into its zone's
+/// The border artwork is drawn by stretching each SVG into its zone's
 /// rect, so a zone whose proportions differ from its artwork's visibly
 /// smears the frame's corner strokes. These tests assert the template's
 /// geometry is derived from the assets' real pixel dimensions — the thing
@@ -13,20 +13,27 @@ import AppKit
 struct PlaymatArtworkFitTests {
 
     /// Mirrors `PlaymatOverlayView.frame(for:)`'s zone → asset mapping.
+    /// Exhaustive for the same reason that one is: a new zone should
+    /// break this test rather than quietly borrow another zone's art.
     private static func assetName(for zone: Zone) -> String {
         switch zone {
-        case .battlefield: return "Rectangle 2"
-        case .base, .runeArea: return "Rectangle 3"
-        case .player1Hand, .player2Hand: return "Rectangle 4"
-        default: return "Rectangle 1"
+        case .battlefield, .runeArea: return "Rectangle 1"
+        case .base: return "Rectangle 2"
+        case .player1Hand, .player2Hand: return "Rectangle 3"
+        case .mainDeck: return "Rectangle 4"
+        case .runeDeck: return "Rectangle 5"
+        case .trash: return "Rectangle 6"
+        case .legend, .champion: return "Rectangle 7"
+        case .unknown: return "Rectangle 1"
         }
     }
 
     private static func assetSize(_ name: String) throws -> CGSize {
-        let url = try #require(RiftboundVisionResources.bundle.url(forResource: name, withExtension: "png"))
+        let url = try #require(RiftboundVisionResources.bundle.url(forResource: name, withExtension: "svg"))
         let image = try #require(NSImage(contentsOf: url))
-        let rep = try #require(image.representations.first)
-        return CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
+        // `image.size`, not a representation's `pixelsWide`: these are
+        // vector assets, and an SVG rep reports no pixel dimensions.
+        return image.size
     }
 
     private static func normalizedSize(_ polygon: [CGPoint]) -> CGSize {
@@ -37,14 +44,6 @@ struct PlaymatArtworkFitTests {
         )
     }
 
-    /// Rune Area uses Rectangle 3's artwork but is Rectangle 2's width in
-    /// the grid — a deliberate mismatch (the mockup reuses the wider frame
-    /// there), so it's excluded from the exact-fit assertion rather than
-    /// having the assertion loosened for everything.
-    private static func isExactFitZone(_ zone: Zone) -> Bool {
-        zone != .runeArea
-    }
-
     @Test("Every zone's aspect ratio matches its border artwork's, so nothing stretches when drawn")
     func zoneAspectRatiosMatchTheirArtwork() throws {
         // The mat (the 0...1 unit square) isn't square, so a normalized
@@ -52,7 +51,7 @@ struct PlaymatArtworkFitTests {
         // proportions mean anything.
         let matAspect = RiftboundPlaymatTemplate.matAspectRatio
 
-        for template in RiftboundPlaymatTemplate.singlePlayerZones() where Self.isExactFitZone(template.zone) {
+        for template in RiftboundPlaymatTemplate.singlePlayerZones() {
             let art = try Self.assetSize(Self.assetName(for: template.zone))
             let normalized = Self.normalizedSize(template.normalizedPolygon)
 
@@ -66,7 +65,7 @@ struct PlaymatArtworkFitTests {
         }
     }
 
-    /// The 5pt gutter isn't a tuning knob: it's the only value that makes
+    /// The 3pt gutter isn't a tuning knob: it's the only value that makes
     /// all three rows of artwork total the same width, which is what lets
     /// the grid tile without gaps or overlap.
     @Test("All three mat rows span the full width, leaving no gap or overlap")

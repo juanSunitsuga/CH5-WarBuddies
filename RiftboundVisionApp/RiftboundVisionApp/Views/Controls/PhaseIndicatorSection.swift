@@ -34,27 +34,9 @@ struct PhaseIndicatorSection: View {
                 if isExpanded {
                     Text("Track your turn steps here.")
                         .riftFont(.body)
-                        .foregroundStyle(RiftboundPalette.regularText.opacity(0.75))
+                        .foregroundStyle(RiftboundPalette.regularText)
 
-                    Text("Start of Turn Phases")
-                        .riftFont(.subheading)
-                        .foregroundStyle(RiftboundPalette.regularText.opacity(0.55))
-
-                    PhasePipRow(current: gameState.phase)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(RiftboundPhaseCopy.title(for: gameState.phase))
-                            .riftFont(.heading)
-                            .foregroundStyle(RiftboundPalette.regularText)
-                        Text(RiftboundPhaseCopy.blurb(for: gameState.phase))
-                            .riftFont(.body)
-                            .foregroundStyle(RiftboundPalette.regularText.opacity(0.75))
-                            .fixedSize(horizontal: false, vertical: true)
-                            // Reserves room for the longest blurb (Action's, at
-                            // two lines) so Back/Next/End Turn sit at the same
-                            // height regardless of which phase is showing.
-                            .frame(minHeight: RiftboundLayout.phaseBlurbMinHeight, alignment: .topLeading)
-                    }
+                    phaseReadout
                 }
             }
             .tourRegion(.phaseIndicator)
@@ -67,6 +49,40 @@ struct PhaseIndicatorSection: View {
                 .tourRegion(.turnControls)
             }
         }
+    }
+
+    /// The turn's *state* — the pips and the phase they're pointing at.
+    ///
+    /// Dimmed as one block before Start Game, rather than pip by pip:
+    /// the board's rule is that 50% means a whole component is off, and
+    /// what's off here isn't any individual circle but the idea of a
+    /// current phase. The header and "Track your turn steps here." stay
+    /// at full strength above it — they label the panel, and a panel
+    /// whose own title dims reads as broken rather than as idle.
+    private var phaseReadout: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Start of Turn Phases")
+                .riftFont(.subheading)
+                .foregroundStyle(RiftboundPalette.pureWhite)
+
+            PhasePipRow(current: gameState.phase, isGameRunning: isGameRunning)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(RiftboundPhaseCopy.title(for: gameState.phase))
+                    .riftFont(.heading)
+                    .foregroundStyle(RiftboundPalette.pureWhite)
+                Text(RiftboundPhaseCopy.blurb(for: gameState.phase))
+                    .riftFont(.body)
+                    .foregroundStyle(RiftboundPalette.pureWhite)
+                    .fixedSize(horizontal: false, vertical: true)
+                    // Reserves room for the longest blurb (Action's, at
+                    // two lines) so Back/Next/End Turn sit at the same
+                    // height regardless of which phase is showing.
+                    .frame(minHeight: RiftboundLayout.phaseBlurbMinHeight, alignment: .topLeading)
+            }
+        }
+        .padding(.top, RiftboundLayout.paragraphBreak)
+        .riftComponentDisabled(!isGameRunning)
     }
 
     private var autoAdvanceRow: some View {

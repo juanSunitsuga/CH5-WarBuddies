@@ -8,7 +8,6 @@ import RiftboundVision
 /// narrow that list would have nothing left to do.
 struct CardLibrarySheet: View {
     let database: CardDatabase
-    @Binding var selection: CardPrinting?
     /// Resolves a printing's rules text for `CardDetailView`'s Ability row
     /// — the same resolver `TableCardStrip` passes to `InlineCardDetail`,
     /// so a card's Ability doesn't read differently depending on where you
@@ -24,6 +23,11 @@ struct CardLibrarySheet: View {
     /// anything for a card the camera can currently see; browsing the full
     /// database needs its detail page to work regardless.
     @State private var detailPrinting: CardPrinting?
+    /// The card whose artwork is blown up over everything else. Separate
+    /// from `detailPrinting` rather than a `Bool` beside it, so the
+    /// enlarged layer never has to ask "which card was that again" — it
+    /// carries its own subject and can outlive nothing.
+    @State private var enlargedArt: CardPrinting?
 
     private var results: [CardPrinting] {
         searchText.trimmingCharacters(in: .whitespaces).isEmpty
@@ -74,9 +78,15 @@ struct CardLibrarySheet: View {
             if let detailPrinting {
                 detailPopup(for: detailPrinting)
             }
+
+            // Above the popup, so enlarging the art covers the words that
+            // were describing it rather than sitting politely beside them.
+            if let enlargedArt {
+                enlargedArtLayer(for: enlargedArt)
+            }
         }
         .frame(width: 520, height: 620)
-        .background(RiftboundPalette.mainBackground)
+        .background(RiftboundPalette.secondaryBackground)
     }
 
     /// Opening springs; closing just gets out of the way.
@@ -110,7 +120,9 @@ struct CardLibrarySheet: View {
         CardDetailView(
             printing: printing,
             description: description(printing),
-            onClose: { setDetail(nil) }
+            onClose: { setDetail(nil) },
+            onExpandArt: { setEnlargedArt(printing) },
+            isEscapeShortcutActive: enlargedArt == nil
         )
         // Grows out of a slightly smaller copy of itself rather than just
         // fading, so the popup reads as having come *from* the row that
@@ -122,6 +134,61 @@ struct CardLibrarySheet: View {
         // already open swaps the contents outright instead of cross-fading
         // one card's art and text into another's.
         .id(printing.id)
+    }
+
+    /// Same asymmetry as `setDetail` — see there for why.
+    private func setEnlargedArt(_ printing: CardPrinting?) {
+        withAnimation(
+            printing == nil
+                ? .easeOut(duration: 0.16)
+                : .spring(response: 0.34, dampingFraction: 0.84)
+        ) {
+            enlargedArt = printing
+        }
+    }
+
+    /// The artwork at the largest size this sheet can give it.
+    ///
+    /// Deliberately just the art — no name, no rules text. Everything a
+    /// card *says* is already on the popup underneath; this exists for
+    /// the one thing that popup can't do at 108pt wide, which is let you
+    /// actually look at the picture.
+    @ViewBuilder
+    private func enlargedArtLayer(for printing: CardPrinting) -> some View {
+        // A `Button`, not an `onTapGesture` like the popup's scrim: this
+        // layer also has to own Escape. The popup underneath gives its
+        // own `.cancelAction` up while this is showing, so without a
+        // holder here Escape would do nothing at all.
+        Button { setEnlargedArt(nil) } label: {
+            RiftboundPalette.tourScrim.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.cancelAction)
+        .accessibilityLabel("Close enlarged artwork")
+        .transition(.opacity)
+
+        CardArtView(printing: printing, cornerRadius: 6)
+            .frame(width: enlargedSize(for: printing).width, height: enlargedSize(for: printing).height)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(RiftboundPalette.elementStroke, lineWidth: RiftboundLayout.hairline)
+            )
+            // The whole card dismisses, not a close button in its corner:
+            // a tap opened it, so a tap closing it needs no explaining,
+            // and a button would sit on top of the art it's showing.
+            .contentShape(Rectangle())
+            .onTapGesture { setEnlargedArt(nil) }
+            .help("Click to close")
+            .accessibilityLabel("\(printing.name) artwork. Click to close.")
+            .transition(.scale(scale: 0.94).combined(with: .opacity))
+    }
+
+    /// As big as fits inside the sheet with a margin, at the card's own
+    /// orientation — Battlefields print landscape.
+    private func enlargedSize(for printing: CardPrinting) -> CGSize {
+        printing.orientation == .landscape
+            ? CGSize(width: 448, height: 320)
+            : CGSize(width: 380, height: 532)
     }
 
     private var header: some View {
@@ -169,11 +236,14 @@ struct CardLibrarySheet: View {
 
     private func resultRow(_ printing: CardPrinting) -> some View {
         Button {
-            // Also updates `selection`, harmless when the card isn't on
-            // the table (`TableCardStrip` simply has nothing to highlight)
-            // and a small bonus when it is — browsing the library then
-            // highlights that card back in the strip underneath.
-            selection = printing
+            // Deliberately does *not* touch the app's shared card
+            // selection. It used to, as a "small bonus" so a card you
+            // looked up here also highlighted in the table strip — but
+            // that selection is the same value the mascot panel narrates,
+            // so every card opened in the library made BonBon read its
+            // rules text out underneath, duplicating the popup already on
+            // screen. Browsing a catalogue isn't the player pointing at
+            // something on their table, and shouldn't speak as if it were.
             setDetail(printing)
         } label: {
             HStack(spacing: 12) {

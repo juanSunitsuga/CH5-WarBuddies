@@ -193,9 +193,12 @@ struct ContentView: View {
             OnboardingView { isShowingOnboarding = false }
         }
         .sheet(isPresented: $isShowingCardLibrary) {
+            // No `selection` binding, unlike `TableCardStrip` above:
+            // clicking a card here browses the catalogue, it doesn't
+            // point at something on the player's table, so it must not
+            // move the shared selection the mascot panel narrates.
             CardLibrarySheet(
                 database: pipeline.cardDatabase,
-                selection: $selectedCard,
                 description: { pipeline.description(for: $0) },
                 onClose: { isShowingCardLibrary = false }
             )

@@ -24,6 +24,15 @@ struct CardDetailView: View {
     /// simplified, first-timer-friendly text `InlineCardDetail` shows.
     let description: String
     let onClose: () -> Void
+    /// Tapping the art asks the *sheet* to show it large, rather than
+    /// this view growing in place: at this popup's size there's no room
+    /// to read the art at any useful scale, and the enlarged version has
+    /// to be free to cover the whole library behind it.
+    let onExpandArt: () -> Void
+    /// Whether Escape closes the popup. False while the enlarged art is
+    /// up — Escape should dismiss that first, and two `.cancelAction`s in
+    /// one window fight over which one fires.
+    var isEscapeShortcutActive = true
 
     /// Wide enough for the stat line to stay on one line at the longest
     /// real combination ("Battlefield | COST: 10 | MIGHT: 10") — it reads
@@ -33,8 +42,14 @@ struct CardDetailView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
-            CardArtView(printing: printing, cornerRadius: 4, showsFailureLabel: false)
-                .frame(width: artSize.width, height: artSize.height)
+            Button(action: onExpandArt) {
+                CardArtView(printing: printing, cornerRadius: 4, showsFailureLabel: false)
+                    .frame(width: artSize.width, height: artSize.height)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Click to see the art full size")
+            .accessibilityLabel("Enlarge \(printing.name) artwork")
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(printing.name)
@@ -63,7 +78,7 @@ struct CardDetailView: View {
         .frame(width: Self.popupWidth)
         .background(
             RoundedRectangle(cornerRadius: RiftboundLayout.cornerRadius, style: .continuous)
-                .fill(RiftboundPalette.mainBackground)
+                .fill(RiftboundPalette.secondaryBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: RiftboundLayout.cornerRadius, style: .continuous)
@@ -81,7 +96,7 @@ struct CardDetailView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .keyboardShortcut(.cancelAction)
+        .keyboardShortcut(isEscapeShortcutActive ? .cancelAction : nil)
         .accessibilityLabel("Close card details")
     }
 

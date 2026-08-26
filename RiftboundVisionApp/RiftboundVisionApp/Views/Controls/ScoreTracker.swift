@@ -25,9 +25,9 @@ struct ScoreTracker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("First to \(Self.winningScore) points win.")
-                    .riftFont(.body)
-                    .foregroundStyle(RiftboundPalette.regularText)
+//                Text("First to \(Self.winningScore) points win.")
+//                    .riftFont(.body)
+//                    .foregroundStyle(RiftboundPalette.pureWhite.opacity(0.75))
 
                 Spacer()
 
@@ -39,6 +39,9 @@ struct ScoreTracker: View {
                         .riftIcon(size: 14, weight: .semibold)
                         .foregroundStyle(RiftboundPalette.regularText)
                         .contentShape(Rectangle())
+                    Text("Reset Score")
+                        .riftFont(.body)
+                        .foregroundStyle(RiftboundPalette.pureWhite)
                 }
                 .buttonStyle(.plain)
                 .disabled(!isGameRunning)

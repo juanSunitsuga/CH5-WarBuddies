@@ -55,6 +55,10 @@ enum PlaymatPalette {
 
 public struct PlaymatOverlayView: View {
     @Binding private var calibration: PlaymatCalibration
+    /// The mat's rect when a move-drag began, held for the length of that
+    /// drag. `DragGesture.translation` is measured from the drag's start,
+    /// so it can only be applied to the rect the drag started from.
+    @State private var dragStartRect: CGRect?
     private let isEditable: Bool
     private let showLabels: Bool
     /// Which zone layout to draw — defaults to the single-player mat
@@ -75,26 +79,47 @@ public struct PlaymatOverlayView: View {
         self.template = template
     }
 
-    /// The "RiftChamps" mockup's hand-drawn gold border frames — not
-    /// shape-locked art in principle (each is just a sketchy-line texture
-    /// stretched to whatever box it's drawn into), but stretching one
-    /// *far* past its own native aspect visibly smears its corner accents
-    /// (confirmed against a real render: Rectangle 1 — a narrow,
-    /// near-square 121×164 texture — stretched across the full-width Hand
-    /// zone turned its corner strokes into long vertical streaks). So the
-    /// mapping is by actual zone shape, not a single default:
-    ///   - Rectangle 2 (394×164, landscape): Battlefield
-    ///   - Rectangle 3 (520×164, wider landscape): Base and Rune Area —
-    ///     both wide rows the same general proportions as Base
-    ///   - Rectangle 4 (645×164, widest): Hand — wider than either of the
-    ///     above, and the zone most prone to the stretching artifact
-    ///   - Rectangle 1 (121×164, narrow/near-square): everything else
-    ///     (Legend, Champion, Main Deck, Rune Deck, Trash) — zones that
-    ///     are actually close to this texture's own native aspect
-    private static let battlefieldFrame = loadFrame("Rectangle 2")
-    private static let baseFrame = loadFrame("Rectangle 3")
-    private static let handFrame = loadFrame("Rectangle 4")
-    private static let defaultFrame = loadFrame("Rectangle 1")
+    /// The hand-drawn border frames, one asset per zone shape.
+    ///
+    /// The asset names are the designer's own (`Rectangle 1`…`7`), so
+    /// which is which is not guessable from the name — that's what this
+    /// table is for, and it's the only place the mapping is written down.
+    /// It was decoded from a labelled reference export of the same
+    /// artwork, matching each frame by its pixel size and stroke colour:
+    ///
+    ///   | asset       | size    | stroke  | zones                 |
+    ///   |-------------|---------|---------|-----------------------|
+    ///   | Rectangle 1 | 265×110 | #D5A250 | Battlefield, Rune Area|
+    ///   | Rectangle 2 | 349×110 | #D5A250 | Base                  |
+    ///   | Rectangle 3 | 434×111 | #D5A250 | Hand                  |
+    ///   | Rectangle 4 |  81×110 | #CEA73F | Main Deck             |
+    ///   | Rectangle 5 |  81×110 | #CEA73F | Rune Deck             |
+    ///   | Rectangle 6 |  81×110 | black   | Trash                 |
+    ///   | Rectangle 7 |  81×110 | #9C650B | Legend, Champion      |
+    ///
+    /// Where two zones share a frame they are the same size *and* the
+    /// same colour in the reference — not an approximation. Stretching a
+    /// frame past its own aspect visibly smears its corner accents, which
+    /// is why the shapes are matched rather than one default reused:
+    /// `RiftboundPlaymatTemplate` lays the grid out from these very
+    /// numbers so each frame draws at exactly its native proportions.
+    private static let mediumFrame = loadFrame("Rectangle 1")   // 265 × 110
+    private static let largeFrame = loadFrame("Rectangle 2")    // 349 × 110
+    private static let handFrame = loadFrame("Rectangle 3")     // 434 × 111
+    private static let deckFrame = loadFrame("Rectangle 4")     //  81 × 110
+    private static let runeDeckFrame = loadFrame("Rectangle 5") //  81 × 110
+    private static let trashFrame = loadFrame("Rectangle 6")    //  81 × 110
+    private static let legendFrame = loadFrame("Rectangle 7")   //  81 × 110
+    /// The corner grab handle. A drawn asset rather than a `Circle()`, so
+    /// the one control the player physically drags is drawn by the same
+    /// hand as everything it's aligning.
+    static let handleImage = loadFrame("Ellipse")
+
+    /// Drawn much larger than the asset's own 23pt. It's a drag target on
+    /// a live camera picture, scaled down with everything else by the
+    /// stage's aspect-fit factor before it reaches the screen — so its
+    /// export size is no guide at all to how big it ends up.
+    private static let handleDiameter: CGFloat = 34
 
     /// Prefers the host app's asset catalog (`Assets.xcassets`), falling
     /// back to this package's own bundled copy. `NSImage(named:)` searches
@@ -106,7 +131,11 @@ public struct PlaymatOverlayView: View {
         if let catalogImage = NSImage(named: name) {
             return Image(nsImage: catalogImage)
         }
-        guard let url = Bundle.module.url(forResource: name, withExtension: "png"),
+        // SVG, not PNG: `NSImage` reads SVG directly on macOS, and the
+        // frames are line art that gets scaled to whatever the calibrated
+        // quad turns out to be — a raster would soften at any size but
+        // its own.
+        guard let url = Bundle.module.url(forResource: name, withExtension: "svg"),
               let nsImage = NSImage(contentsOf: url) else {
             // Shouldn't happen — these are bundled resources, not
             // user-supplied data — but a missing/renamed asset shouldn't
@@ -117,12 +146,30 @@ public struct PlaymatOverlayView: View {
         return Image(nsImage: nsImage)
     }
 
+    /// One frame per zone, matched to that zone's own artwork.
+    ///
+    /// Exhaustive on purpose — no `default:`. Every zone this template
+    /// can produce has a frame drawn at its exact proportions, and a new
+    /// one should fail the build until someone says which art it wears
+    /// rather than silently inheriting a texture drawn for a different
+    /// shape. (The zones not in this template — the ones only a
+    /// two-player mat has — still need an answer, and take the frame of
+    /// whichever single-player zone is their size.)
     private func frame(for zone: Zone) -> Image {
         switch zone {
-        case .battlefield: return Self.battlefieldFrame
-        case .base, .runeArea: return Self.baseFrame
+        case .battlefield, .runeArea: return Self.mediumFrame
+        case .base: return Self.largeFrame
         case .player1Hand, .player2Hand: return Self.handFrame
-        default: return Self.defaultFrame
+        case .mainDeck: return Self.deckFrame
+        case .runeDeck: return Self.runeDeckFrame
+        case .trash: return Self.trashFrame
+        case .legend, .champion: return Self.legendFrame
+        // Never reaches here: `.unknown` is what the zone mapper returns
+        // for a detection that landed outside every calibrated region,
+        // and no template ever emits it as a region to draw. Answered
+        // explicitly rather than swept up by a `default:` so a genuinely
+        // new zone still has to be given art.
+        case .unknown: return Self.mediumFrame
         }
     }
 
@@ -173,11 +220,14 @@ public struct PlaymatOverlayView: View {
             .allowsHitTesting(false)
 
             if isEditable {
+                // Order matters: the drag surface covers the whole mat,
+                // so the handles have to be layered *after* it to win the
+                // hit test where they overlap at the corners.
+                matDragSurface
                 handle(.topLeft)
                 handle(.topRight)
                 handle(.bottomRight)
                 handle(.bottomLeft)
-                moveHandle
             }
         }
     }
@@ -185,6 +235,13 @@ public struct PlaymatOverlayView: View {
     /// Which corner a handle drives. Dragging one resizes the rectangle
     /// with the *opposite* corner pinned, so the mat only ever gets wider
     /// or taller — it can never be sheared into a parallelogram.
+    ///
+    /// All four are built. The reference only draws the top-left one, and
+    /// matching that was tried — but a single grip means the *opposite*
+    /// corner is always the pinned one, so growing the mat downward or to
+    /// the right meant dragging the top-left away and then dragging the
+    /// whole mat back. Four grips is one more thing on screen and a lot
+    /// less work at the table.
     private enum Corner {
         case topLeft, topRight, bottomRight, bottomLeft
     }
@@ -201,10 +258,13 @@ public struct PlaymatOverlayView: View {
     /// corners, so restoring it later is a UI change, not a model one.
     private func handle(_ corner: Corner) -> some View {
         let position = point(for: corner)
-        return Circle()
-            .fill(PlaymatPalette.highlightOverlay)
-            .overlay(Circle().stroke(PlaymatPalette.elementShadow, lineWidth: 1))
-            .frame(width: 18, height: 18)
+        // The drawn `Ellipse` asset, not a `Circle()` built here. Same
+        // reason the zone borders are art: the handle sits *on* the mat
+        // it resizes, and a crisp system circle among hand-drawn frames
+        // reads as UI chrome that landed on the picture by accident.
+        return Self.handleImage
+            .resizable()
+            .frame(width: Self.handleDiameter, height: Self.handleDiameter)
             .position(position)
             .gesture(
                 DragGesture(minimumDistance: 0).onChanged { value in
@@ -213,21 +273,34 @@ public struct PlaymatOverlayView: View {
             )
     }
 
-    /// Drags the whole mat without changing its size — separate from the
-    /// corners so repositioning can't accidentally reshape it.
-    private var moveHandle: some View {
+    /// Drags the whole mat without changing its size.
+    ///
+    /// An invisible surface over the mat rather than the move puck that
+    /// used to sit in the middle of it. Moving is the *body* and resizing
+    /// is the *corner* — which is how every window on the platform
+    /// already behaves, so it needs no affordance of its own to be
+    /// discoverable, and it keeps the visible controls down to the four
+    /// grips that actually need to be aimed at.
+    private var matDragSurface: some View {
         let rect = currentRect
-        return Circle()
-            .fill(PlaymatPalette.highlightOverlay.opacity(0.85))
-            .overlay(Image(systemName: "arrow.up.and.down.and.arrow.left.and.right").font(.system(size: 11, weight: .bold)).foregroundStyle(PlaymatPalette.elementShadow))
-            .frame(width: 26, height: 26)
+        return Rectangle()
+            .fill(Color.clear)
+            .contentShape(Rectangle())
+            .frame(width: rect.width, height: rect.height)
             .position(x: rect.midX, y: rect.midY)
             .gesture(
-                DragGesture(minimumDistance: 0).onChanged { value in
-                    let dx = value.location.x - rect.midX
-                    let dy = value.location.y - rect.midY
-                    apply(rect.offsetBy(dx: dx, dy: dy))
-                }
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        // Anchored to where the drag *started*, not to the
+                        // live rect. Offsetting the current rect by each
+                        // update's translation would re-apply the whole
+                        // accumulated distance every frame and send the
+                        // mat flying off the screen.
+                        let start = dragStartRect ?? rect
+                        if dragStartRect == nil { dragStartRect = rect }
+                        apply(start.offsetBy(dx: value.translation.width, dy: value.translation.height))
+                    }
+                    .onEnded { _ in dragStartRect = nil }
             )
     }
 

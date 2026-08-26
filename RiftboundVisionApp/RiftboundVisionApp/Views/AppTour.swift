@@ -162,11 +162,14 @@ enum TourSprite {
     /// the no-camera branch. The expression is the tell that something is
     /// wrong, so it has to change with the words.
     case bonbonDizzy
+    
+    case bonbonPeace
 
     var imageName: String {
         switch self {
         case .bonbon: return "BonBon Head (Default)"
         case .bonbonDizzy: return "BonBon Head (Dizzy)"
+        case .bonbonPeace: return "BonBon Head (Peace)"
         }
     }
 }
@@ -182,25 +185,47 @@ struct TourStep {
     /// the whole window and sit in the middle of it, the same shape the
     /// intro uses.
     let region: TourRegion?
+    /// The region the spotlight cuts out, when that isn't the same as the
+    /// one the step is *about*.
+    ///
+    /// Normally those coincide. The calibration step is why they can't be
+    /// assumed to: the control it names lives in the title bar, which
+    /// can't be spotlit at all, but the thing the player has to look at
+    /// and drag while following it is the playmat down in the content
+    /// area. Dimming the playmat and pointing at a button that adjusts it
+    /// is the wrong way round.
+    let spotlight: TourRegion?
     let message: (_ isCameraRunning: Bool) -> String
     let sprite: (_ isCameraRunning: Bool) -> TourSprite
     let buttons: TourStepButtons
     /// Whether this step waits for the player to actually start the game
-    /// rather than for a button on the card. While it's showing, the
-    /// scrim stops swallowing clicks so the real Start Game button
-    /// underneath is reachable.
+    /// rather than for a button on the card.
     let waitsForGameStart: Bool
+    /// Whether the scrim lets clicks through to the app underneath.
+    ///
+    /// The tour is modal by default — a stray click during a walkthrough
+    /// is far more often a misfire than an intention. Steps that ask the
+    /// player to *do* something in the app rather than press a button on
+    /// the card have to opt out, or the step's own instruction is the one
+    /// thing it makes impossible to follow.
+    let allowsAppInteraction: Bool
 
     init(
         _ region: TourRegion?,
         buttons: TourStepButtons,
+        spotlight: TourRegion? = nil,
         waitsForGameStart: Bool = false,
+        allowsAppInteraction: Bool = false,
         sprite: @escaping (_ isCameraRunning: Bool) -> TourSprite = { _ in .bonbon },
         message: @escaping (_ isCameraRunning: Bool) -> String
     ) {
         self.region = region
+        self.spotlight = spotlight
         self.buttons = buttons
         self.waitsForGameStart = waitsForGameStart
+        // Waiting on a real button implies reaching it. Folded in here so
+        // a step can't be written that waits for a click it also blocks.
+        self.allowsAppInteraction = allowsAppInteraction || waitsForGameStart
         self.sprite = sprite
         self.message = message
     }
@@ -209,15 +234,33 @@ struct TourStep {
         _ region: TourRegion?,
         _ message: String,
         buttons: TourStepButtons,
+        spotlight: TourRegion? = nil,
         waitsForGameStart: Bool = false,
+        allowsAppInteraction: Bool = false,
         sprite: TourSprite = .bonbon
     ) {
         self.init(
             region,
             buttons: buttons,
+            spotlight: spotlight,
             waitsForGameStart: waitsForGameStart,
+            allowsAppInteraction: allowsAppInteraction,
             sprite: { _ in sprite }
         ) { _ in message }
+    }
+
+    /// Which region actually gets cut out of the scrim. `nil` means no
+    /// cutout is possible, so the step dims everything.
+    var spotlightRegion: TourRegion? {
+        if let spotlight { return spotlight }
+        guard let region, !region.isTitleBarHosted else { return nil }
+        return region
+    }
+
+    /// Where the card sits — driven by what the step is *about*, never by
+    /// what happens to be spotlit.
+    var cardPlacement: TourCardPlacement {
+        region?.cardPlacement ?? .center
     }
 }
 
@@ -264,7 +307,18 @@ enum TourScript {
         // The glyph is interpolated from `RiftboundArt` rather than typed
         // as a literal, so renaming the asset can't leave this sentence
         // silently pointing at a picture that no longer exists.
-        TourStep(.calibrate, "Cool, now let's set your playmat so that it's adjusted to the table. Hit {img:\(RiftboundArt.resizeOverlay)} up top and drag the corners.", buttons: .skipAndNext()),
+        // The one step that hands the app back while it's showing: it
+        // asks the player to drag the playmat's corners, so the playmat
+        // is what's spotlit (not the title-bar button the sentence names,
+        // which can't be) and the scrim stops eating clicks so the
+        // corner handles are actually reachable.
+        TourStep(
+            .calibrate,
+            "Cool, now let's set your playmat so that it's adjusted to the table. Hit {img:\(RiftboundArt.resizeOverlay)} up top and drag the corners.",
+            buttons: .skipAndNext(),
+            spotlight: .playmat,
+            allowsAppInteraction: true
+        ),
 
         // Script 5
         TourStep(.playmat, "Now that it's ready, you can put your cards based on their zone.", buttons: .skipAndNext()),
@@ -466,7 +520,7 @@ struct TourOverlay: View {
             case .intro:
                 fullScrim(in: proxy.size)
                 card(
-                    sprite: .bonbon,
+                    sprite: .bonbonPeace,
                     message: "Hi~ I'm BonBon! I'll be here with you while you play Riftbound ^^",
                     buttons: .branch(exploreLabel: "I'll explore myself", showMeLabel: "Show me around")
                 )
@@ -474,80 +528,48 @@ struct TourOverlay: View {
             case .skippedTo:
                 fullScrim(in: proxy.size)
                 card(
-                    sprite: .bonbon,
+                    sprite: .bonbonPeace,
                     message: "Awesome, let's line up the camera and start the game! You can always find me in **Help** on the top.",
                     buttons: .singleCentered("Start Playing")
                 )
                 .position(cardCenter(placement: .center, cutout: nil, bounds: proxy.size))
             case .step:
                 if let step = coordinator.currentStep {
-                    // Three ways to land in the centred branch, and they
-                    // want identical treatment: the step names no region
-                    // (Scripts 13 and 14), or it names one whose frame
-                    // hasn't arrived yet, or it names one that can't be
-                    // measured at all. Falling back to "dim everything,
-                    // card in the middle" means a region that never
-                    // reports still shows its words — the previous
-                    // `if let` rendered nothing whatsoever, so a single
-                    // unmeasurable region would have stalled the tour on
-                    // a blank dark screen with no way forward.
-                    if let region = step.region, region.isTitleBarHosted {
-                        // No cutout is possible — the control is in the
-                        // title bar. Dim everything and park the card at
-                        // the toolbar's own edge; the copy carries the
-                        // control's icon inline.
-                        fullScrim(in: proxy.size)
-                        card(
-                            sprite: step.sprite(coordinator.isCameraRunning),
-                            message: step.message(coordinator.isCameraRunning),
-                            buttons: step.buttons
-                        )
-                        .position(cardCenter(placement: .underToolbar, cutout: nil, bounds: proxy.size))
-                    } else if let region = step.region,
-                       let rawCutout = frames[region],
-                       !rawCutout.isEmpty {
-                        // Inset *then* clamp, in that order: the inset is
-                        // what turns a layout frame into the shape the
-                        // player sees, and the clamp is a safety net
-                        // against measurement drift. Clamping first would
-                        // measure the safety margin from an edge that's
-                        // about to move anyway.
-                        let cutout = clampedToSidebar(
-                            rawCutout.inset(by: region.spotlightInset),
-                            region: region
-                        )
-                        // Last, after both the inset and the sidebar
-                        // clamp: whatever those two produce, a cutout is
-                        // never allowed outside the window. A region
-                        // whose frame sits flush against an edge — the
-                        // card strip's two halves both do, against the
-                        // top — would otherwise have its outward push
-                        // land off-content, and the spotlight's rounded
-                        // corner gets sliced off against the window
-                        // border instead of reading as a panel.
-                        .clamped(within: proxy.size, margin: Self.windowMargin)
+                    // One path, whatever the step is. The spotlight rect
+                    // and the card's anchor are worked out separately —
+                    // the calibration step deliberately spotlights the
+                    // playmat while anchoring its card to the title-bar
+                    // button it names — and either can independently come
+                    // back with nothing to point at.
+                    let cutout = spotlightRect(for: step, in: proxy.size)
+
+                    if let cutout {
                         cutoutScrim(around: cutout, in: proxy.size)
-                            // The waiting step points at a button the
-                            // player has to actually press, so the scrim
-                            // must not eat the click. Scoped to that one
-                            // step: everywhere else the tour stays modal.
-                            .allowsHitTesting(!step.waitsForGameStart)
-                        card(
-                            sprite: step.sprite(coordinator.isCameraRunning),
-                            message: step.message(coordinator.isCameraRunning),
-                            buttons: step.buttons
-                        )
-                        .position(cardCenter(placement: region.cardPlacement, cutout: cutout, bounds: proxy.size))
+                            .allowsHitTesting(!step.allowsAppInteraction)
                     } else {
+                        // No cutout to be had: the step names no region,
+                        // names a title-bar control that can't be cut out
+                        // of the content view, or names one whose frame
+                        // hasn't been measured. Dimming everything still
+                        // shows the words — rendering nothing at all
+                        // would strand the tour on a blank dark screen
+                        // with no way forward.
                         fullScrim(in: proxy.size)
-                            .allowsHitTesting(!step.waitsForGameStart)
-                        card(
-                            sprite: step.sprite(coordinator.isCameraRunning),
-                            message: step.message(coordinator.isCameraRunning),
-                            buttons: step.buttons
-                        )
-                        .position(cardCenter(placement: .center, cutout: nil, bounds: proxy.size))
+                            .allowsHitTesting(!step.allowsAppInteraction)
                     }
+
+                    card(
+                        sprite: step.sprite(coordinator.isCameraRunning),
+                        message: step.message(coordinator.isCameraRunning),
+                        buttons: step.buttons
+                    )
+                    .position(
+                        cardCenter(
+                            placement: placement(for: step, hasCutout: cutout != nil),
+                            cutout: cutout,
+                            bounds: proxy.size
+                        )
+                    )
                 }
             }
         }
@@ -585,6 +607,38 @@ struct TourOverlay: View {
         let maxWidth = max(0, sidebarMinX - rect.minX - Self.sidebarGap)
         guard rect.width > maxWidth else { return rect }
         return CGRect(x: rect.minX, y: rect.minY, width: maxWidth, height: rect.height)
+    }
+
+    /// The rect to cut out of the scrim, or `nil` when this step has
+    /// nothing spotlightable to point at.
+    private func spotlightRect(for step: TourStep, in bounds: CGSize) -> CGRect? {
+        guard let region = step.spotlightRegion,
+              let raw = frames[region],
+              !raw.isEmpty else { return nil }
+
+        // Inset *then* clamp, in that order: the inset is what turns a
+        // layout frame into the shape the player sees, and the clamp is a
+        // safety net against measurement drift. Clamping first would
+        // measure the safety margin from an edge that's about to move.
+        return clampedToSidebar(raw.inset(by: region.spotlightInset), region: region)
+            // Last of all: whatever those two produce, a cutout is never
+            // allowed outside the window. A region whose frame sits flush
+            // against an edge — the card strip's two halves both do,
+            // against the top — would otherwise have its outward push
+            // land off-content and get its rounded corner sliced flat
+            // against the window border.
+            .clamped(within: bounds, margin: Self.windowMargin)
+    }
+
+    /// Where the card goes. Falls back to the centre when the step wants
+    /// to sit against a cutout that isn't there — `.below` and `.leading`
+    /// are both defined relative to one, and without it they'd position
+    /// the card off the region's imagined edge rather than anywhere the
+    /// player would look.
+    private func placement(for step: TourStep, hasCutout: Bool) -> TourCardPlacement {
+        let placement = step.cardPlacement
+        guard !hasCutout else { return placement }
+        return placement == .below || placement == .leading ? .center : placement
     }
 
     @ViewBuilder
@@ -761,6 +815,12 @@ private struct TourCard: View {
     ///
     /// Everything outside a token still goes through `LocalizedStringKey`,
     /// so `**bold**` keeps working either side of an icon.
+    /// A thin space, set either side of an inline glyph. Narrower than a
+    /// word space on purpose: it's added *to* the space the sentence
+    /// already has, and a second full space would open a visible gap that
+    /// reads as a missing word.
+    private static let glyphSpacer = "\u{2009}"
+
     private static func styled(_ message: String) -> Text {
         var result = Text("")
         var remainder = Substring(message)
@@ -768,7 +828,17 @@ private struct TourCard: View {
         while let glyph = nextGlyph(in: remainder) {
             let literal = remainder[..<glyph.range.lowerBound]
             if !literal.isEmpty { result = result + Text(.init(String(literal))) }
-            result = result + Text(glyph.isSystemSymbol ? Image(systemName: glyph.name) : Image(glyph.name))
+            // Thin spaces (U+2009) either side, on top of the ordinary
+            // word space already in the sentence. A glyph's box sits
+            // tight against its own artwork where a letter carries built
+            // in side bearings, so an icon dropped straight between two
+            // words reads as jammed into them. `Text` can't be padded —
+            // it composes with `+`, not with modifiers — so the breathing
+            // room has to be a character.
+            result = result
+                + Text(Self.glyphSpacer)
+                + Text(glyph.isSystemSymbol ? Image(systemName: glyph.name) : Image(glyph.name))
+                + Text(Self.glyphSpacer)
             remainder = remainder[glyph.range.upperBound...]
         }
 
