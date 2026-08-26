@@ -273,16 +273,26 @@ struct PhaseAutoDetectorTests {
         #expect(progress.detail?.contains("Exhaust 2 runes") == true)
     }
 
-    @Test("An unaffordable card tells the player to put it back in hand")
-    func unaffordablePlayAsksForTheCardBack() {
+    /// A card the visible runes can't cover still gets told what it costs.
+    ///
+    /// This used to answer "Put Annie back in your hand." and never mention
+    /// the cost. Playing a card and being told to undo it is advice the
+    /// player can't act on and didn't ask for — and the shortfall is
+    /// usually the app's own, runes it hasn't detected rather than runes
+    /// the player doesn't have. Whether the play is legal is
+    /// `LegalityValidator`'s call, not this one's.
+    @Test("A card the visible runes can't cover still says what it costs")
+    func unaffordablePlayStillStatesTheCost() {
         let annie = ObservedCard(id: 1, name: "Annie", zone: .base, energyCost: 3)
         let progress = PhaseAutoDetector().paymentProgress(for: annie, runes: [
             ObservedRune(domain: .fury, stance: .ready)
         ])
 
-        #expect(progress.needsCorrection)
-        #expect(progress.headline == "Put Annie back in your hand.")
-        #expect(progress.detail?.contains("3 energy") == true)
+        #expect(progress.headline == "You've played Annie.")
+        #expect(progress.detail?.contains("Exhaust 3 runes") == true)
+        // A note about what the app can see, not a refusal in front of it.
+        #expect(progress.detail?.contains("I can only see 1 ready rune") == true)
+        #expect(!progress.needsCorrection)
     }
 
     // MARK: - Abilities in play, as steps
@@ -418,6 +428,7 @@ struct PhaseAutoDetectorTests {
         #expect(progress.detail?.contains("Draw 1 card.") == true)
     }
 
+    /// Both halves name the Domain: what to return, and what's visible.
     @Test("A missing domain names the domain the player needs")
     func missingDomainIsNamed() {
         let card = ObservedCard(id: 1, name: "Final Spark", zone: .base,
@@ -426,7 +437,8 @@ struct PhaseAutoDetectorTests {
             ObservedRune(domain: .fury, stance: .ready)
         ])
 
-        #expect(progress.needsCorrection)
-        #expect(progress.detail?.contains("Mind") == true)
+        #expect(progress.detail?.contains("Return 1 Mind rune to your rune deck") == true)
+        #expect(progress.detail?.contains("I can only see 0 Mind runes") == true)
+        #expect(!progress.needsCorrection)
     }
 }

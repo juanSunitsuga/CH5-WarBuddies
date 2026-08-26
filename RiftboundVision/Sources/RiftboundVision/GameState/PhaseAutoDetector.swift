@@ -413,6 +413,81 @@ public struct PhaseAutoDetector: Sendable {
     /// per-frame poll: it fires on a specific card leaving the hand, and
     /// the answer must not change just because the next frame arrived.
     public func paymentProgress(for card: ObservedCard, runes: [ObservedRune]) -> Progress {
+        // The cost is stated the same way whether or not the runes to pay
+        // it are visible yet.
+        //
+        // This used to branch first: if `RunePayment` couldn't see enough
+        // runes it answered "Put Annie back in your hand." and never said
+        // what Annie cost. Playing a card to your base and being told to
+        // undo it is the opposite of useful — the player wants to know what
+        // to turn, and "put it back" is advice they can't act on and didn't
+        // ask for. Worse, the shortfall is usually the *app's*: runes it
+        // hasn't detected yet, or a rune area the camera can't read. The
+        // engine rejecting an illegal play is a different thing, arrives
+        // through `LegalityValidator`, and still does.
+        //
+        // So the cost sentence is built unconditionally, and a shortfall
+        // becomes a note under it rather than a refusal in front of it.
+        var parts: [String] = []
+
+        // Rule 139.4: a Unit enters the board exhausted. That's a physical
+        // thing the player has to do — turn the card they just put down
+        // sideways — and it's the step most often forgotten, because the
+        // card is already on the table and looks finished. 717's Accelerate
+        // (and text that says so in words) is the exception, and is worth
+        // calling out rather than staying silent about, since "why isn't it
+        // asking me to turn this one" is otherwise a puzzle.
+        let entersExhausted = card.kind == .unit || card.kind == .champion
+        if entersExhausted, !card.entersReady {
+            // "it", not the card's name: the headline right above this
+            // already says which card was played, and repeating the name
+            // inside the same sentence reads like a second card.
+            parts.append("turn it sideways")
+        }
+
+        if card.energyCost > 0 {
+            parts.append("exhaust \(card.energyCost) rune\(card.energyCost == 1 ? "" : "s")")
+        }
+        if card.powerCost > 0 {
+            let domains = card.eligibleDomains.map { $0.rawValue.capitalized }.joined(separator: " or ")
+            // Naming the destination, not just the verb — see
+            // `PendingPlay.outstanding`.
+            parts.append("return \(card.powerCost) \(domains.isEmpty ? "" : domains + " ")rune\(card.powerCost == 1 ? "" : "s") to your rune deck")
+        }
+
+        let abilityLine = card.abilities.isEmpty ? nil : card.abilities.joined(separator: "  ·  ")
+        let shortfall = shortfallNote(for: card, runes: runes)
+
+        guard !parts.isEmpty else {
+            return Progress(
+                headline: entersExhausted && card.entersReady
+                    ? "\(card.name) enters ready — leave it upright."
+                    : "\(card.name) costs nothing to play.",
+                detail: abilityLine
+            )
+        }
+
+        // Split across the panel's two lines: what happened on top, what's
+        // owed for it underneath. One sentence carrying both was the card's
+        // name, a colon and a list, which reads as a label rather than as
+        // something to act on.
+        return Progress(
+            headline: "You've played \(card.name).",
+            detail: sentence(parts).capitalizedFirst + "."
+                + (shortfall.map { "  ·  \($0)" } ?? "")
+                + (abilityLine.map { "  ·  \($0)" } ?? "")
+        )
+    }
+
+    /// A note when the runes on the table don't cover the cost — phrased as
+    /// what the app can *see*, not as a verdict on the player.
+    ///
+    /// The distinction matters because the app is usually the one that's
+    /// wrong here: runes it hasn't detected, or a rune area outside the
+    /// calibrated mat. Telling a player they can't afford a card on that
+    /// evidence is a confident claim built on a guess. Whether the play is
+    /// actually legal is `LegalityValidator`'s call, and it still makes it.
+    private func shortfallNote(for card: ObservedCard, runes: [ObservedRune]) -> String? {
         switch RunePayment.verdict(
             energy: card.energyCost,
             power: card.powerCost,
@@ -420,69 +495,12 @@ public struct PhaseAutoDetector: Sendable {
             runes: runes
         ) {
         case .affordable:
-            var parts: [String] = []
-
-            // Rule 139.4: a Unit enters the board exhausted. That's a
-            // physical thing the player has to do — turn the card they just
-            // put down sideways — and it's the step most often forgotten,
-            // because the card is already on the table and looks finished.
-            // 717's Accelerate (and text that says so in words) is the
-            // exception, and is worth calling out rather than staying
-            // silent about, since "why isn't it asking me to turn this one"
-            // is otherwise a puzzle.
-            let entersExhausted = card.kind == .unit || card.kind == .champion
-            if entersExhausted, !card.entersReady {
-                // "it", not the card's name: the headline right above this
-                // already says which card was played, and repeating the
-                // name inside the same sentence reads like a second card.
-                parts.append("turn it sideways")
-            }
-
-            if card.energyCost > 0 {
-                parts.append("exhaust \(card.energyCost) rune\(card.energyCost == 1 ? "" : "s")")
-            }
-            if card.powerCost > 0 {
-                let domains = card.eligibleDomains.map { $0.rawValue.capitalized }.joined(separator: " or ")
-                // Naming the destination, not just the verb — see
-                // `PendingPlay.outstanding`.
-                parts.append("return \(card.powerCost) \(domains.isEmpty ? "" : domains + " ")rune\(card.powerCost == 1 ? "" : "s") to your rune deck")
-            }
-
-            let abilityLine = card.abilities.isEmpty ? nil : card.abilities.joined(separator: "  ·  ")
-
-            guard !parts.isEmpty else {
-                return Progress(
-                    headline: entersExhausted && card.entersReady
-                        ? "\(card.name) enters ready — leave it upright."
-                        : "\(card.name) costs nothing to play.",
-                    detail: abilityLine
-                )
-            }
-
-            // Split across the strip's two lines: what happened on top,
-            // what's owed for it underneath. One sentence carrying both was
-            // the card's name, a colon and a list, which reads as a label
-            // rather than as something to act on.
-            return Progress(
-                headline: "You've played \(card.name).",
-                detail: sentence(parts).capitalizedFirst + "."
-                    + (abilityLine.map { "  ·  \($0)" } ?? "")
-            )
-
-        case .unaffordable(.energy(let required, let available)):
-            return Progress(
-                headline: "Put \(card.name) back in your hand.",
-                detail: "It needs \(required) energy and you have \(available) ready rune\(available == 1 ? "" : "s") left to exhaust (Rule 130.2).",
-                needsCorrection: true
-            )
-
-        case .unaffordable(.power(let required, let available, let domains)):
+            return nil
+        case .unaffordable(.energy(_, let available)):
+            return "I can only see \(available) ready rune\(available == 1 ? "" : "s") — channel or ready more if you need them."
+        case .unaffordable(.power(_, let available, let domains)):
             let named = domains.map { $0.rawValue.capitalized }.joined(separator: " or ")
-            return Progress(
-                headline: "Put \(card.name) back in your hand.",
-                detail: "It needs \(required) \(named.isEmpty ? "" : named + " ")power, and you have \(available) rune\(available == 1 ? "" : "s") you could return to your rune deck for it (Rule 130.3).",
-                needsCorrection: true
-            )
+            return "I can only see \(available) \(named.isEmpty ? "" : named + " ")rune\(available == 1 ? "" : "s") to return."
         }
     }
 }

@@ -68,6 +68,28 @@ struct MascotInstructionPanel: View {
     /// when it isn't.
     private static let verdictLifetime: TimeInterval = 12
 
+    /// How long a tapped card's explanation holds the band.
+    ///
+    /// Longer than a verdict because it's something the player asked for
+    /// and is reading, and shorter than forever because it used to *be*
+    /// forever: the explanation outranked everything, so tapping a card
+    /// silenced the turn instruction until the same card was tapped a
+    /// second time to dismiss it. A player who tapped a card to see what it
+    /// did, then played one, got no instruction at all for the play.
+    ///
+    /// Expiring returns the band to whatever the game is saying without
+    /// asking the player to undo anything. The card stays selected — its
+    /// details are still open beside it in the strip — so nothing is lost,
+    /// only handed back.
+    private static let cardExplanationLifetime: TimeInterval = 20
+
+    /// When the current selection was made, for the expiry above. Held here
+    /// rather than passed in because it is a property of *this* band's
+    /// behaviour, not of the selection itself: the strip and the camera
+    /// both set the selection and neither has an opinion about how long
+    /// BonBon should talk about it.
+    @State private var selectionMadeAt: Date?
+
     /// One line for the band, and whether it still needs the plain-language
     /// pass run over it.
     private struct Message {
@@ -103,7 +125,9 @@ struct MascotInstructionPanel: View {
         // then does nothing at all, and a button that does nothing reads as
         // broken. This is dismissable — tap the card again — and the
         // warning comes straight back, so nothing is lost, only deferred.
-        if let selectedCard {
+        if let selectedCard,
+           let selectionMadeAt,
+           now.timeIntervalSince(selectionMadeAt) < Self.cardExplanationLifetime {
             return cardExplanation(selectedCard)
         }
         if needsCalibration {
@@ -250,6 +274,12 @@ struct MascotInstructionPanel: View {
         // the headline, not the whole message: the detail line is
         // supporting text, and re-announcing on a detail-only edit
         // interrupts for something the player was already told.
+        // Restarts the clock on every *new* selection, including
+        // re-selecting the same card after it aged out — tapping a card
+        // should always show its explanation, whatever was said before.
+        .onChange(of: selectedCard?.id) { _, newID in
+            selectionMadeAt = newID == nil ? nil : Date()
+        }
         .onChange(of: message.headline) { _, headline in
             guard !headline.isEmpty else { return }
             AccessibilityNotification.Announcement(headline).post()
