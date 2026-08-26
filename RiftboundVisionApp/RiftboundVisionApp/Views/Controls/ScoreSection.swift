@@ -15,10 +15,14 @@ struct ScoreSection: View {
 
             Text("Conquer and hold battlefields to get \(ScoreTracker.winningScore) points and win.")
                 .riftFont(.body)
-                .foregroundStyle(RiftboundPalette.regularText.opacity(0.75))
+                .foregroundStyle(RiftboundPalette.regularText)
                 .fixedSize(horizontal: false, vertical: true)
 
             ScoreTracker(playerScore: $playerScore, opponentScore: $opponentScore, isGameRunning: isGameRunning)
+                // Same seam as the Phase Indicator's: the sentence above
+                // explains what scoring is, and the tracker is the thing
+                // it explains. They read as one paragraph without it.
+                .padding(.top, RiftboundLayout.paragraphBreak)
         }
     }
 }

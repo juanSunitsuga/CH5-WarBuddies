@@ -35,17 +35,25 @@ let package = Package(
                 .product(name: "RiftboundExpertSystem", package: "RiftboundEngine")
             ],
             resources: [
-                // Hand-drawn gold border frames for PlaymatOverlayView's
-                // zone boxes (the "RiftChamps" mockup look) — see
-                // PlaymatOverlayView.frame(for:) for which asset goes on
-                // which zone and why (each is a stretchable texture, not
-                // shape-locked, but stretching one *too* far past its own
-                // native aspect visibly smears its corner accents — that's
-                // why there are 4 variants, not 1).
-                .copy("Resources/Rectangle 1.png"),
-                .copy("Resources/Rectangle 2.png"),
-                .copy("Resources/Rectangle 3.png"),
-                .copy("Resources/Rectangle 4.png"),
+                // Hand-drawn border frames for PlaymatOverlayView's zone
+                // boxes, plus the corner grab handle. One frame per zone
+                // shape — see the table on PlaymatOverlayView for which
+                // asset is which zone, since the designer's names don't
+                // say. SVG rather than PNG: these are scaled to whatever
+                // the calibrated quad turns out to be, and NSImage reads
+                // SVG directly on macOS.
+                //
+                // The app target has its own catalog copies; these exist
+                // so previews and tests, which have no app bundle to read
+                // a catalog from, still draw real art.
+                .copy("Resources/Rectangle 1.svg"),
+                .copy("Resources/Rectangle 2.svg"),
+                .copy("Resources/Rectangle 3.svg"),
+                .copy("Resources/Rectangle 4.svg"),
+                .copy("Resources/Rectangle 5.svg"),
+                .copy("Resources/Rectangle 6.svg"),
+                .copy("Resources/Rectangle 7.svg"),
+                .copy("Resources/Ellipse.svg"),
                 // The board's swatches. A package can't read the app
                 // target's Assets.xcassets, so the overlays this module
                 // draws over the camera carry their own copy — see

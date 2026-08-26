@@ -8,6 +8,14 @@ import RiftboundVision
 /// reasons.
 struct PhasePipRow: View {
     let current: GamePhase
+    /// Whether a turn is actually under way.
+    ///
+    /// When it isn't, *no* pip lights — `current` still holds a phase
+    /// (Awaken, where a new game will begin), but before Start Game
+    /// that's where the turn *would* start, not where it is. Lighting it
+    /// anyway claimed a turn was in progress, which is the one thing this
+    /// row exists to report.
+    var isGameRunning: Bool = true
 
     /// Diameter of one pip, and the length of the connector between two.
     /// The reference draws a 48pt pip with an 11pt link — the same ratio,
@@ -26,10 +34,13 @@ struct PhasePipRow: View {
             ForEach(Array(RiftboundPhaseCopy.startOfTurnPhases.enumerated()), id: \.element) { index, phase in
                 if index > 0 {
                     Rectangle()
-                        // Matched to the unlit pip's ring rather than the
-                        // fainter 0.4 it had, so the chain is one weight
-                        // throughout instead of links dimmer than dots.
-                        .fill(RiftboundPalette.elementStroke.opacity(0.5))
+                        // The same #CBCBCB as an unlit pip's ring, at full
+                        // strength. It was `elementStroke` at 50% — a
+                        // faded warm gold standing in for a flat grey,
+                        // which read as a *dimmed* link rather than a
+                        // plain one and drifted whenever the stroke colour
+                        // moved.
+                        .fill(RiftboundPalette.disabledElementStroke)
                         .frame(width: Self.connectorLength, height: 1)
                 }
                 pip(for: phase)
@@ -41,14 +52,38 @@ struct PhasePipRow: View {
         .accessibilityLabel("Start of turn phases")
     }
 
+    /// Both states are drawn the same way — filled disc, ring, white
+    /// letter — and differ only in which pair of colours they use.
+    ///
+    /// That symmetry is the change from the previous version, which gave
+    /// the lit pip a fill and the unlit ones no fill at all, and set both
+    /// letters in cream at two different opacities. Four steps of one
+    /// process should look like one component in two states; a hollow
+    /// circle beside a solid one reads as two different kinds of thing.
     private func pip(for phase: GamePhase) -> some View {
-        let isCurrent = current == phase
+        let isCurrent = isGameRunning && current == phase
         return Text(RiftboundPhaseCopy.pipLetter(for: phase))
             .riftFont(.heading)
-            .foregroundStyle(isCurrent ? RiftboundPalette.elementShadow : RiftboundPalette.regularText.opacity(0.7))
+            // #FFFFFF in both states. Not `regularText` — the board's
+            // cream is for text on the *board*, and against the lit pip's
+            // #A36F18 it reads as slightly stained rather than as a label.
+            .foregroundStyle(RiftboundPalette.pureWhite)
             .frame(width: Self.pipDiameter, height: Self.pipDiameter)
-            .background(Circle().fill(isCurrent ? RiftboundPalette.highlightOverlay : Color.clear))
-            .overlay(Circle().stroke(RiftboundPalette.elementStroke.opacity(isCurrent ? 0 : 0.5), lineWidth: 1))
+            .background(
+                Circle().fill(
+                    isCurrent
+                        ? RiftboundPalette.primaryButton
+                        : RiftboundPalette.disabledHighlightOverlay
+                )
+            )
+            .overlay(
+                Circle().stroke(
+                    isCurrent
+                        ? RiftboundPalette.highlightOverlay
+                        : RiftboundPalette.disabledElementStroke,
+                    lineWidth: RiftboundLayout.hairline
+                )
+            )
             .accessibilityLabel(phase.displayName)
             .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }

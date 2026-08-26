@@ -52,11 +52,11 @@ public enum RiftboundPlaymatTemplate {
         [CGPoint(x: x0, y: y0), CGPoint(x: x1, y: y0), CGPoint(x: x1, y: y1), CGPoint(x: x0, y: y1)]
     }
 
-    /// The mat's true proportion (646 × 502 — see `singlePlayerZones`'s
+    /// The mat's true proportion (433 × 336 — see `singlePlayerZones`'s
     /// derivation), so a calibration quad can be built at the same shape
     /// the border artwork was drawn for. Drawing into a quad of any other
     /// proportion is exactly what stretched the frames before.
-    public static let matAspectRatio: CGFloat = 646.0 / 502.0
+    public static let matAspectRatio: CGFloat = 433.0 / 336.0
 
     // MARK: - Single player (active default)
 
@@ -76,28 +76,36 @@ public enum RiftboundPlaymatTemplate {
         // were hand-transcribed approximations, which is why the art
         // smeared.)
         //
-        // The four assets all share height 164 and their widths compose
-        // into an exact grid once you allow a 5pt gutter:
-        //     Rectangle 1: 121 × 164   Legend, Champion, Deck, Rune Deck, Trash
-        //     Rectangle 2: 394 × 164   Battlefield, Runes
-        //     Rectangle 3: 520 × 164   Base
-        //     Rectangle 4: 645 × 164   Hand
-        //   row 1  394 + 5 + 121 + 5 + 121 = 646
-        //   row 2  520 + 5 + 121           = 646
-        //   row 3  121 + 5 + 394 + 5 + 121 = 646
-        // That the three rows land on the same 646 total is what fixes the
-        // gutter at exactly 5 — it isn't a tuning knob, it's the only
+        // The row assets all share height 110 and their widths compose
+        // into an exact grid once you allow a 3pt gutter:
+        //     small  =  81 × 110   Legend, Champion, Deck, Rune Deck, Trash
+        //     medium = 265 × 110   Battlefield, Runes
+        //     large  = 349 × 110   Base
+        //     hand   = 434 × 111   Hand
+        //   row 1  265 + 3 +  81 + 3 +  81 = 433
+        //   row 2  349 + 3 +  81           = 433
+        //   row 3   81 + 3 + 265 + 3 +  81 = 433
+        // That the three rows land on the same 433 total is what fixes the
+        // gutter at exactly 3 — it isn't a tuning knob, it's the only
         // value that makes the artwork tile. Keep these numbers in sync
-        // with the PNGs; if the art is ever re-exported at a different
+        // with the SVGs; if the art is ever re-exported at a different
         // size, re-derive rather than nudging the normalized values.
-        let small: CGFloat = 121, medium: CGFloat = 394, large: CGFloat = 520, hand: CGFloat = 645
-        let rowHeight: CGFloat = 164
-        let gutter: CGFloat = 5
+        //
+        // See `PlaymatOverlayView`'s frame table for which named asset
+        // each of these widths is.
+        let small: CGFloat = 81, medium: CGFloat = 265, large: CGFloat = 349, hand: CGFloat = 434
+        let rowHeight: CGFloat = 110
+        let gutter: CGFloat = 3
+        // Hand's art is a point taller than the three mat rows. Carried
+        // as its own number rather than rounded to `rowHeight`, for the
+        // same reason its width isn't rounded to the mat's: the zone box
+        // is the artwork's real size or the frame stretches in it.
+        let handHeight: CGFloat = 111
 
         // The unit square is the *mat* (rows 1–3). Hand lives below it and
         // is deliberately allowed past y = 1 — see its own comment below.
-        let matWidth = medium + gutter + small + gutter + small      // 646
-        let matHeight = rowHeight * 3 + gutter * 2                    // 502
+        let matWidth = medium + gutter + small + gutter + small      // 433
+        let matHeight = rowHeight * 3 + gutter * 2                    // 336
 
         func x(_ pixels: CGFloat) -> CGFloat { pixels / matWidth }
         func y(_ pixels: CGFloat) -> CGFloat { pixels / matHeight }
@@ -108,15 +116,15 @@ public enum RiftboundPlaymatTemplate {
         }
 
         let row1Y: CGFloat = 0
-        let row2Y = rowHeight + gutter                                // 169
-        let row3Y = (rowHeight + gutter) * 2                          // 338
+        let row2Y = rowHeight + gutter                                // 113
+        let row3Y = (rowHeight + gutter) * 2                          // 226
 
         // Column origins, accumulated left to right per row.
-        let row1LegendX = medium + gutter                             // 399
-        let row1ChampionX = row1LegendX + small + gutter              // 525
-        let row2DeckX = large + gutter                                // 525
-        let row3RunesX = small + gutter                               // 126
-        let row3TrashX = row3RunesX + medium + gutter                 // 525
+        let row1LegendX = medium + gutter                             // 268
+        let row1ChampionX = row1LegendX + small + gutter              // 352
+        let row2DeckX = large + gutter                                // 352
+        let row3RunesX = small + gutter                               //  84
+        let row3TrashX = row3RunesX + medium + gutter                 // 352
 
         return [
             // Row 1: Battlefield — a single zone (no more internal slot
@@ -157,14 +165,14 @@ public enum RiftboundPlaymatTemplate {
             // front of the player, so this zone (and the detector's ROI,
             // which is this same quad's bounding rect) actually covers
             // where the hand is laid out.
-            // Hand is 645 wide against the mat's 646, so it sits half a
-            // point in from each edge rather than spanning exactly 0...1 —
-            // using the artwork's real width instead of rounding it to the
-            // full mat width is the whole point of this rewrite.
+            // Hand is 434 wide against the mat's 433, so it overhangs by
+            // half a point at each edge rather than spanning exactly
+            // 0...1 — using the artwork's real width instead of rounding
+            // it to the full mat width is the whole point of this grid.
             PlaymatZoneTemplate(
                 zone: handZone,
                 owner: owner,
-                normalizedPolygon: box((matWidth - hand) / 2, matHeight + gutter, hand)
+                normalizedPolygon: box((matWidth - hand) / 2, matHeight + gutter, hand, handHeight)
             )
         ]
     }
