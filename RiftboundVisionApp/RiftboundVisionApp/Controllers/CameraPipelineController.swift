@@ -1603,11 +1603,20 @@ extension CameraPipelineController {
         paymentNoticeRaisedAt = Date()
         phaseProgress = progress
 
-        // Affordable and something is owed → hold the phase open until the
-        // table shows it paid. Unaffordable plays don't open a pending
-        // play: the answer there is "put it back", not "now pay for it" —
-        // and the engine's own abstract-pool check rejects it immediately,
-        // same as before this function deferred anything.
+        // Something is owed → hold the phase open until the table shows it
+        // paid, whether or not the runes to pay it are visible yet.
+        //
+        // This used to bail when `paymentProgress` reported the play
+        // unaffordable, on the reasoning that "put it back" was the answer
+        // rather than "now pay for it". `paymentProgress` no longer says
+        // that: a shortfall is usually runes the app hasn't detected, and
+        // refusing to track the play on that evidence left the player with
+        // no running list of what they still owed. The engine's own check
+        // still rejects a genuinely illegal play, through `LegalityValidator`.
+        //
+        // The guard stays for the conditions that *do* still set it —
+        // nothing on this path does today, and it costs one line to keep a
+        // future correction from silently opening a play to pay for.
         guard !progress.needsCorrection else { return false }
         let mustExhaustCard = (card.kind == .unit || card.kind == .champion) && !card.entersReady
         // 150/556.2: a Spell has no board form — it resolves and goes to

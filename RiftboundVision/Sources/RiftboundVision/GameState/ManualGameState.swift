@@ -69,7 +69,7 @@ public enum GamePhase: String, Sendable, Equatable, Codable, CaseIterable {
         case .draw:
             return "Draw 1 card. Any unspent energy and power is lost at the end of this step (Rule 515.4)."
         case .action:
-            return "Your move — play cards, move units, attack, in any order. Every move is checked from here (Rule 516)."
+            return "Play or move any card. I'll let you know if it's wrong (Rule 516)."
         case .done:
             return "Your turn is over — your opponent plays now. Start Turn once they've finished theirs (Rule 516.6)."
         }
