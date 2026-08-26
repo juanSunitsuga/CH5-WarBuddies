@@ -330,7 +330,12 @@ public struct PhaseAutoDetector: Sendable {
         // thing it can offer while they're deciding.
         Progress(
             headline: "Play or move any card.",
-            detail: "I'll let you know if it's wrong."
+            // Second sentence kept from the branch that made Done
+            // irreversible (`ManualGameState.canGoBack`). It isn't the
+            // menu the note above rejects — it's the one thing about this
+            // phase the player can't undo, and the only warning they get
+            // before the button that does it.
+            detail: "I'll let you know if it's wrong. Hit Done when you've finished — there's no going back after that."
         )
     }
 
@@ -341,7 +346,7 @@ public struct PhaseAutoDetector: Sendable {
     private func done() -> Progress {
         Progress(
             headline: "Phase complete.",
-            detail: "Press End Turn to hand over, or Back if there's still a move you want to make (Rule 516.6)."
+            detail: "Your opponent plays now. Press Start Turn once they've finished theirs (Rule 516.6)."
         )
     }
 

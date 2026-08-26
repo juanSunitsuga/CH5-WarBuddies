@@ -71,7 +71,7 @@ public enum GamePhase: String, Sendable, Equatable, Codable, CaseIterable {
         case .action:
             return "Play or move any card. I'll let you know if it's wrong (Rule 516)."
         case .done:
-            return "Finished playing. Hit End Turn to hand over, or Back if you still have a move to make (Rule 516.6)."
+            return "Your turn is over — your opponent plays now. Start Turn once they've finished theirs (Rule 516.6)."
         }
     }
 
@@ -171,14 +171,22 @@ public struct ManualGameState: Sendable, Equatable {
     /// finished, which is a far worse state to land in by mistake than
     /// simply not moving.
     public mutating func back() {
-        guard let index = Self.phaseOrder.firstIndex(of: phase), index > 0 else { return }
+        guard canGoBack, let index = Self.phaseOrder.firstIndex(of: phase) else { return }
         phase = Self.phaseOrder[index - 1]
     }
 
-    /// Whether `back()` would do anything — for disabling the control at
-    /// the start of a turn rather than offering a button that no-ops.
+    /// Whether `back()` would do anything — for disabling the control
+    /// rather than offering a button that no-ops.
+    ///
+    /// False at `.awaken`, where there is no earlier phase, and false at
+    /// `.done`, where there deliberately isn't a way back. Pressing Done
+    /// is the player declaring their turn finished; the opponent takes
+    /// over on the strength of that declaration, so un-declaring it
+    /// afterwards would mean taking back a turn someone else has already
+    /// started playing against.
     public var canGoBack: Bool {
-        (Self.phaseOrder.firstIndex(of: phase) ?? 0) > 0
+        guard phase != .done else { return false }
+        return (Self.phaseOrder.firstIndex(of: phase) ?? 0) > 0
     }
 
     /// Rule 506: jumps straight to the next Turn Player's Awaken phase

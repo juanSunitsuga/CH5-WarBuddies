@@ -353,8 +353,8 @@ enum TourScript {
             sprite: { $0.isCameraRunning ? .bonbon : .bonbonDizzy }
         ) { context in
             context.isCameraRunning
-                ? "Let's adjust the camera, so I can see the game and guide you. Pick it under {sf:camera} up top."
-                : "Nooo~ I can't see anything T-T Plug one in or use your iPhone, and I'll be watching. Choose it under {sf:camera} up top."
+                ? "Let's adjust the camera, so I can see the game and guide you.\n\nPick it under {sf:camera} up top."
+                : "Nooo~ I can't see anything T-T\n\nPlug one in or use your iPhone, and I'll be watching. Choose it under {sf:camera} up top."
         },
 
         // Script 4
@@ -368,7 +368,7 @@ enum TourScript {
         // corner handles are actually reachable.
         TourStep(
             .calibrate,
-            "Cool, now let's set your playmat so that it's adjusted to the table. Hit {img:\(RiftboundArt.resizeOverlay)} up top and drag the corners.",
+            "Cool, now let's set your playmat so that it's adjusted to the table.\n\nHit {img:\(RiftboundArt.resizeOverlay)} up top and drag the corners.",
             buttons: .skipAndNext(),
             spotlight: .playmat,
             allowsAppInteraction: true
@@ -384,7 +384,7 @@ enum TourScript {
         TourStep(.table, "Click one and I'll tell you its type, its cost, and what it does.", buttons: .skipAndNext()),
 
         // Script 8
-        TourStep(.cardLibrary, "Don't worry! If you ever forget, I'll remember everything for you. Click search or filter if you want to find any specific card.", buttons: .skipAndNext()),
+        TourStep(.cardLibrary, "Don't worry! If you ever forget, I'll remember everything for you.\n\nClick **Library** and search or filter any specific card that you're looking for.", buttons: .skipAndNext()),
 
         // Script 8.5 — the only step with no Next. Everything after this
         // is about a turn in progress, so the tour waits here until the
@@ -399,7 +399,7 @@ enum TourScript {
         ),
 
         // Script 9
-        TourStep(.phaseIndicator, "When you begin your turn, start with the ABCD: (A)waken → (B)eginning → (C)hannel → (D)raw", buttons: .skipAndNext()),
+        TourStep(.phaseIndicator, "When you begin your turn, start with the ABCD:\n\n(A)waken → (B)eginning → (C)hannel → (D)raw", buttons: .skipAndNext()),
 
         // Script 10 — the one step whose advice depends on where the turn
         // actually is, because this row offers a different button in each
@@ -415,9 +415,9 @@ enum TourScript {
             case .awaken, .beginning, .channel, .draw:
                 return "Tap **Next** when a step is done or flip on **Auto-advance** and I'll keep up with you."
             case .action:
-                return "This part's all yours — play cards, move units, attack, in any order. Hit **Done** when you've finished."
+                return "This part's all yours — play cards, move units, attack, in any order.\n\nHit **Done** when you've finished, but be sure: there's no going back after that."
             case .done:
-                return "Nice! Hit **End Turn** to pass play over, or **Back** if you've thought of one more move."
+                return "That's your turn done — your opponent plays now. When they've finished theirs, hit **Start Turn** to go again."
             }
         },
 
@@ -620,7 +620,7 @@ struct TourOverlay: View {
                 fullScrim(in: proxy.size)
                 card(
                     sprite: .bonbonPeace,
-                    message: "Hi~ I'm BonBon! I'll be here with you while you play Riftbound ^^",
+                    message: "Hi~ I'm BonBon!\n\nI'll be here with you while you play Riftbound ^^",
                     buttons: .branch(exploreLabel: "I'll explore myself", showMeLabel: "Show me around")
                 )
                 .position(cardCenter(placement: .center, cutout: nil, bounds: proxy.size))

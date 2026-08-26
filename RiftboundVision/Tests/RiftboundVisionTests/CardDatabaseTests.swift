@@ -44,6 +44,36 @@ struct CardDatabaseTests {
         #expect(results.allSatisfy { $0.name.lowercased().contains("annie") })
     }
 
+    /// The result list shows a card's name *and* its type, so a query
+    /// that hits what's on screen and returns nothing reads as broken.
+    /// Searching a type also makes the one field double as a filter.
+    @Test("search() matches a card's type as well as its name")
+    func searchMatchesType() throws {
+        let data = try loadFixture()
+        let database = try CardDatabase(jsonDeckFiles: [data])
+
+        let runes = database.search("rune")
+        #expect(!runes.isEmpty)
+        #expect(runes.allSatisfy { $0.classification.type == "Rune" })
+
+        // Case-insensitive on the type side too, not just on names.
+        #expect(database.search("BATTLEFIELD").allSatisfy { $0.classification.type == "Battlefield" })
+        #expect(!database.search("BATTLEFIELD").isEmpty)
+    }
+
+    /// Either field matching is enough. Requiring both would mean a name
+    /// query only ever matched if the type happened to contain it too —
+    /// which is to say, never.
+    @Test("search() matches on name or type, not both")
+    func searchMatchesEitherField() throws {
+        let data = try loadFixture()
+        let database = try CardDatabase(jsonDeckFiles: [data])
+
+        let byName = database.search("annie")
+        #expect(!byName.isEmpty, "A name query must still match cards whose type doesn't contain it.")
+        #expect(database.search("nothingmatchesthis").isEmpty)
+    }
+
     @Test("search() with an empty query returns nothing")
     func emptySearchReturnsNothing() throws {
         let data = try loadFixture()
