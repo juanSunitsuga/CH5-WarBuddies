@@ -55,6 +55,14 @@ struct MascotInstructionPanel: View {
     /// empty — an empty speech panel reads as a broken one.
     var fallback: String
 
+    /// Whether BonBon reads this panel out loud, and how. Read straight
+    /// from `@AppStorage` rather than threaded down from `ContentView`:
+    /// this is the only view that speaks, so passing it through three
+    /// intermediate types would be plumbing nothing else uses.
+    @AppStorage(RiftboundSpeechDefaults.isEnabled) private var speaksInstructions = false
+    @AppStorage(RiftboundSpeechDefaults.rate) private var speechRate: RiftboundSpeechRate = .normal
+    @AppStorage(RiftboundSpeechDefaults.voice) private var speechVoice = ""
+
     /// How long a verdict stays up before the panel returns to the phase.
     /// Stale feedback is worse than none: it claims the app is keeping up
     /// when it isn't.
@@ -231,6 +239,22 @@ struct MascotInstructionPanel: View {
         .onChange(of: message.headline) { _, headline in
             guard !headline.isEmpty else { return }
             AccessibilityNotification.Announcement(headline).post()
+
+            // Said out loud, for the player looking at the table rather
+            // than the screen — which, for a game played with physical
+            // cards, is most of the time. Speaks the *same* sentence
+            // VoiceOver gets rather than a second wording of it, so there
+            // is one spoken form of this panel and not two that can drift.
+            //
+            // `speak` itself declines while VoiceOver is running, so this
+            // doesn't need to check: the two announcements above and here
+            // would otherwise read the same line over each other.
+            guard speaksInstructions else { return }
+            SpokenInstructions.shared.speak(
+                spokenLabel(message),
+                rate: speechRate,
+                voiceIdentifier: speechVoice
+            )
         }
     }
 

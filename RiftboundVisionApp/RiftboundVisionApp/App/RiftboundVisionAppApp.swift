@@ -76,7 +76,7 @@ struct RiftboundVisionAppApp: App {
         }
         .modelContainer(container)
         .commands {
-            RiftboundTextSizeCommands(textSize: $textSize)
+            RiftboundAccessibilityCommands(textSize: $textSize)
         }
         // The title bar stays visible, and that is load-bearing for the
         // toolbar rather than a style choice. `.automatic` toolbar items

@@ -8,10 +8,11 @@ import SwiftUI
 /// size setting. They've been removed one at a time; what's left is help,
 /// so the control says Help and nothing else.
 ///
-/// Text size did not move *out* of the app when it left this menu — it
-/// lives in the View menu (see `RiftboundTextSizeCommands`), with the
-/// standard ⌘+ / ⌘− / ⌘0 shortcuts, which is where a Mac user looks for it
-/// anyway.
+/// The accessibility settings did not move *out* of the app when text size
+/// left this menu — they live in the View menu (see
+/// `RiftboundAccessibilityCommands`), text size with the standard
+/// ⌘+ / ⌘− / ⌘0 shortcuts, alongside the spoken-instruction controls.
+/// That's where a Mac user looks for both anyway.
 struct DiagnosticsMenu: View {
     /// Re-opens the welcome sheet. Owned by `ContentView`, which also
     /// shows it on first launch.
