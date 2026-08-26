@@ -211,7 +211,10 @@ struct CardLibrarySheet: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(RiftboundPalette.regularText.opacity(0.7))
-            TextField("Search for card…", text: $searchText)
+            // Names the second thing it searches. A field that only says
+            // "search for card" gets typed card names into, and nobody
+            // discovers they can type "spell" to filter the catalogue.
+            TextField("Search by name or type…", text: $searchText)
                 .textFieldStyle(.plain)
                 .riftFont(.body)
                 .foregroundStyle(RiftboundPalette.regularText)

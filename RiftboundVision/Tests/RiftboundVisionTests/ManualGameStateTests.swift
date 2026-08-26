@@ -117,6 +117,28 @@ struct ManualGameStateTests {
 /// be wrong.
 struct ManualGameStateBackTests {
 
+    /// Done is a declaration the opponent acts on, so it can't be taken
+    /// back — by then they may already be playing their own turn against
+    /// it. Pins behaviour that used to be allowed: `.done` stepped back
+    /// to `.action` like any other phase.
+    @Test("Back is refused once the turn has been declared Done")
+    func backIsRefusedFromDone() {
+        var state = ManualGameState(round: 1, turnPlayer: .player1, phase: .done)
+        #expect(!state.canGoBack)
+        state.back()
+        #expect(state.phase == .done, "Done must be a one-way door.")
+    }
+
+    /// The Action Phase itself stays reversible — the block starts at the
+    /// declaration, not before it.
+    @Test("Back still works from the Action Phase")
+    func backWorksFromAction() {
+        var state = ManualGameState(round: 1, turnPlayer: .player1, phase: .action)
+        #expect(state.canGoBack)
+        state.back()
+        #expect(state.phase == .draw)
+    }
+
     @Test("Back steps to the previous phase")
     func backStepsBackwards() {
         var state = ManualGameState(round: 1, turnPlayer: .player1, phase: .channel)

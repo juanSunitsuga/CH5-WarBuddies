@@ -1,16 +1,14 @@
 import SwiftUI
 import RiftboundVision
 
-/// Back · Next, with Next itself becoming End Turn once the phase is
-/// `.action`.
+/// Back · Next, where the primary button relabels itself as the turn
+/// moves: **Next** through ABCD, **Done** in the Action Phase, and
+/// **Start Turn** in the Done state that follows.
 ///
-/// This used to be three buttons: Next/Done, Back, and a separately-armed
-/// End Turn that only lit up once the player had pressed Done. That middle
-/// step didn't correspond to anything in the rules — 516.6 makes *ending
-/// the turn* the player's declaration, so pressing End Turn already **is**
-/// "I'm done playing"; asking for a Done press first just to arm it was a
-/// confirmation this app invented, not one the rules asked for. Next simply
-/// relabels itself once there's nowhere left to advance *to*.
+/// Back is live through the start-of-turn steps and the Action Phase, and
+/// disabled once Done is pressed — see `ManualGameState.canGoBack`. That
+/// press is the 516.6 declaration; the opponent takes their turn on the
+/// strength of it, so there is nothing left to undo it back into.
 ///
 /// **Neither button is disabled by Auto-advance.** It can only move a phase
 /// it can confirm, and a hand fanned over the mat is countable only
@@ -63,23 +61,25 @@ struct TurnButtonRow: View {
     private var nextHint: String {
         guard isGameRunning else { return "Unavailable until the game is started" }
         switch gameState.phase {
-        case .action: return "Marks your turn's actions finished, without passing play yet"
-        case .done: return "Ends your turn and passes play to your opponent"
+        case .action: return "Finishes your turn and passes play to your opponent. You can't go back after this"
+        case .done: return "Starts your next turn — press it once your opponent has finished theirs"
         default: return "Moves on to the next phase of your turn"
         }
     }
 
-    /// Three labels, because the last two steps are different declarations.
+    /// Three labels, because the last two steps are different moments.
     ///
-    /// Action offers **Done** — "I've finished playing" — and only the
-    /// `.done` state that follows offers **End Turn**, which is the 516.6
-    /// hand-over. Splitting them means the button that gives your turn
-    /// away is never the one sitting under your cursor while you're still
-    /// playing cards.
+    /// Action offers **Done** — the 516.6 declaration that finishes your
+    /// turn. `.done` is then the wait while your opponent plays, and its
+    /// button is **Start Turn**: pressed when *they* are finished, to
+    /// begin your next one. So the button that gives your turn away is
+    /// never the one under your cursor while you're still playing cards,
+    /// and the button you press after the handover says what it starts
+    /// rather than what it ended a while ago.
     private var nextTitle: String {
         switch gameState.phase {
         case .action: return "Done"
-        case .done: return "End Turn"
+        case .done: return "Start Turn"
         default: return "Next"
         }
     }

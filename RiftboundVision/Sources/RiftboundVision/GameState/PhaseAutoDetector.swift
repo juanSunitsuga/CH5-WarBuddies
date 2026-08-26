@@ -324,7 +324,7 @@ public struct PhaseAutoDetector: Sendable {
     private func action() -> Progress {
         Progress(
             headline: "Your move.",
-            detail: "Play cards, move units, attack — in any order. Press Done when you've finished (Rule 516.6)."
+            detail: "Play cards, move units, attack — in any order. Press Done when you've finished; there's no going back after that (Rule 516.6)."
         )
     }
 
@@ -335,7 +335,7 @@ public struct PhaseAutoDetector: Sendable {
     private func done() -> Progress {
         Progress(
             headline: "Phase complete.",
-            detail: "Press End Turn to hand over, or Back if there's still a move you want to make (Rule 516.6)."
+            detail: "Your opponent plays now. Press Start Turn once they've finished theirs (Rule 516.6)."
         )
     }
 

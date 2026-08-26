@@ -85,14 +85,31 @@ public struct CardDatabase: Sendable {
         printingsByRiftboundID[riftboundID]
     }
 
-    /// Case-insensitive substring match on name — backs a manual "assign
-    /// this tracked object to a card" picker, standing in for real
-    /// recognition until that exists.
+    /// Case-insensitive substring match on a card's **name or type** —
+    /// backs the Card Library's search field and the manual "assign this
+    /// tracked object to a card" picker.
+    ///
+    /// Type is matched as well as name because the two are the only
+    /// things the result list actually shows, so a query that hits what's
+    /// on screen and returns nothing reads as a broken search. It also
+    /// makes the field do double duty as a filter: "rune" or "spell"
+    /// narrows the catalogue to that type without a separate control.
+    ///
+    /// A card matches if *either* field contains the query, not both —
+    /// "annie" would otherwise have to appear in a type name too, and
+    /// nothing would ever match.
     public func search(_ query: String) -> [CardPrinting] {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
-        let lowercasedQuery = query.lowercased()
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return [] }
+        let lowercasedQuery = trimmed.lowercased()
         return printingsByRiftboundID.values
-            .filter { $0.name.lowercased().contains(lowercasedQuery) }
+            .filter {
+                $0.name.lowercased().contains(lowercasedQuery)
+                    || $0.classification.type.lowercased().contains(lowercasedQuery)
+            }
+            // Type matches would otherwise come back in whatever order
+            // the dictionary happened to hold them, which for a one-word
+            // query like "unit" is most of the catalogue.
             .sorted { $0.name < $1.name }
     }
 

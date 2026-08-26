@@ -87,7 +87,7 @@ enum RiftboundPhaseCopy {
         case .channel: return "Play 2 runes from the Rune deck."
         case .draw: return "Draw 1 card from the Main deck."
         case .action: return "Play cards from hand. Conquer and combat the battlefield with your units."
-        case .done: return "Phase complete."
+        case .done: return "Phase complete. Start turn when your opponent ends their turn."
         }
     }
 }
