@@ -66,6 +66,18 @@ struct PhaseIndicatorSection: View {
                 .foregroundStyle(RiftboundPalette.pureWhite)
 
             PhasePipRow(current: gameState.phase, isGameRunning: isGameRunning)
+                // Dimmed once the turn reaches the Action Phase. The
+                // chain is the *start-of-turn* script (515) and by then
+                // it's finished — none of its four steps is current, and
+                // there's no way back into them, so a row at full
+                // strength implies the player is still somewhere in it.
+                //
+                // Guarded on `isGameRunning` as well, even though
+                // stopping resets the phase to Awaken: without it, a
+                // state where both were true would dim this twice over
+                // (`phaseReadout` already dims the block) and land it at
+                // 25%, not 50%.
+                .riftComponentDisabled(isGameRunning && !gameState.phase.isStartOfTurn)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(RiftboundPhaseCopy.title(for: gameState.phase))

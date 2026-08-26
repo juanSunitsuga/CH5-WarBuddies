@@ -146,6 +146,7 @@ public struct PhaseAutoDetector: Sendable {
         case .channel:  progress = channel(cards: cards, seat: seat)
         case .draw:     progress = draw(cards: cards, seat: seat)
         case .action:   progress = action()
+        case .done:     progress = done()
         }
         // Carried on every phase, not just Action: a "at the start of your
         // beginning phase" ability is exactly the kind a player forgets,
@@ -323,7 +324,18 @@ public struct PhaseAutoDetector: Sendable {
     private func action() -> Progress {
         Progress(
             headline: "Your move.",
-            detail: "Play cards, move units, attack — in any order. Press End Turn when you're done (Rule 516.6)."
+            detail: "Play cards, move units, attack — in any order. Press Done when you've finished (Rule 516.6)."
+        )
+    }
+
+    /// The player has said they're finished playing but hasn't handed the
+    /// turn over. Nothing here is auto-detectable — no card movement
+    /// confirms a declaration — so this reports the state rather than
+    /// checking for it.
+    private func done() -> Progress {
+        Progress(
+            headline: "Phase complete.",
+            detail: "Press End Turn to hand over, or Back if there's still a move you want to make (Rule 516.6)."
         )
     }
 
