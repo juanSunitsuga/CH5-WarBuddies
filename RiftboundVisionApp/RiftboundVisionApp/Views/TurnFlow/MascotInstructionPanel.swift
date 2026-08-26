@@ -121,8 +121,22 @@ struct MascotInstructionPanel: View {
             return Message(headline: progress.headline, detail: progress.detail, isAlert: true)
         }
         if validatesPlayerMoves {
+            // **Verdicts only.** The `?? recent.first` that used to sit
+            // here let `.unrecognized` entries through, and the pipeline
+            // emits one for nearly every observed event — so BonBon spent
+            // the Action Phase announcing "Nothing to do for Garen — Might
+            // of Demacia (Starter). Left the table — removal is resolved
+            // during Cleanup, not proposed as a move."
+            //
+            // Every word of that is true and none of it is the player's
+            // business. It's the translator explaining, at 50pt, why it
+            // declined to propose something the player never asked it to
+            // propose. The Action Phase is the one phase where the player
+            // is free to do anything (516.2), so the app has nothing to say
+            // until they do something *wrong* — and a rejection still says
+            // it, because that's the promise the standing line makes.
             let recent = instructions.filter { now.timeIntervalSince($0.timestamp) < Self.verdictLifetime }
-            if let latest = recent.first(where: { $0.verdict == .accepted || $0.verdict == .rejected }) ?? recent.first {
+            if let latest = recent.first(where: { $0.verdict == .accepted || $0.verdict == .rejected }) {
                 return Message(
                     headline: latest.headline,
                     detail: latest.detail,

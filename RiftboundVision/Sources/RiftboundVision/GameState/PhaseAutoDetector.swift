@@ -322,9 +322,15 @@ public struct PhaseAutoDetector: Sendable {
     // MARK: - Action (516)
 
     private func action() -> Progress {
+        // One standing line for the whole phase, and a promise rather than
+        // a list. 516.2 gives the Action Phase no structure at all, so
+        // there is no "next step" to name — enumerating what the player
+        // *could* do just reads as a menu they have to work through. Saying
+        // the app will speak up when something is wrong is the only useful
+        // thing it can offer while they're deciding.
         Progress(
-            headline: "Your move.",
-            detail: "Play cards, move units, attack — in any order. Press Done when you've finished (Rule 516.6)."
+            headline: "Play or move any card.",
+            detail: "I'll let you know if it's wrong."
         )
     }
 
