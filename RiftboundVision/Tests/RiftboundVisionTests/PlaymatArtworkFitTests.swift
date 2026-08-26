@@ -17,9 +17,9 @@ struct PlaymatArtworkFitTests {
     /// break this test rather than quietly borrow another zone's art.
     private static func assetName(for zone: Zone) -> String {
         switch zone {
-        case .battlefield, .runeArea: return "Rectangle 1"
-        case .base: return "Rectangle 2"
-        case .player1Hand, .player2Hand: return "Rectangle 3"
+        case .battlefield, .base: return "Rectangle 1"
+        case .player1Hand, .player2Hand: return "Rectangle 2"
+        case .runeArea: return "Rectangle 3"
         case .mainDeck: return "Rectangle 4"
         case .runeDeck: return "Rectangle 5"
         case .trash: return "Rectangle 6"
@@ -71,10 +71,13 @@ struct PlaymatArtworkFitTests {
     @Test("All three mat rows span the full width, leaving no gap or overlap")
     func rowsSpanTheFullMatWidth() {
         let zones = RiftboundPlaymatTemplate.singlePlayerZones()
+        // Rune Area is deliberately absent: its artwork is 434 against
+        // the mat's 433, so it overhangs half a point at each edge rather
+        // than being squeezed to fit. Every *other* row tiles exactly.
         let rows: [[Zone]] = [
             [.battlefield, .legend, .champion],
-            [.base, .mainDeck],
-            [.runeDeck, .runeArea, .trash]
+            [.runeDeck, .base, .mainDeck],
+            [.player1Hand, .trash]
         ]
 
         for row in rows {

@@ -42,6 +42,9 @@ enum RiftboundPhaseCopy {
             switch phase {
             case .awaken, .beginning, .channel, .draw: return .startOfTurn
             case .action: return hasDeclaredActions ? .endTurn : .doYourTurn
+            // `.done` *is* the declaration `hasDeclaredActions` used to
+            // stand in for, so it reads as the end-turn stage outright.
+            case .done: return .endTurn
             }
         }
     }
@@ -50,6 +53,7 @@ enum RiftboundPhaseCopy {
         switch phase {
         case .awaken, .beginning, .channel, .draw: return .startOfTurn
         case .action: return .doYourTurn
+        case .done: return .endTurn
         }
     }
 
@@ -83,6 +87,7 @@ enum RiftboundPhaseCopy {
         case .channel: return "Play 2 runes from the Rune deck."
         case .draw: return "Draw 1 card from the Main deck."
         case .action: return "Play cards from hand. Conquer and combat the battlefield with your units."
+        case .done: return "Phase complete."
         }
     }
 }

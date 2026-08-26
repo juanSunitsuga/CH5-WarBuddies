@@ -1,4 +1,5 @@
 import SwiftUI
+import RiftboundVision
 
 /// The real regions the guided tour points at. A step's `region` picks one
 /// of these to spotlight; several steps in a row can share the same one
@@ -130,22 +131,33 @@ enum TourCardPlacement {
 /// solid gold pill (`RiftPrimaryButtonStyle`) — there's no quieter/plain
 /// style anywhere in the reference, including "Skip tour" itself.
 enum TourStepButtons {
-    /// The ordinary case: Skip tour, leading; Next (or a step-specific
-    /// label), trailing.
-    case skipAndNext(nextLabel: String = "Next")
+    /// The ordinary case: Skip tour, leading; Continue (or a
+    /// step-specific label), trailing.
+    ///
+    /// "Continue", not "Next" — the Phase Indicator has its own **Next**
+    /// button a few inches away, and during the turn-controls steps both
+    /// are on screen at once. Two buttons with one word between them, one
+    /// advancing the tour and one advancing the player's turn, is a
+    /// misread waiting to happen.
+    case skipAndNext(nextLabel: String = "Continue")
     /// One button, right-aligned — "Deal!", "Let's Go!". Reads as a
     /// checkpoint the player confirms, not a step they might skip past.
     case single(String)
-    /// One button, centred — only the Skip-tour landing card's "Start
-    /// Playing" uses this; everywhere else a lone button sits right-
-    /// aligned to land under "Next"'s usual position.
-    case singleCentered(String)
+    /// The button that *ends* the tour — only the sign-off card's "Start
+    /// Playing" uses it, and it's the one label wired to `onFinish`
+    /// rather than to advancing a step.
+    ///
+    /// Right-aligned, like every other lone button, so the thing that
+    /// carries you forward is always in the same corner. Its own case
+    /// rather than reusing `.single` because that one advances, and on
+    /// the last card there is nothing left to advance to.
+    case finish(String)
     /// Intro only: two full-weight choices instead of a skip/advance
     /// pair, since this is the one place the player is actually choosing
     /// whether they want the tour at all.
     case branch(exploreLabel: String, showMeLabel: String)
     /// Skip tour and nothing else. For a step that advances when the
-    /// player does the real thing it's pointing at — offering a "Next"
+    /// player does the real thing it's pointing at — offering a "Continue"
     /// alongside would let them walk past the very action the step
     /// exists to get them to take.
     case skipOnly
@@ -174,6 +186,33 @@ enum TourSprite {
     }
 }
 
+/// A real thing the player does in the app, which a tour step can wait
+/// for instead of offering its own advance button.
+///
+/// A step that asks you to press something in the app shouldn't also
+/// offer a way past it — the button on the card would let you walk over
+/// the very action the step exists to teach.
+enum TourAdvanceTrigger {
+    /// The pipeline started — Start Game was pressed.
+    case gameStart
+    /// A whole turn was handed over — End Turn was pressed from Done.
+    case turnEnd
+}
+
+/// What the app looks like right now, for the steps whose wording depends
+/// on it.
+///
+/// A struct rather than a widening list of closure parameters: two of
+/// these already exist and every one added would have to be threaded
+/// through both `message` and `sprite`, at every call site, whether or not
+/// that step cares. Steps that don't look at it simply ignore it.
+struct TourContext {
+    var isCameraRunning: Bool
+    /// The turn phase the *game* is in — not `TourPhase`, which is where
+    /// the tour itself has got to.
+    var gamePhase: GamePhase
+}
+
 /// One beat of the tour. `message` is a closure rather than a stored
 /// string only because one step's wording depends on whether a camera is
 /// actually connected right now — every other step's closure just returns
@@ -195,12 +234,14 @@ struct TourStep {
     /// area. Dimming the playmat and pointing at a button that adjusts it
     /// is the wrong way round.
     let spotlight: TourRegion?
-    let message: (_ isCameraRunning: Bool) -> String
-    let sprite: (_ isCameraRunning: Bool) -> TourSprite
+    let message: (TourContext) -> String
+    let sprite: (TourContext) -> TourSprite
     let buttons: TourStepButtons
     /// Whether this step waits for the player to actually start the game
     /// rather than for a button on the card.
-    let waitsForGameStart: Bool
+    /// What real action ends this step, if any. `nil` for the ordinary
+    /// steps that advance on their own Continue button.
+    let waitsFor: TourAdvanceTrigger?
     /// Whether the scrim lets clicks through to the app underneath.
     ///
     /// The tour is modal by default — a stray click during a walkthrough
@@ -214,18 +255,21 @@ struct TourStep {
         _ region: TourRegion?,
         buttons: TourStepButtons,
         spotlight: TourRegion? = nil,
-        waitsForGameStart: Bool = false,
+        waitsFor: TourAdvanceTrigger? = nil,
         allowsAppInteraction: Bool = false,
-        sprite: @escaping (_ isCameraRunning: Bool) -> TourSprite = { _ in .bonbon },
-        message: @escaping (_ isCameraRunning: Bool) -> String
+        sprite: @escaping (TourContext) -> TourSprite = { _ in .bonbon },
+        message: @escaping (TourContext) -> String
     ) {
         self.region = region
         self.spotlight = spotlight
         self.buttons = buttons
-        self.waitsForGameStart = waitsForGameStart
+        self.waitsFor = waitsFor
         // Waiting on a real button implies reaching it. Folded in here so
         // a step can't be written that waits for a click it also blocks.
-        self.allowsAppInteraction = allowsAppInteraction || waitsForGameStart
+        // Waiting on a real action implies being able to reach it. Folded
+        // in here so a step can't be written that waits for a press it
+        // also blocks.
+        self.allowsAppInteraction = allowsAppInteraction || waitsFor != nil
         self.sprite = sprite
         self.message = message
     }
@@ -235,7 +279,7 @@ struct TourStep {
         _ message: String,
         buttons: TourStepButtons,
         spotlight: TourRegion? = nil,
-        waitsForGameStart: Bool = false,
+        waitsFor: TourAdvanceTrigger? = nil,
         allowsAppInteraction: Bool = false,
         sprite: TourSprite = .bonbon
     ) {
@@ -243,7 +287,7 @@ struct TourStep {
             region,
             buttons: buttons,
             spotlight: spotlight,
-            waitsForGameStart: waitsForGameStart,
+            waitsFor: waitsFor,
             allowsAppInteraction: allowsAppInteraction,
             sprite: { _ in sprite }
         ) { _ in message }
@@ -276,6 +320,16 @@ struct TourStep {
 /// at the picture they affect, and the "Deal?"/"ready to play?" beats
 /// close the tour after the turn controls rather than introducing them.
 enum TourScript {
+    /// BonBon admitting the app can misread a card.
+    ///
+    /// Shown twice, from one constant: as Script 13 near the end of the
+    /// full tour, and again as the first beat of the *skip* path. Someone
+    /// who bails out early still has to hear it — it's the one thing in
+    /// the tour that isn't a feature but a warning, and it's least safe to
+    /// miss for exactly the player who skipped the explanation.
+    static let caveatMessage =
+        "By the way, I'm still learning to read cards. If something looks off, trust your eyes over mine. Deal?"
+
     // Computed, not a stored `static let` — a stored array of `TourStep`
     // (which holds a closure) is flagged under Swift 6 strict concurrency
     // as shared mutable global state, the same issue `TourRegionFrameKey
@@ -286,7 +340,7 @@ enum TourScript {
         // Script 2 — the one step with no Skip tour; right after the
         // intro's own choice, a second bail-out option in the very next
         // beat would read as the app not trusting its own opening answer.
-        TourStep(.playmat, "This is your table. Everything happens in here.", buttons: .single("Next")),
+        TourStep(.playmat, "This is your table. Everything happens in here.", buttons: .single("Continue")),
 
         // Script 3 / 3A — the camera source menu, which is where the
         // player fixes it if the answer is "no camera".
@@ -296,9 +350,9 @@ enum TourScript {
             // 3A only. The wording and the face are the same branch:
             // "I can't see anything" over a cheerful default head reads
             // as a joke rather than as the app telling you it's blind.
-            sprite: { $0 ? .bonbon : .bonbonDizzy }
-        ) { isCameraRunning in
-            isCameraRunning
+            sprite: { $0.isCameraRunning ? .bonbon : .bonbonDizzy }
+        ) { context in
+            context.isCameraRunning
                 ? "Let's adjust the camera, so I can see the game and guide you. Pick it under {sf:camera} up top."
                 : "Nooo~ I can't see anything T-T Plug one in or use your iPhone, and I'll be watching. Choose it under {sf:camera} up top."
         },
@@ -334,24 +388,44 @@ enum TourScript {
 
         // Script 8.5 — the only step with no Next. Everything after this
         // is about a turn in progress, so the tour waits here until the
-        // player actually starts one; `waitsForGameStart` is what both
+        // player actually starts one; `waitsFor` is what both
         // drops the Next button and lets clicks through the scrim to the
         // real button underneath.
         TourStep(
             .startGame,
             "This is **Start Game** — press it and I'll start watching your table. Hit it again any time to stop.",
             buttons: .skipOnly,
-            waitsForGameStart: true
+            waitsFor: .gameStart
         ),
 
         // Script 9
         TourStep(.phaseIndicator, "When you begin your turn, start with the ABCD: (A)waken → (B)eginning → (C)hannel → (D)raw", buttons: .skipAndNext()),
 
-        // Script 10
-        TourStep(.turnControls, "Tap **Next** when a step is done or flip on **Auto-advance** and I'll keep up with you.", buttons: .skipAndNext()),
+        // Script 10 — the one step whose advice depends on where the turn
+        // actually is, because this row offers a different button in each
+        // of the three states. Telling someone to "tap Next" while the
+        // button in front of them says Done is worse than saying nothing.
+        // No Continue: this step *is* a turn. The player walks ABCD →
+        // Action → Done with the real controls and the card re-words
+        // itself at each stage; handing them a button that skipped to the
+        // next topic would let them leave without ever having taken a
+        // turn, which is the one thing this beat is for.
+        TourStep(.turnControls, buttons: .skipOnly, waitsFor: .turnEnd) { context in
+            switch context.gamePhase {
+            case .awaken, .beginning, .channel, .draw:
+                return "Tap **Next** when a step is done or flip on **Auto-advance** and I'll keep up with you."
+            case .action:
+                return "This part's all yours — play cards, move units, attack, in any order. Hit **Done** when you've finished."
+            case .done:
+                return "Nice! Hit **End Turn** to pass play over, or **Back** if you've thought of one more move."
+            }
+        },
 
-        // Script 11
-        TourStep(.turnControls, "When you're done, hit **End Turn**.", buttons: .skipAndNext()),
+        // Script 11 is deliberately gone. It said "When you're done, hit
+        // End Turn" on this same region — which is now exactly what
+        // Script 10's Done variant says, at the moment it's true and with
+        // the real button beside it. Left in, it repeated the previous
+        // card immediately after the player had already ended a turn.
 
         // Script 12
         TourStep(.score, "Track you and your opponent's score every time someone wins at a battlefield.", buttons: .skipAndNext()),
@@ -360,7 +434,7 @@ enum TourScript {
         // than a pointer at any control, so there is nothing to spotlight.
         TourStep(
             nil,
-            "I'm still learning to read cards. If something looks off, trust your eyes over mine. Deal?",
+            Self.caveatMessage,
             buttons: .single("Deal!"),
             sprite: .bonbonDizzy
         ),
@@ -378,9 +452,15 @@ enum TourScript {
 /// that might not actually exist.
 enum TourPhase: Equatable {
     case intro
-    /// Landed on from *either* Skip tour on a regular step or "I'll
-    /// explore myself" on the intro — the same reassurance either way:
-    /// go set up, find BonBon again in Help.
+    /// The read-accuracy caveat, on the way out.
+    ///
+    /// Every exit from the tour passes through here — "I'll explore
+    /// myself" on the intro and "Skip tour" on any step — because leaving
+    /// early is precisely how a player would otherwise never be told the
+    /// app can misread a card.
+    case caveat
+    /// Landed on from `.caveat`, whichever way the player got there — the
+    /// same reassurance either way: go set up, find BonBon again in Help.
     case skippedTo
     case step(Int)
 }
@@ -396,6 +476,16 @@ final class TourCoordinator: ObservableObject {
     /// the controller itself — the tour doesn't need to know the camera
     /// pipeline exists beyond this one fact.
     @Published var isCameraRunning = false
+    /// The turn phase the game is in, kept in step by `ContentView`. Read
+    /// by the turn-controls step, whose advice is different in each of
+    /// ABCD, Action and Done — those offer different buttons, so one
+    /// sentence about "Next" would be wrong in two of the three.
+    @Published var gamePhase: GamePhase = .awaken
+
+    /// Everything the phase-aware steps read, gathered once.
+    var context: TourContext {
+        TourContext(isCameraRunning: isCameraRunning, gamePhase: gamePhase)
+    }
 
     var currentStep: TourStep? {
         guard case .step(let index) = phase else { return nil }
@@ -407,7 +497,7 @@ final class TourCoordinator: ObservableObject {
     }
 
     func exploreMyself() {
-        phase = .skippedTo
+        phase = .caveat
     }
 
     func showMeAround() {
@@ -415,7 +505,7 @@ final class TourCoordinator: ObservableObject {
     }
 
     func skip() {
-        phase = .skippedTo
+        phase = .caveat
     }
 
     /// Ends the tour — the Skip-tour landing card's own "Start Playing".
@@ -423,22 +513,31 @@ final class TourCoordinator: ObservableObject {
         phase = nil
     }
 
-    /// The regular step buttons' "Next" (or step-specific label) and the
+    /// The regular step buttons' "Continue" (or step-specific label) and the
     /// checkpoint buttons' "Deal!"/"Let's Go!" all do the same thing:
     /// move to the next step, or end the tour after the last one.
     func advance() {
-        guard case .step(let index) = phase else { return }
-        let next = index + 1
-        phase = next < TourScript.steps.count ? .step(next) : nil
+        switch phase {
+        // "Deal!" on the way out — acknowledging the caveat leads to the
+        // sign-off, not straight to a closed tour.
+        case .caveat:
+            phase = .skippedTo
+        case .step(let index):
+            let next = index + 1
+            phase = next < TourScript.steps.count ? .step(next) : nil
+        case .intro, .skippedTo, .none:
+            break
+        }
     }
 
-    /// The real Start Game button was pressed. Only the step that's
-    /// waiting on it moves — called unconditionally from `ContentView`
-    /// whenever the pipeline starts, including when no tour is running or
-    /// the player is somewhere else in it, so the guard is the whole
-    /// point rather than a defensive extra.
-    func gameDidStart() {
-        guard let step = currentStep, step.waitsForGameStart else { return }
+    /// A real action happened in the app. Only a step actually waiting
+    /// on *that* action moves.
+    ///
+    /// Called unconditionally from `ContentView` — including when no tour
+    /// is running, or the player is somewhere else in it — so the guard
+    /// is the whole point rather than a defensive extra.
+    func advance(on trigger: TourAdvanceTrigger) {
+        guard let step = currentStep, step.waitsFor == trigger else { return }
         advance()
     }
 }
@@ -525,12 +624,24 @@ struct TourOverlay: View {
                     buttons: .branch(exploreLabel: "I'll explore myself", showMeLabel: "Show me around")
                 )
                 .position(cardCenter(placement: .center, cutout: nil, bounds: proxy.size))
+            case .caveat:
+                // The same words and the same dizzy BonBon as Script 13,
+                // from `TourScript.caveatMessage` — a player who skips
+                // shouldn't get a lesser version of the one warning in
+                // the tour, and two copies of the sentence would drift.
+                fullScrim(in: proxy.size)
+                card(
+                    sprite: .bonbonDizzy,
+                    message: TourScript.caveatMessage,
+                    buttons: .single("Deal!")
+                )
+                .position(cardCenter(placement: .center, cutout: nil, bounds: proxy.size))
             case .skippedTo:
                 fullScrim(in: proxy.size)
                 card(
                     sprite: .bonbonPeace,
                     message: "Awesome, let's line up the camera and start the game! You can always find me in **Help** on the top.",
-                    buttons: .singleCentered("Start Playing")
+                    buttons: .finish("Start Playing")
                 )
                 .position(cardCenter(placement: .center, cutout: nil, bounds: proxy.size))
             case .step:
@@ -559,8 +670,8 @@ struct TourOverlay: View {
                     }
 
                     card(
-                        sprite: step.sprite(coordinator.isCameraRunning),
-                        message: step.message(coordinator.isCameraRunning),
+                        sprite: step.sprite(coordinator.context),
+                        message: step.message(coordinator.context),
                         buttons: step.buttons
                     )
                     .position(
@@ -895,12 +1006,11 @@ private struct TourCard: View {
                 Button(label, action: onAdvance)
                     .buttonStyle(RiftPrimaryButtonStyle())
             }
-        case .singleCentered(let label):
+        case .finish(let label):
             HStack {
                 Spacer()
                 Button(label, action: onFinish)
                     .buttonStyle(RiftPrimaryButtonStyle())
-                Spacer()
             }
         case .branch(let exploreLabel, let showMeLabel):
             HStack {

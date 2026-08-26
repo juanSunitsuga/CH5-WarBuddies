@@ -37,11 +37,11 @@ struct ScoreTracker: View {
                 } label: {
                     Image(systemName: "arrow.counterclockwise")
                         .riftIcon(size: 14, weight: .semibold)
-                        .foregroundStyle(RiftboundPalette.regularText)
+                        .foregroundStyle(RiftboundPalette.disabledElementStroke)
                         .contentShape(Rectangle())
                     Text("Reset Score")
                         .riftFont(.body)
-                        .foregroundStyle(RiftboundPalette.pureWhite)
+                        .foregroundStyle(RiftboundPalette.disabledElementStroke)
                 }
                 .buttonStyle(.plain)
                 .disabled(!isGameRunning)
@@ -51,7 +51,7 @@ struct ScoreTracker: View {
             }
 
             HStack(spacing: 14) {
-                counter(title: "Player", score: $playerScore)
+                counter(title: "Yours", score: $playerScore)
                 counter(title: "Opponent", score: $opponentScore)
             }
         }

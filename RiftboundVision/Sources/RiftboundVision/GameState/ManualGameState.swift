@@ -13,6 +13,21 @@ public enum GamePhase: String, Sendable, Equatable, Codable, CaseIterable {
     case channel     // 515.3: channel 2 runes (+ any extra, e.g. first-turn rule)
     case draw        // 515.4: draw 1; Rune Pool empties at the end of this step
     case action      // 516: unstructured; Discretionary Actions until the player ends the turn
+    /// Not a rules phase — an app-side sub-state of the Action Phase.
+    ///
+    /// 516.6 makes *ending the turn* the player's declaration, and by the
+    /// rules pressing End Turn is already that declaration, which is why
+    /// an earlier version of this app removed the separate Done step as a
+    /// confirmation it had invented. It is back by design: at a physical
+    /// table "I've finished playing" and "hand the turn over" are two
+    /// moments, and collapsing them meant the only button that ended a
+    /// turn was one click away at all times during the phase where the
+    /// player is handling the most cards.
+    ///
+    /// The turn is still in 516 while this is showing. Nothing about the
+    /// rules state changes when Done is pressed — only what the panel
+    /// says and which button is offered.
+    case done
 
     // Rule 517's Ending, Expiration and Cleanup steps are deliberately
     // absent. They are real phases, but they contain nothing a player at
@@ -31,6 +46,7 @@ public enum GamePhase: String, Sendable, Equatable, Codable, CaseIterable {
         case .channel: return "Channel"
         case .draw: return "Draw"
         case .action: return "Action"
+        case .done: return "Done"
         }
     }
 
@@ -54,6 +70,8 @@ public enum GamePhase: String, Sendable, Equatable, Codable, CaseIterable {
             return "Draw 1 card. Any unspent energy and power is lost at the end of this step (Rule 515.4)."
         case .action:
             return "Play or move any card. I'll let you know if it's wrong (Rule 516)."
+        case .done:
+            return "Finished playing. Hit End Turn to hand over, or Back if you still have a move to make (Rule 516.6)."
         }
     }
 
@@ -66,8 +84,26 @@ public enum GamePhase: String, Sendable, Equatable, Codable, CaseIterable {
     /// back to them ("Nothing to do for Chaos Rune") is noise dressed as
     /// feedback. Worse, it competes for the same line of screen with the
     /// instruction telling them what to do.
+    /// `.done` counts too: the turn has not ended, so by the rules the
+    /// player is still in 516 and anything the camera sees is still a
+    /// move they chose. It is also the moment they're most likely to have
+    /// mis-clicked — going quiet exactly when someone says "I'm finished"
+    /// would hide the very mistake worth catching.
+    /// Whether this is one of 515's four lettered start-of-turn steps —
+    /// the ones the A/B/C/D pips actually stand for.
+    ///
+    /// Asked as a property rather than spelled out as `!= .action &&
+    /// != .done` at the call site, so adding another post-Action state
+    /// can't leave the pip row lit through it by omission.
+    public var isStartOfTurn: Bool {
+        switch self {
+        case .awaken, .beginning, .channel, .draw: return true
+        case .action, .done: return false
+        }
+    }
+
     public var validatesPlayerMoves: Bool {
-        self == .action
+        self == .action || self == .done
     }
 }
 
@@ -94,7 +130,7 @@ public struct ManualGameState: Sendable, Equatable {
         self.phase = phase
     }
 
-    private static let phaseOrder: [GamePhase] = [.awaken, .beginning, .channel, .draw, .action]
+    private static let phaseOrder: [GamePhase] = [.awaken, .beginning, .channel, .draw, .action, .done]
 
     /// Rule 506: the Turn Player changes once the current Turn Player
     /// reaches the end of all Phases of their Turn. Steps to the next
@@ -102,12 +138,12 @@ public struct ManualGameState: Sendable, Equatable {
     /// `.awaken` and, once play has cycled back to `.player1`, increments
     /// `round`.
     ///
-    /// **Nothing follows the Action Phase.** 516.6 ends it when the player
-    /// says so, and 517's steps are automatic bookkeeping with nothing to
-    /// do in them, so advancing from `.action` hands the turn over
-    /// directly — the same thing `endTurn()` does, which is why the two
-    /// now agree rather than `advance()` taking three extra clicks to
-    /// reach the same place.
+    /// **Nothing follows the Action Phase in the rules.** 516.6 ends it
+    /// when the player says so, and 517's steps are automatic bookkeeping
+    /// with nothing to do in them. `.done` is the one app-side step after
+    /// it — a declaration that the player has stopped playing, not a
+    /// phase — and advancing past *that* hands the turn over, the same
+    /// thing `endTurn()` does.
     public mutating func advance() {
         guard let index = Self.phaseOrder.firstIndex(of: phase) else { return }
         if index + 1 < Self.phaseOrder.count {

@@ -89,9 +89,9 @@ public struct PlaymatOverlayView: View {
     ///
     ///   | asset       | size    | stroke  | zones                 |
     ///   |-------------|---------|---------|-----------------------|
-    ///   | Rectangle 1 | 265×110 | #D5A250 | Battlefield, Rune Area|
-    ///   | Rectangle 2 | 349×110 | #D5A250 | Base                  |
-    ///   | Rectangle 3 | 434×111 | #D5A250 | Hand                  |
+    ///   | Rectangle 1 | 265×110 | #D5A250 | Battlefield, Base     |
+    ///   | Rectangle 2 | 349×110 | #D5A250 | Hand                  |
+    ///   | Rectangle 3 | 434×111 | #D5A250 | Rune Area             |
     ///   | Rectangle 4 |  81×110 | #CEA73F | Main Deck             |
     ///   | Rectangle 5 |  81×110 | #CEA73F | Rune Deck             |
     ///   | Rectangle 6 |  81×110 | black   | Trash                 |
@@ -105,7 +105,7 @@ public struct PlaymatOverlayView: View {
     /// numbers so each frame draws at exactly its native proportions.
     private static let mediumFrame = loadFrame("Rectangle 1")   // 265 × 110
     private static let largeFrame = loadFrame("Rectangle 2")    // 349 × 110
-    private static let handFrame = loadFrame("Rectangle 3")     // 434 × 111
+    private static let wideFrame = loadFrame("Rectangle 3")     // 434 × 111
     private static let deckFrame = loadFrame("Rectangle 4")     //  81 × 110
     private static let runeDeckFrame = loadFrame("Rectangle 5") //  81 × 110
     private static let trashFrame = loadFrame("Rectangle 6")    //  81 × 110
@@ -157,9 +157,9 @@ public struct PlaymatOverlayView: View {
     /// whichever single-player zone is their size.)
     private func frame(for zone: Zone) -> Image {
         switch zone {
-        case .battlefield, .runeArea: return Self.mediumFrame
-        case .base: return Self.largeFrame
-        case .player1Hand, .player2Hand: return Self.handFrame
+        case .battlefield, .base: return Self.mediumFrame
+        case .player1Hand, .player2Hand: return Self.largeFrame
+        case .runeArea: return Self.wideFrame
         case .mainDeck: return Self.deckFrame
         case .runeDeck: return Self.runeDeckFrame
         case .trash: return Self.trashFrame

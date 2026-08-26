@@ -449,12 +449,16 @@ final class CameraPipelineController: ObservableObject {
     private var gameStateStore: GameStateStore?
 
     /// The starting calibration quad, sized so the *whole* active
-    /// template — including Hand, which extrapolates past the quad's own
-    /// bottom edge (see `RiftboundPlaymatTemplate.singlePlayerZones()`) —
-    /// lands on screen before the user has dragged a single corner.
-    /// Without this, Hand's mapped position falls below the visible frame
-    /// by default, since `PlaymatCalibration.centered(in:)` alone only
-    /// guarantees `y = 0...1` (the mat itself) stays in view.
+    /// template lands on screen before the user has dragged a single
+    /// corner.
+    ///
+    /// Measured from the template rather than assumed to be 1.0: Hand
+    /// used to hang below the quad's own bottom edge, and
+    /// `PlaymatCalibration.centered(in:)` alone only guarantees
+    /// `y = 0...1` stays in view. Every zone sits inside the mat in the
+    /// current four-row layout, so this reads 1.0 today — kept because it
+    /// derives the answer instead of hardcoding one a layout change could
+    /// silently invalidate.
     private static func defaultCalibration(for frameSize: CGSize) -> PlaymatCalibration {
         let contentHeight = RiftboundPlaymatTemplate.singlePlayerZones()
             .flatMap(\.normalizedPolygon)

@@ -107,11 +107,26 @@ struct ContentView: View {
         .onChange(of: pipeline.isCameraRunning) { _, isRunning in
             tourCoordinator.isCameraRunning = isRunning
         }
+        // The turn-controls step reads this — that row offers Next, Done
+        // or End Turn depending on the phase, and its advice has to name
+        // whichever button is actually there.
+        .onChange(of: pipeline.gameState.phase) { previous, phase in
+            tourCoordinator.gamePhase = phase
+            // `.done` → `.awaken` is End Turn and nothing else: Back from
+            // Done goes to Action, and Done is the only state whose
+            // primary button hands the turn over. Watched here rather
+            // than wired into the button, so the tour learns about a
+            // finished turn from the game state itself and can't fall out
+            // of step with it.
+            if previous == .done && phase == .awaken {
+                tourCoordinator.advance(on: .turnEnd)
+            }
+        }
         // Script 8.5 has no Next button — it ends when the player presses
         // the real Start Game it's pointing at. Sent unconditionally; the
         // coordinator ignores it unless that step is the one showing.
         .onChange(of: pipeline.isPipelineRunning) { _, isRunning in
-            if isRunning { tourCoordinator.gameDidStart() }
+            if isRunning { tourCoordinator.advance(on: .gameStart) }
         }
         .frame(minWidth: 1160, minHeight: 675)
         // `ToolbarItem` with no placement — `.automatic`, which on macOS
@@ -156,7 +171,7 @@ struct ContentView: View {
             ToolbarItem {
                 DiagnosticsMenu(
                     onShowOnboarding: { isShowingOnboarding = true },
-                    onShowTour: { tourCoordinator.start() }
+                    onShowTour: { startTour() }
                 )
             }
         }
@@ -166,6 +181,7 @@ struct ContentView: View {
             // later changes — this covers the value it already has by the
             // time the tour might start.
             tourCoordinator.isCameraRunning = pipeline.isCameraRunning
+            tourCoordinator.gamePhase = pipeline.gameState.phase
             // Every launch, not just the first — so this deliberately
             // persists nothing. The intro's own "I'll explore myself" is
             // the way past it, and it's one click, which is what makes
@@ -186,7 +202,7 @@ struct ContentView: View {
             // from wherever they'd got to.
             if !hasStartedTourThisLaunch {
                 hasStartedTourThisLaunch = true
-                tourCoordinator.start()
+                startTour()
             }
         }
         .sheet(isPresented: $isShowingOnboarding) {
@@ -240,6 +256,36 @@ struct ContentView: View {
     /// tour's own overlay. Split out so `body` can place this and
     /// `TourOverlay` as plain `ZStack` siblings instead of nesting the
     /// overlay inside this view's own modifier chain.
+    /// Stops the pipeline and puts the turn back to where a new game
+    /// begins.
+    ///
+    /// Both halves matter: stopping mid-turn leaves the phase indicator
+    /// wherever the player last advanced it, and the next Start Game is a
+    /// fresh game rather than a resume — without the reset the indicator
+    /// reappears disabled but still pointing at a phase from the game
+    /// that just ended.
+    private func stopGame() {
+        pipeline.stopPipeline()
+        pipeline.gameState = ManualGameState()
+    }
+
+    /// Starts the guided tour from a known state: no game running.
+    ///
+    /// The tour has a step that waits for the player to press Start Game,
+    /// and it advances on the pipeline *becoming* active. Launching the
+    /// tour mid-game left that step pointing at a button already reading
+    /// "Stop Game", with the only way forward being to stop the game and
+    /// start it again — the tour asking you to undo something first, to
+    /// satisfy a step about doing it.
+    ///
+    /// Ending the game to run a walkthrough is the right trade: someone
+    /// who opens Take the Tour is asking to be shown the app, not to keep
+    /// playing through it.
+    private func startTour() {
+        if pipeline.isPipelineRunning { stopGame() }
+        tourCoordinator.start()
+    }
+
     private var mainContent: some View {
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: RiftboundLayout.bandSpacing) {
@@ -303,14 +349,7 @@ struct ContentView: View {
                 isCameraRunning: pipeline.isCameraRunning,
                 onTogglePipeline: {
                     if pipeline.isPipelineRunning {
-                        pipeline.stopPipeline()
-                        // Stopping mid-turn leaves the phase indicator
-                        // wherever the player last advanced it. The next
-                        // Start Game is a fresh game, not a resume, so the
-                        // indicator goes back to the same place a new game
-                        // begins rather than reappearing disabled but
-                        // pointed at a phase from the game that just ended.
-                        pipeline.gameState = ManualGameState()
+                        stopGame()
                     } else {
                         // Safety net for the player who skipped the tour and
                         // so never reached the step that asks. Without this,

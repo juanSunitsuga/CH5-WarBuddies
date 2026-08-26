@@ -43,7 +43,9 @@ struct TurnButtonRow: View {
                 .accessibilityHint(isGameRunning ? "Returns to the previous phase of your turn" : "Unavailable until the game is started")
 
             Button(nextTitle) {
-                if gameState.phase == .action {
+                // Only `.done` ends the turn. Everything else — including
+                // Action, which now steps to `.done` — advances a phase.
+                if gameState.phase == .done {
                     gameState.endTurn()
                 } else {
                     gameState.advance()
@@ -60,14 +62,25 @@ struct TurnButtonRow: View {
     /// What pressing the primary button will actually do, said out loud.
     private var nextHint: String {
         guard isGameRunning else { return "Unavailable until the game is started" }
-        return gameState.phase == .action
-            ? "Ends your turn and passes play to your opponent"
-            : "Moves on to the next phase of your turn"
+        switch gameState.phase {
+        case .action: return "Marks your turn's actions finished, without passing play yet"
+        case .done: return "Ends your turn and passes play to your opponent"
+        default: return "Moves on to the next phase of your turn"
+        }
     }
 
-    /// In the Action Phase there is no next phase to step to (516.6) — only
-    /// the declaration that ends the turn.
+    /// Three labels, because the last two steps are different declarations.
+    ///
+    /// Action offers **Done** — "I've finished playing" — and only the
+    /// `.done` state that follows offers **End Turn**, which is the 516.6
+    /// hand-over. Splitting them means the button that gives your turn
+    /// away is never the one sitting under your cursor while you're still
+    /// playing cards.
     private var nextTitle: String {
-        gameState.phase == .action ? "End Turn" : "Next"
+        switch gameState.phase {
+        case .action: return "Done"
+        case .done: return "End Turn"
+        default: return "Next"
+        }
     }
 }
