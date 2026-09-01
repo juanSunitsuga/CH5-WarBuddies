@@ -15,6 +15,22 @@
 /// in the wrong place.
 public actor GameEngine {
     private let store: GameStateStore
+
+    /// Every accepted action, in order — see `GameEventLog`. `nil` until the
+    /// first action is accepted.
+    ///
+    /// Recorded here rather than in the applier because this is the one
+    /// place that knows an action was *accepted*: the validator has passed,
+    /// the abilities are resolved, and the mutation is about to happen. An
+    /// applier-level hook would also catch a replay of the log itself and
+    /// record it a second time.
+    ///
+    /// Seeded from the snapshot taken *before* the first accepted mutation,
+    /// rather than from an `initialState` passed to `init`. That keeps the
+    /// initializer synchronous — the store is an actor and its state can't
+    /// be read without `await` — and it is the correct base regardless,
+    /// since every mutation reaches `GameState` through this method.
+    public private(set) var eventLog: GameEventLog?
     private let observer: any BoardObserving
     private let translator: any ActionTranslating
     private let informationMode: InformationMode
@@ -134,6 +150,16 @@ public actor GameEngine {
 
         case .success:
             let abilityInstructions = await abilityInstructions(for: action, in: snapshot, proposedBy: proposer)
+
+            // Before the mutation, so the log's base is the board as it was
+            // when this action was proposed.
+            if eventLog == nil { eventLog = GameEventLog(initialState: snapshot) }
+            eventLog?.record(
+                action: action,
+                proposer: proposer,
+                abilityInstructions: abilityInstructions,
+                observation: event
+            )
 
             let consequences = ConsequenceBox()
             var abilitySummaries: [String] = []
