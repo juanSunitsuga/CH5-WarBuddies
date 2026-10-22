@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import RiftboundVision
 
 /// Picks which camera the app watches.
@@ -35,9 +36,41 @@ struct CameraSourceMenu: View {
             Button("Refresh Camera List") {
                 pipeline.refreshAvailableCameras()
             }
+
+            // A recorded run, for the measurements in Subbab 4.4. The file
+            // goes in where the camera would, through the same
+            // `CameraCapturing` contract, so the figures describe the real
+            // pipeline rather than a shortcut through it.
+            Divider()
+            Button("Play Video File…") { chooseVideoFile() }
+            if pipeline.videoSourceURL != nil {
+                Button("Back to Live Camera") {
+                    Task { await pipeline.useLiveCamera() }
+                }
+            }
         } label: {
-            Label(cameraLabel, systemImage: selectedIsContinuityCamera ? "iphone" : "camera")
+            if let url = pipeline.videoSourceURL {
+                Label(url.deletingPathExtension().lastPathComponent, systemImage: "film")
+            } else {
+                Label(cameraLabel, systemImage: selectedIsContinuityCamera ? "iphone" : "camera")
+            }
         }
+    }
+
+    /// `NSOpenPanel` rather than SwiftUI's `.fileImporter`, because this is
+    /// a menu inside a toolbar item: `.fileImporter` attaches its sheet to
+    /// the view it is placed on, and a menu item is gone by the time the
+    /// sheet would present, so nothing appears.
+    private func chooseVideoFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.movie, .video, .mpeg4Movie, .quickTimeMovie]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Pick a recording to play in place of the camera."
+        panel.prompt = "Play"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await pipeline.useVideoFile(url) }
     }
 
     private var selectedIsContinuityCamera: Bool {

@@ -6,6 +6,13 @@
 	<true/>
 	<key>com.apple.security.device.camera</key>
 	<true/>
+	<!-- "Play Video File…" feeds a recording through the pipeline in place
+	     of the camera, for the repeatable measurement runs. Under the App
+	     Sandbox the open panel still appears without this, and the chosen
+	     file then fails to read — a failure that looks like a broken video
+	     rather than a missing entitlement. -->
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
 	<!-- Card art is fetched from cmsassets.rgpub.io. Under the App
 	     Sandbox outgoing connections are denied unless this is set, so
 	     without it every AsyncImage in Card Details fails and renders its

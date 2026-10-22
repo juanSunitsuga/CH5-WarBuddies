@@ -586,6 +586,81 @@ final class CameraPipelineController: ObservableObject {
 
     // MARK: - Camera lifecycle
 
+    // MARK: - Frame source
+
+    /// Plays `url` in place of the camera, for a repeatable measurement run.
+    ///
+    /// Everything downstream is untouched: `VideoFileCapture` satisfies the
+    /// same `CameraCapturing` contract, so detection, tracking, ingestion,
+    /// translation and validation all run exactly as they do against a
+    /// camera. A source that short-circuited any of them would measure a
+    /// pipeline this app does not have.
+    ///
+    /// The pipeline is stopped first rather than hot-swapped. Tracked
+    /// identities, phase baselines and the rune-channel count all describe
+    /// the previous source's board; carrying them into a new recording
+    /// would make the first readings of the run quietly wrong.
+    func useVideoFile(_ url: URL) async {
+        closeCamera()
+        videoSourceURL = url
+        camera = VideoFileCapture(url: url)
+        restartStatusLoop()
+        await openCamera(promptingForAccess: false)
+    }
+
+    /// Goes back to the live camera.
+    func useLiveCamera() async {
+        closeCamera()
+        videoSourceURL = nil
+        camera = AVFoundationCameraCapture()
+        restartStatusLoop()
+        refreshAvailableCameras()
+        await openCamera(promptingForAccess: false)
+    }
+
+    /// The status loop is bound to one source's stream, so swapping the
+    /// source leaves it listening to a stream nothing will ever yield on.
+    /// Without this a recording's "file ended" never arrives and the run
+    /// looks like it is still going.
+    private func restartStatusLoop() {
+        statusLoop?.cancel()
+        statusLoop = Task { [weak self] in
+            guard let events = self?.camera.statusEvents() else { return }
+            for await event in events {
+                await self?.handle(event)
+            }
+        }
+    }
+
+    /// Whether the camera may be used, asking the player if that is still
+    /// open to them.
+    ///
+    /// Extracted from `openCamera` so a recorded run can skip it: a video
+    /// file is not a camera and needs no authorisation.
+    private func hasCameraAccess(promptingForAccess: Bool) async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            return true
+        case .notDetermined:
+            // The only state that actually shows the dialog — so it's the
+            // only one that has to wait for a good moment to show it.
+            guard promptingForAccess else { return false }
+            guard await AVCaptureDevice.requestAccess(for: .video) else {
+                errorMessage = "Camera access denied. Grant it in System Settings › Privacy & Security › Camera, then reopen the app."
+                return false
+            }
+            return true
+        default:
+            // Already declined, or restricted by policy. Nothing to ask —
+            // and saying so at launch, unprompted, is just noise, so this
+            // only speaks up when the player asked for the camera.
+            if promptingForAccess {
+                errorMessage = "Camera access denied. Grant it in System Settings › Privacy & Security › Camera, then reopen the app."
+            }
+            return false
+        }
+    }
+
     /// Brings the feed up, optionally asking for access first.
     ///
     /// `promptingForAccess: false` means "open it if we're already allowed,
@@ -604,25 +679,11 @@ final class CameraPipelineController: ObservableObject {
     func openCamera(promptingForAccess: Bool = true) async {
         guard !isCameraRunning else { return }
 
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            break
-        case .notDetermined:
-            // The only state that actually shows the dialog — so it's the
-            // only one that has to wait for a good moment to show it.
-            guard promptingForAccess else { return }
-            guard await AVCaptureDevice.requestAccess(for: .video) else {
-                errorMessage = "Camera access denied. Grant it in System Settings › Privacy & Security › Camera, then reopen the app."
-                return
-            }
-        default:
-            // Already declined, or restricted by policy. Nothing to ask —
-            // and saying so at launch, unprompted, is just noise, so this
-            // only speaks up when the player asked for the camera.
-            if promptingForAccess {
-                errorMessage = "Camera access denied. Grant it in System Settings › Privacy & Security › Camera, then reopen the app."
-            }
-            return
+        // A recording needs no camera permission, and asking for it would
+        // block a measurement run on a machine where access was declined —
+        // the one case where there is genuinely no camera to authorise.
+        if videoSourceURL == nil {
+            guard await hasCameraAccess(promptingForAccess: promptingForAccess) else { return }
         }
 
         do {

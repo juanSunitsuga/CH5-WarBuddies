@@ -486,54 +486,6 @@ struct RiftSwitchToggleStyle: ToggleStyle {
     }
 }
 
-/// The outlined container the bottom row is built from — "Start of Turn
-/// Phases", "Do Your Turn!", "End Turn" are all this shape.
-struct RiftPanelCard<Content: View>: View {
-    var isActive: Bool
-    /// Where the content sits once the card has been stretched to the
-    /// row's height. The two wide cards hang their content from the top;
-    /// "End Turn" is a single centred label.
-    var alignment: Alignment = .topLeading
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        content
-            .padding(14)
-            // `maxHeight: .infinity` *before* the background is what makes
-            // all three cards in a row the same height — the fill and
-            // stroke are drawn around the stretched frame, not around each
-            // card's own content. Applying it outside instead leaves the
-            // outline hugging the text, which is why "End Turn" came out
-            // as a short box next to two tall ones.
-            .frame(maxHeight: .infinity, alignment: alignment)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isActive ? RiftboundPalette.elementShadow.opacity(0.55) : .clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(
-                        isActive ? RiftboundPalette.elementStroke : RiftboundPalette.disabledElementStroke.opacity(0.55),
-                        lineWidth: 1
-                    )
-            )
-    }
-}
-
-/// The thin rule that links the three cards into one left-to-right flow in
-/// the mockup. Decorative, so it's hidden from accessibility.
-struct RiftFlowConnector: View {
-    /// Long between cards, short between the A/B/C/D pips.
-    var length: CGFloat = 22
-
-    var body: some View {
-        Rectangle()
-            .fill(RiftboundPalette.disabledElementStroke.opacity(0.45))
-            .frame(width: length, height: 1)
-            .accessibilityHidden(true)
-    }
-}
-
 // MARK: - Named artwork
 
 /// The SVG set that shipped with the reference, addressed by name in one
