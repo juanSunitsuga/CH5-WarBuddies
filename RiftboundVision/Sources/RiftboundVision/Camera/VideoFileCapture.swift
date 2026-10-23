@@ -67,7 +67,10 @@ public final class VideoFileCapture: CameraCapturing, @unchecked Sendable {
     /// `deviceID` is ignored — there is one file and it was chosen at init.
     public func start(deviceID: String?) throws {
         stop()
-        let task = Task { [weak self] in await self?.play() }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.play()
+        }
         lock.lock(); playback = task; lock.unlock()
     }
 
@@ -134,12 +137,7 @@ public final class VideoFileCapture: CameraCapturing, @unchecked Sendable {
                         try? await Task.sleep(nanoseconds: UInt64((presentation - elapsed) * 1_000_000_000))
                     }
 
-                    lock.lock()
-                    frameIndex += 1
-                    let index = frameIndex
-                    let stream = continuation
-                    lock.unlock()
-
+                    let (index, stream) = nextFrame()
                     stream?.yield(CapturedFrame(pixelBuffer: pixelBuffer, frameIndex: index, timestamp: presentation))
                 }
 
@@ -155,6 +153,19 @@ public final class VideoFileCapture: CameraCapturing, @unchecked Sendable {
         } catch {
             emit(.runtimeError("Couldn't read \(url.lastPathComponent): \(error.localizedDescription)"))
         }
+    }
+
+    /// Takes the next frame number and the current continuation under the
+    /// lock.
+    ///
+    /// Separate and synchronous because `NSLock.lock()` is unavailable from
+    /// an async context: holding a mutex across a suspension point can park
+    /// the lock on one thread and resume on another, which deadlocks. This
+    /// has no `await` in it, so there is no suspension to hold it across.
+    private func nextFrame() -> (Int, AsyncStream<CapturedFrame>.Continuation?) {
+        lock.lock(); defer { lock.unlock() }
+        frameIndex += 1
+        return (frameIndex, continuation)
     }
 
     private func emit(_ event: CameraStatusEvent) {
