@@ -315,7 +315,20 @@ final class CameraPipelineController: ObservableObject {
     /// player IDs above.
     let battlefieldSlotIDs: [Int: BattlefieldID] = [0: BattlefieldID()]
 
-    private let camera = AVFoundationCameraCapture()
+    /// The frame source. A live camera normally, a recording during a
+    /// measurement run.
+    ///
+    /// `var` of the protocol type rather than the concrete class is the
+    /// whole of what makes a recorded run possible: `VideoFileCapture`
+    /// satisfies the same `CameraCapturing` contract, so detection,
+    /// tracking, ingestion, translation and validation cannot tell the
+    /// difference and keep measuring the pipeline the app actually has.
+    private var camera: any CameraCapturing = AVFoundationCameraCapture()
+
+    /// The recording standing in for the camera, if any. Drives the UI's
+    /// "playing a file" state, and tells `openCamera` not to ask for camera
+    /// permission — a file is not a camera and needs none.
+    @Published private(set) var videoSourceURL: URL?
     private let loadedDetector = CardDetectionModelLoader.loadDetector()
     private var detector: any ObjectDetecting { loadedDetector.detector }
 
@@ -687,29 +700,41 @@ final class CameraPipelineController: ObservableObject {
         }
 
         do {
+            // Frames flow whenever the camera is up. `process(_:)` always
+            // refreshes the preview and only runs detection once the
+            // pipeline is started, so the feed is usable for calibration on
+            // its own.
+            //
+            // This consumer has to live here, not in `startPipeline()`:
+            // nothing reads `camera.frames()` otherwise, so the capture
+            // session runs (the OS shows the camera in use) while the
+            // window stays black until Start is pressed — which is the
+            // whole problem this split was meant to solve.
+            //
+            // Subscribed *before* `start(...)`, not after. A camera yields
+            // nothing until its session warms up, so the old order was
+            // harmless there; `VideoFileCapture` begins decoding inside
+            // `start`, and anything it yields before `frames()` has created
+            // the continuation is dropped. That would silently move where a
+            // recording begins, costing the one property a recorded run
+            // exists to provide — that two runs of the same file are the
+            // same input.
+            let frames = camera.frames()
+            runLoop = Task { [weak self] in
+                for await frame in frames {
+                    await self?.process(frame)
+                }
+            }
+
             try camera.start(deviceID: selectedCameraID)
         } catch {
             errorMessage = "Camera failed to start: \(error)"
+            runLoop?.cancel()
+            runLoop = nil
             return
         }
         isCameraRunning = true
         errorMessage = nil
-
-        // Frames flow whenever the camera is up. `process(_:)` always
-        // refreshes the preview and only runs detection once the pipeline
-        // is started, so the feed is usable for calibration on its own.
-        //
-        // This consumer has to live here, not in `startPipeline()`: nothing
-        // reads `camera.frames()` otherwise, so the capture session runs
-        // (the OS shows the camera in use) while the window stays black
-        // until Start is pressed — which is the whole problem this split
-        // was meant to solve.
-        runLoop = Task { [weak self] in
-            guard let frames = self?.camera.frames() else { return }
-            for await frame in frames {
-                await self?.process(frame)
-            }
-        }
     }
 
     func closeCamera() {

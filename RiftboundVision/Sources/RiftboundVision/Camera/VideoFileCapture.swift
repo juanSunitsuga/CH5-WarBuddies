@@ -88,59 +88,70 @@ public final class VideoFileCapture: CameraCapturing, @unchecked Sendable {
 
     // MARK: - Playback
 
+    /// Loops with `repeat`, not by calling itself.
+    ///
+    /// A recursive replay never returns from the previous pass, so each loop
+    /// keeps its frame alive and a long unattended run — exactly what a
+    /// measurement session is — eventually overflows the stack.
     private func play() async {
         do {
-            let asset = AVURLAsset(url: url)
-            let reader = try AVAssetReader(asset: asset)
+            repeat {
+                let asset = AVURLAsset(url: url)
+                let reader = try AVAssetReader(asset: asset)
 
-            guard let track = try await asset.loadTracks(withMediaType: .video).first else {
-                emit(.runtimeError("The file has no video track: \(url.lastPathComponent)"))
-                return
-            }
-
-            // BGRA because that is what the detector and the preview
-            // conversion already expect from the camera.
-            let output = AVAssetReaderTrackOutput(
-                track: track,
-                outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
-            )
-            output.alwaysCopiesSampleData = false
-            reader.add(output)
-            reader.startReading()
-
-            let startedAt = CFAbsoluteTimeGetCurrent()
-
-            while !Task.isCancelled, let sample = output.copyNextSampleBuffer() {
-                guard let pixelBuffer = CMSampleBufferGetImageBuffer(sample) else { continue }
-                let presentation = CMSampleBufferGetPresentationTimeStamp(sample).seconds
-
-                // Pace to the recording's own clock. Without this the whole
-                // file decodes in a second or two and every latency figure
-                // is measured under a load no camera produces.
-                let elapsed = CFAbsoluteTimeGetCurrent() - startedAt
-                if presentation > elapsed {
-                    try? await Task.sleep(nanoseconds: UInt64((presentation - elapsed) * 1_000_000_000))
+                guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+                    emit(.runtimeError("The file has no video track: \(url.lastPathComponent)"))
+                    return
                 }
 
-                lock.lock()
-                frameIndex += 1
-                let index = frameIndex
-                let stream = continuation
-                lock.unlock()
+                // BGRA because that is what the detector and the preview
+                // conversion already expect from the camera.
+                let output = AVAssetReaderTrackOutput(
+                    track: track,
+                    outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+                )
+                // Copies, deliberately. Without this the pixel buffer belongs
+                // to the sample buffer, which is released at the end of each
+                // iteration — and the pipeline reads frames asynchronously, so
+                // detection could be looking at memory already recycled for a
+                // later frame. That failure looks like a bad model rather than
+                // a freed buffer, which is the worst way for it to present.
+                output.alwaysCopiesSampleData = true
+                reader.add(output)
+                reader.startReading()
 
-                stream?.yield(CapturedFrame(pixelBuffer: pixelBuffer, frameIndex: index, timestamp: presentation))
-            }
+                let startedAt = CFAbsoluteTimeGetCurrent()
 
-            if Task.isCancelled { return }
+                while !Task.isCancelled, let sample = output.copyNextSampleBuffer() {
+                    guard let pixelBuffer = CMSampleBufferGetImageBuffer(sample) else { continue }
+                    let presentation = CMSampleBufferGetPresentationTimeStamp(sample).seconds
 
-            if loops {
-                await play()
-            } else {
-                // Not an error: the recording simply ended. Reported so the
-                // dashboard can show the run as finished rather than
-                // appearing to hang on a frozen last frame.
-                emit(.interruptionEnded)
-            }
+                    // Pace to the recording's own clock. Without this the whole
+                    // file decodes in a second or two and every latency figure
+                    // is measured under a load no camera produces.
+                    let elapsed = CFAbsoluteTimeGetCurrent() - startedAt
+                    if presentation > elapsed {
+                        try? await Task.sleep(nanoseconds: UInt64((presentation - elapsed) * 1_000_000_000))
+                    }
+
+                    lock.lock()
+                    frameIndex += 1
+                    let index = frameIndex
+                    let stream = continuation
+                    lock.unlock()
+
+                    stream?.yield(CapturedFrame(pixelBuffer: pixelBuffer, frameIndex: index, timestamp: presentation))
+                }
+
+                if Task.isCancelled { return }
+
+                if !loops {
+                    // Not an error: the recording simply ended. Reported so the
+                    // dashboard can show the run as finished rather than
+                    // appearing to hang on a frozen last frame.
+                    emit(.interruptionEnded)
+                }
+            } while loops && !Task.isCancelled
         } catch {
             emit(.runtimeError("Couldn't read \(url.lastPathComponent): \(error.localizedDescription)"))
         }
