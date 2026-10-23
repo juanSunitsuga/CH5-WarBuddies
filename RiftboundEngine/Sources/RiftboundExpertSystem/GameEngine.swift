@@ -1,3 +1,5 @@
+import Foundation
+
 /// The orchestrator that wires together the full pipeline described in
 /// chat:
 ///
@@ -35,16 +37,30 @@ public actor GameEngine {
     private let translator: any ActionTranslating
     private let informationMode: InformationMode
 
+    /// Where the thesis's stage-3 and stage-4 latencies are recorded.
+    ///
+    /// Measured here rather than around `process(_:)` from outside, because
+    /// from outside the two stages are one number: the caller cannot see
+    /// where translation ends and validation begins. Tabel 4.28 wants them
+    /// apart, and this is the only place that knows the boundary.
+    ///
+    /// Defaulted rather than optional so every call site stays a plain
+    /// `measure`. An engine nobody handed a recorder to still keeps its own
+    /// samples; they are simply never read.
+    private let metrics: PipelineMetrics
+
     public init(
         store: GameStateStore,
         observer: any BoardObserving,
         translator: any ActionTranslating,
-        informationMode: InformationMode = .openHands
+        informationMode: InformationMode = .openHands,
+        metrics: PipelineMetrics = PipelineMetrics()
     ) {
         self.store = store
         self.observer = observer
         self.translator = translator
         self.informationMode = informationMode
+        self.metrics = metrics
     }
 
     /// Runs the pipeline continuously, yielding a `PlayerInstruction` for
@@ -76,13 +92,21 @@ public actor GameEngine {
             return .unrecognizedEvent(event)
         }
 
+        let translationStarted = CFAbsoluteTimeGetCurrent()
         guard let candidateAction = await translator.inferAction(
             from: event, in: snapshot, proposedBy: proposer
         ) else {
+            metrics.record(.translation, seconds: CFAbsoluteTimeGetCurrent() - translationStarted)
             return .unrecognizedEvent(event)
         }
 
-        return await runValidated(candidateAction, in: snapshot, proposedBy: proposer, fallbackEvent: event)
+        return await runValidated(
+            candidateAction,
+            in: snapshot,
+            proposedBy: proposer,
+            fallbackEvent: event,
+            translationSoFar: CFAbsoluteTimeGetCurrent() - translationStarted
+        )
     }
 
     /// The landing event `process(_:)` would otherwise have run — held
@@ -105,17 +129,26 @@ public actor GameEngine {
     ) async -> PlayerInstruction {
         let snapshot = await store.currentState
 
+        let translationStarted = CFAbsoluteTimeGetCurrent()
         guard let candidateAction = await translator.inferAction(
             from: event, in: snapshot, proposedBy: player
         ) else {
+            metrics.record(.translation, seconds: CFAbsoluteTimeGetCurrent() - translationStarted)
             return .unrecognizedEvent(event)
         }
+        let translationSoFar = CFAbsoluteTimeGetCurrent() - translationStarted
 
         // The translator gets the final say on what this event means —
         // if it no longer reads as a Play (e.g. the card's since been
         // reclassified), trust that rather than forcing one.
         guard case .play(let card, let destination, let additionalChoices, _) = candidateAction else {
-            return await runValidated(candidateAction, in: snapshot, proposedBy: player, fallbackEvent: event)
+            return await runValidated(
+                candidateAction,
+                in: snapshot,
+                proposedBy: player,
+                fallbackEvent: event,
+                translationSoFar: translationSoFar
+            )
         }
         let action = GameAction.play(
             card: card,
@@ -123,7 +156,13 @@ public actor GameEngine {
             additionalChoices: additionalChoices,
             observedExhaustedRuneCount: observedExhaustedRuneCount
         )
-        return await runValidated(action, in: snapshot, proposedBy: player, fallbackEvent: event)
+        return await runValidated(
+            action,
+            in: snapshot,
+            proposedBy: player,
+            fallbackEvent: event,
+            translationSoFar: translationSoFar
+        )
     }
 
     /// Shared tail of `process(_:)`/`submitPlay(...)`: validate, and if
@@ -138,18 +177,41 @@ public actor GameEngine {
     /// the same mutation; a Spell carries it on the `ChainItem` it pushes
     /// and executes it later, whenever that item resolves — either way,
     /// exactly one `store.mutate` call, no separate pass needed afterward.
+    ///
+    /// `translationSoFar` is how long stage 3 has already taken for this
+    /// event. It is carried in rather than recorded by the caller because
+    /// parsing the played card's ability is *also* stage-3 work, happens
+    /// here, and belongs in the same sample: recording the two halves
+    /// separately would put two entries in the stage-3 distribution for one
+    /// event and quietly halve its P95. For the same reason the ability
+    /// parse is subtracted back out of the stage-4 span below — otherwise
+    /// an on-device model inference would be reported as validation time.
     private func runValidated(
         _ action: GameAction,
         in snapshot: GameState,
         proposedBy proposer: PlayerID,
-        fallbackEvent event: ObservedTableEvent
+        fallbackEvent event: ObservedTableEvent,
+        translationSoFar: Double
     ) async -> PlayerInstruction {
+        let validationStarted = CFAbsoluteTimeGetCurrent()
+        var abilityParseSeconds = 0.0
+        defer {
+            metrics.record(
+                .validation,
+                seconds: CFAbsoluteTimeGetCurrent() - validationStarted - abilityParseSeconds
+            )
+        }
+
         switch LegalityValidator.validate(action, in: snapshot, proposedBy: proposer) {
         case .failure(let reason):
+            metrics.record(.translation, seconds: translationSoFar)
             return .actionRejected(observed: event, reason: reason)
 
         case .success:
+            let parseStarted = CFAbsoluteTimeGetCurrent()
             let abilityInstructions = await abilityInstructions(for: action, in: snapshot, proposedBy: proposer)
+            abilityParseSeconds = CFAbsoluteTimeGetCurrent() - parseStarted
+            metrics.record(.translation, seconds: translationSoFar + abilityParseSeconds)
 
             // Before the mutation, so the log's base is the board as it was
             // when this action was proposed.

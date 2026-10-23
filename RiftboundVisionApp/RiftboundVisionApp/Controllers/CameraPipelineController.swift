@@ -395,6 +395,9 @@ final class CameraPipelineController: ObservableObject {
     /// Exponential moving average — one slow poll (a hiccup, a thermal
     /// blip) shouldn't halve the sample rate for the rest of the session.
     private func recordDetectionDuration(_ duration: TimeInterval) {
+        // Stage ① for Tabel 4.28. The moving average below cannot serve:
+        // it keeps one number, so a P95 is unrecoverable from it.
+        metrics.record(.detection, seconds: duration)
         averageDetectionDuration = averageDetectionDuration == 0
             ? duration
             : averageDetectionDuration * 0.8 + duration * 0.2
@@ -448,6 +451,22 @@ final class CameraPipelineController: ObservableObject {
     /// `PlayerInstruction`. Built in `start()` alongside the vision
     /// adapter, since it needs that adapter as its `BoardObserving` source.
     private var gameEngine: GameEngine?
+
+    /// The thesis's Subbab 4.4 measurements for this session.
+    ///
+    /// One recorder shared by all four stages, handed to `GameEngine` and
+    /// `ExpertSystemAdapter` when they are built. Four separate recorders
+    /// would be four separate tables that cannot be compared: 4.4.3's
+    /// "share of observed events that failed to translate" needs the events
+    /// counted here and the failures counted inside the engine to be
+    /// numerator and denominator of the same run.
+    ///
+    /// Survives `stopPipeline()`/`startPipeline()` deliberately. A
+    /// measurement run is often stopped to fix the calibration and
+    /// restarted, and resetting here would silently throw away everything
+    /// measured before that. `resetMetrics()` is the explicit way to start
+    /// a fresh sample.
+    let metrics = PipelineMetrics()
 
     /// The translator's explanation for the event currently being
     /// processed, if it declined to produce an action. Written from
@@ -791,7 +810,8 @@ final class CameraPipelineController: ObservableObject {
             },
             // One physical mat, one seat: an event in an unowned zone (the
             // Battlefield) can only be this player's.
-            defaultSeat: .player1
+            defaultSeat: .player1,
+            metrics: metrics
         )
         expertSystemAdapter = adapter
         expertSystemFrameIndex = 0
@@ -830,7 +850,7 @@ final class CameraPipelineController: ObservableObject {
         translator.onUntranslatable = { [translationNote] reason in
             translationNote.set(reason)
         }
-        let engine = GameEngine(store: session.store, observer: adapter, translator: translator)
+        let engine = GameEngine(store: session.store, observer: adapter, translator: translator, metrics: metrics)
         gameStateStore = session.store
         gameEngine = engine
         instructions = []
@@ -899,6 +919,9 @@ final class CameraPipelineController: ObservableObject {
     }
 
     private func recordObservedEvent(_ event: RiftboundExpertSystem.ObservedTableEvent) {
+        // 4.4.3's denominator: every event that reached the engine, counted
+        // before anything downstream can decide whether it was usable.
+        metrics.recordObservedEvent()
         observedEvents.append(event)
         if observedEvents.count > 50 {
             observedEvents.removeFirst(observedEvents.count - 50)
@@ -1114,6 +1137,12 @@ final class CameraPipelineController: ObservableObject {
     }
 
     private func recordUnprocessed(_ event: RiftboundExpertSystem.ObservedTableEvent) {
+        // Counted, because it was observed and did not translate, which is
+        // exactly what 4.4.3 measures. Its own reason rather than being
+        // folded in with real translation failures: a run made with stage ③
+        // switched off should be visible as such in the table, not look
+        // like a pipeline that could not understand the table.
+        metrics.record(.unrecognized, reason: "Tahap NLP dimatikan")
         append(InstructionLogEntry(
             unprocessed: event,
             cardName: cardName(for: event),
@@ -1132,13 +1161,38 @@ final class CameraPipelineController: ObservableObject {
         // Consume (not just read) the note the translator left during this
         // same event's `GameEngine.process` call, so it can't leak onto a
         // later event that had no note of its own.
+        let note = translationNote.take()
+        recordOutcome(of: instruction, note: note)
         let entry = InstructionLogEntry(
             instruction: instruction,
             cardName: cardName(for: event),
-            note: translationNote.take(),
+            note: note,
             event: event
         )
         append(entry)
+    }
+
+    /// Files one engine verdict under 4.4.3 or 4.4.4.
+    ///
+    /// `choiceRequired` is counted as accepted: the engine got far enough
+    /// to know what it needed, which is the opposite of a failure to
+    /// translate, and leaving it uncounted would quietly shrink 4.4.3's
+    /// numerator and denominator by different amounts.
+    private func recordOutcome(of instruction: PlayerInstruction, note: String?) {
+        switch instruction {
+        case .actionAccepted, .scored, .gameWon, .choiceRequired:
+            metrics.record(.accepted)
+
+        case .actionRejected(_, let reason):
+            metrics.record(.rejected, reason: reason.category)
+
+        case .unrecognizedEvent:
+            // The translator's own explanation when it left one. Without a
+            // note there is nothing more specific to say than that nothing
+            // downstream recognized the event — which is itself the finding
+            // 4.4.3 reports, so it gets a row rather than being dropped.
+            metrics.record(.unrecognized, reason: note ?? "Tidak ada aksi yang cocok")
+        }
     }
 
     /// The printed name behind an event's `CardDefID`, for instruction text
@@ -1280,7 +1334,14 @@ final class CameraPipelineController: ObservableObject {
             // none at all, which drops the event entirely.
             expertSystemAdapter.updateZones(ZoneMapper(zones: calibration.boardZones()))
             expertSystemFrameIndex += 1
+            // Stage ② for Tabel 4.28: tracking, zone resolution and event
+            // formation, all of which happen inside this one call. Timed
+            // by hand rather than with `measure`, which has a synchronous
+            // and an asynchronous overload and would be ambiguous here —
+            // `ingest` is synchronous but this function is not.
+            let ingestStarted = CFAbsoluteTimeGetCurrent()
             expertSystemAdapter.ingest(detections: detections, frameIndex: expertSystemFrameIndex, timestamp: frame.timestamp)
+            metrics.record(.ingestion, seconds: CFAbsoluteTimeGetCurrent() - ingestStarted)
 
             // The vision-layer trace is still produced by the adapter and
             // still drainable — it's the tap to reach for when tracking

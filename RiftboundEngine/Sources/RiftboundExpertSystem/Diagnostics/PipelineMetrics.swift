@@ -10,9 +10,12 @@ import Foundation
 /// 95th percentile is unrecoverable from it by construction. Every duration
 /// is therefore kept as a sample here.
 ///
-/// Lives in `RiftboundVision` rather than the app so it can be tested —
-/// percentile arithmetic is exactly the kind of thing that is silently wrong
-/// by one index.
+/// Lives in `RiftboundExpertSystem` because that is the only package
+/// everything else depends on. Two of the four stages Tabel 4.28 reports —
+/// translation and validation — happen inside `GameEngine`, and the engine
+/// depends on nothing, so a recorder anywhere further out simply cannot be
+/// reached from them. Here it is reachable from the engine, from
+/// `RiftboundVision`, and from the app alike.
 public final class PipelineMetrics: @unchecked Sendable {
 
     /// The four stages Tabel 4.28 reports, in pipeline order.
@@ -38,6 +41,7 @@ public final class PipelineMetrics: @unchecked Sendable {
     /// separate rather than being merged into one table.
     private var reasons: [Outcome: [String: Int]] = [:]
     private var unknownZoneCauses: [String: Int] = [:]
+    private var falseRejections: [String: Int] = [:]
     private var observedEventCount = 0
 
     /// Samples kept per stage.
@@ -101,10 +105,31 @@ public final class PipelineMetrics: @unchecked Sendable {
         unknownZoneCauses[cause, default: 0] += 1
     }
 
+    /// A rejection the player says was wrong — the move was legal and the
+    /// validator refused it anyway. 4.4.4 asks for these alongside the
+    /// violations genuinely caught.
+    ///
+    /// Recorded by hand, from the dashboard, because nothing in the app can
+    /// decide it. The validator already believes it was right; if the app
+    /// could tell that it was not, that disagreement would be a bug to fix
+    /// rather than a figure to report. Only the player at the table knows.
+    public func recordFalseRejection(reason: String) {
+        lock.lock(); defer { lock.unlock() }
+        falseRejections[reason, default: 0] += 1
+    }
+
+    /// Undoes one `recordFalseRejection` — the dashboard's mark is a
+    /// judgement made mid-session and a mis-tap should not be permanent.
+    public func undoFalseRejection(reason: String) {
+        lock.lock(); defer { lock.unlock() }
+        guard let count = falseRejections[reason], count > 0 else { return }
+        if count == 1 { falseRejections[reason] = nil } else { falseRejections[reason] = count - 1 }
+    }
+
     public func reset() {
         lock.lock(); defer { lock.unlock() }
         samples = [:]; outcomes = [:]; reasons = [:]
-        unknownZoneCauses = [:]; observedEventCount = 0
+        unknownZoneCauses = [:]; falseRejections = [:]; observedEventCount = 0
     }
 
     // MARK: - Reading
@@ -148,6 +173,20 @@ public final class PipelineMetrics: @unchecked Sendable {
     public func reasons(for outcome: Outcome) -> [(reason: String, count: Int)] {
         lock.lock(); defer { lock.unlock() }
         return (reasons[outcome] ?? [:])
+            .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+            .map { (reason: $0.key, count: $0.value) }
+    }
+
+    /// How many rejections for `reason` the player has marked as wrong.
+    public func falseRejectionCount(reason: String) -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return falseRejections[reason] ?? 0
+    }
+
+    /// Every rejection the player marked as wrong, commonest first.
+    public var markedFalseRejections: [(reason: String, count: Int)] {
+        lock.lock(); defer { lock.unlock() }
+        return falseRejections
             .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
             .map { (reason: $0.key, count: $0.value) }
     }
@@ -200,8 +239,11 @@ public final class PipelineMetrics: @unchecked Sendable {
         for entry in reasons(for: .unrecognized) {
             rows.append("4.4.3 alasan,\(quoted(entry.reason)),\(entry.count),,")
         }
+        // `nilai_1` is how many of those rejections the player marked wrong,
+        // so each row carries both halves of what 4.4.4 asks for — the
+        // violations caught, and the legal moves refused — side by side.
         for entry in reasons(for: .rejected) {
-            rows.append("4.4.4 penolakan,\(quoted(entry.reason)),\(entry.count),,")
+            rows.append("4.4.4 penolakan,\(quoted(entry.reason)),\(entry.count),\(falseRejectionCount(reason: entry.reason)),")
         }
         for entry in unknownZones {
             rows.append("4.4.5 zona unknown,\(quoted(entry.cause)),\(entry.count),,")

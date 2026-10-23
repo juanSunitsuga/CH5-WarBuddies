@@ -11,7 +11,13 @@
 	     Sandbox the open panel still appears without this, and the chosen
 	     file then fails to read — a failure that looks like a broken video
 	     rather than a missing entitlement. -->
-	<key>com.apple.security.files.user-selected.read-only</key>
+	<!-- Read-write, not read-only, because the Measurement Report also
+	     *writes*: Export CSV saves the Subbab 4.4 tables wherever the user
+	     picks. Read-only would let the save panel appear and then fail at
+	     the write, which reads as a broken export rather than a missing
+	     entitlement. Read-write is a superset, so the video picker above
+	     keeps working. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
 	<!-- Card art is fetched from cmsassets.rgpub.io. Under the App
 	     Sandbox outgoing connections are denied unless this is set, so

@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import RiftboundVision
+@testable import RiftboundExpertSystem
 
 /// These numbers go in a thesis, so the arithmetic has to be right rather
 /// than roughly right. Percentiles are off by one index more often than any
@@ -114,6 +114,58 @@ struct PipelineMetricsTests {
 
         #expect(metrics.unknownZones.first?.cause == "kartu di tepi meja")
         #expect(metrics.unknownZones.first?.count == 2)
+    }
+
+    /// 4.4.4's second column. The marks are made by hand mid-session, so
+    /// the one thing that must hold is that un-marking a mis-tap takes the
+    /// count back down — and never below zero.
+    @Test("A false-rejection mark can be undone, and never goes negative")
+    func falseRejectionsAreReversible() {
+        let metrics = PipelineMetrics()
+        metrics.recordFalseRejection(reason: "Energy tidak cukup")
+        metrics.recordFalseRejection(reason: "Energy tidak cukup")
+        #expect(metrics.falseRejectionCount(reason: "Energy tidak cukup") == 2)
+
+        metrics.undoFalseRejection(reason: "Energy tidak cukup")
+        #expect(metrics.falseRejectionCount(reason: "Energy tidak cukup") == 1)
+
+        metrics.undoFalseRejection(reason: "Energy tidak cukup")
+        metrics.undoFalseRejection(reason: "Energy tidak cukup")
+        #expect(metrics.falseRejectionCount(reason: "Energy tidak cukup") == 0)
+        // Dropped entirely rather than left as a zero row, so the export
+        // doesn't carry reasons nobody ever marked.
+        #expect(metrics.markedFalseRejections.isEmpty)
+        // Undoing a reason that was never marked must not invent one.
+        metrics.undoFalseRejection(reason: "tidak pernah ditandai")
+        #expect(metrics.falseRejectionCount(reason: "tidak pernah ditandai") == 0)
+    }
+
+    /// Every rejection reason the CSV reports must carry its mark count in
+    /// the same row — that pairing is the whole of 4.4.4.
+    @Test("The CSV pairs each rejection reason with its false-rejection count")
+    func csvPairsRejectionsWithMarks() {
+        let metrics = PipelineMetrics()
+        metrics.record(.rejected, reason: "Energy tidak cukup")
+        metrics.record(.rejected, reason: "Energy tidak cukup")
+        metrics.recordFalseRejection(reason: "Energy tidak cukup")
+
+        let row = metrics.csvReport()
+            .split(separator: "\n")
+            .first { $0.hasPrefix("4.4.4 penolakan") }
+        #expect(row == "4.4.4 penolakan,\"Energy tidak cukup\",2,1,")
+    }
+
+    /// Two rules with the same shape must stay one row each, not merge.
+    @Test("Failure categories drop their associated values but stay distinct")
+    func failureCategoriesGroup() {
+        #expect(
+            LegalityValidator.Failure.insufficientEnergy(required: 3, available: 2).category
+            == LegalityValidator.Failure.insufficientEnergy(required: 9, available: 0).category
+        )
+        #expect(
+            LegalityValidator.Failure.insufficientEnergy(required: 3, available: 2).category
+            != LegalityValidator.Failure.insufficientPower(required: 3, available: 2).category
+        )
     }
 
     @Test("Reset clears everything, for a fresh session")

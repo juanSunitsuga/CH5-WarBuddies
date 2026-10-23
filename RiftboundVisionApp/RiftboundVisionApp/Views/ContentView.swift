@@ -35,6 +35,7 @@ struct ContentView: View {
     /// How wide the camera picture actually draws — see `CameraStageWidthKey`.
     @State private var cameraStageWidth: CGFloat = 0
     @State private var isShowingCardLibrary = false
+    @State private var isShowingMeasurementReport = false
     /// Each `.tourPopover` region's on-screen frame, in `tourCoordinateSpace`
     /// — read out of the preference system once here rather than inside
     /// `TourSpotlightOverlay` itself, since that view has no ancestor
@@ -169,6 +170,18 @@ struct ContentView: View {
                 .toggleStyle(.button)
             }
             ToolbarItem {
+                // The thesis's Subbab 4.4 numbers, which the app measures
+                // as it runs. Its own control rather than an item inside
+                // Help: it reports on the session in progress, so it is
+                // reached mid-run and belongs beside the camera source it
+                // is measuring.
+                Button {
+                    isShowingMeasurementReport = true
+                } label: {
+                    Label("Measurement Report", systemImage: "chart.bar.doc.horizontal")
+                }
+            }
+            ToolbarItem {
                 DiagnosticsMenu(
                     onShowOnboarding: { isShowingOnboarding = true },
                     onShowTour: { startTour() }
@@ -204,6 +217,9 @@ struct ContentView: View {
                 hasStartedTourThisLaunch = true
                 startTour()
             }
+        }
+        .sheet(isPresented: $isShowingMeasurementReport) {
+            MeasurementReportSheet(pipeline: pipeline) { isShowingMeasurementReport = false }
         }
         .sheet(isPresented: $isShowingOnboarding) {
             OnboardingView { isShowingOnboarding = false }

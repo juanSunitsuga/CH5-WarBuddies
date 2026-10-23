@@ -102,6 +102,14 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// `CardDatabase`-backed resolver, same pattern as `resolveLabel`.
     private let resolveDomain: @Sendable (CardDefID) -> Domain?
 
+    /// Where 4.4.5's dropped events are counted.
+    ///
+    /// This is the only place that knows *why* an event was dropped. By the
+    /// time one fails to appear downstream the reason is gone — a card at
+    /// the mat's edge, an uncalibrated seat and a missing Battlefield slot
+    /// all look identical from outside, namely like nothing happened.
+    private let metrics: PipelineMetrics
+
     public init(
         zoneMapper: ZoneMapper,
         playerCalibration: [Player: PlayerID],
@@ -110,8 +118,10 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         temporalDetector: TemporalEventDetector = TemporalEventDetector(),
         resolveLabel: @escaping @Sendable (String) -> CardDefID? = { CardDefID(rawValue: $0) },
         resolveDomain: @escaping @Sendable (CardDefID) -> Domain? = { _ in nil },
-        defaultSeat: Player? = nil
+        defaultSeat: Player? = nil,
+        metrics: PipelineMetrics = PipelineMetrics()
     ) {
+        self.metrics = metrics
         self.zoneMapper = zoneMapper
         self.playerCalibration = playerCalibration
         self.battlefieldCalibration = battlefieldCalibration
@@ -299,11 +309,17 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// callers must treat `nil` as "cannot forward," not as a legal empty
     /// region.
     private func region(for zone: Zone?, battlefieldSlot: Int?, player: Player?) -> TableRegion? {
-        guard let zone else { return nil }
+        guard let zone else {
+            metrics.recordUnknownZone(cause: "Tidak ada zona pada kejadian")
+            return nil
+        }
         // `defaultSeat` covers zones that imply no seat of their own —
         // most importantly the Battlefield, where a played card's brand
         // new track would otherwise carry no seat and be dropped.
-        guard let seat = player ?? defaultSeat, let ownerID = playerCalibration[seat] else { return nil }
+        guard let seat = player ?? defaultSeat, let ownerID = playerCalibration[seat] else {
+            metrics.recordUnknownZone(cause: "Pemilik kartu tidak terkalibrasi")
+            return nil
+        }
 
         // Every calibrated zone now has a `TableZone`, so nothing is
         // dropped for want of a representation. Only `.unknown` — a card
@@ -314,7 +330,10 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         case .base:
             return TableRegion(owner: ownerID, zone: .base)
         case .battlefield:
-            guard let slot = battlefieldSlot, let battlefieldID = battlefieldCalibration[slot] else { return nil }
+            guard let slot = battlefieldSlot, let battlefieldID = battlefieldCalibration[slot] else {
+                metrics.recordUnknownZone(cause: "Battlefield tanpa slot terkalibrasi")
+                return nil
+            }
             return TableRegion(owner: ownerID, zone: .battlefield(battlefieldID))
         case .mainDeck:
             return TableRegion(owner: ownerID, zone: .mainDeck)
@@ -329,6 +348,10 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         case .champion:
             return TableRegion(owner: ownerID, zone: .championZone)
         case .unknown:
+            // The 4.4.5 case proper: the card is on the table but not in
+            // any calibrated zone — at the mat's edge, in a hand held above
+            // it, or outside a calibration aimed slightly wrong.
+            metrics.recordUnknownZone(cause: "Kartu di luar zona terkalibrasi")
             return nil
         }
     }
