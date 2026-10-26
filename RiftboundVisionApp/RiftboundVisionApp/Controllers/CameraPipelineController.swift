@@ -1189,7 +1189,7 @@ final class CameraPipelineController: ObservableObject {
         // folded in with real translation failures: a run made with stage ③
         // switched off should be visible as such in the table, not look
         // like a pipeline that could not understand the table.
-        metrics.record(.unrecognized, reason: "Tahap NLP dimatikan")
+        metrics.record(.unrecognized, reason: PipelineMetrics.Reason.nlpStageOff)
         append(InstructionLogEntry(
             unprocessed: event,
             cardName: cardName(for: event),
@@ -1238,7 +1238,7 @@ final class CameraPipelineController: ObservableObject {
             // note there is nothing more specific to say than that nothing
             // downstream recognized the event — which is itself the finding
             // 4.4.3 reports, so it gets a row rather than being dropped.
-            metrics.record(.unrecognized, reason: note ?? "Tidak ada aksi yang cocok")
+            metrics.record(.unrecognized, reason: note ?? PipelineMetrics.Reason.noMatchingAction)
         }
     }
 

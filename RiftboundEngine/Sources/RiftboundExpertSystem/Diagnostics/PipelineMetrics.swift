@@ -19,11 +19,24 @@ import Foundation
 public final class PipelineMetrics: @unchecked Sendable {
 
     /// The four stages Tabel 4.28 reports, in pipeline order.
+    ///
+    /// English, because the app is in English. The thesis is not, so the
+    /// CSV export writes `indonesian` instead — see `csvReport`.
     public enum Stage: String, CaseIterable, Sendable {
-        case detection    = "Deteksi & pelacakan"
-        case ingestion    = "Ingesti kejadian"
-        case translation  = "Terjemahan aksi"
-        case validation   = "Validasi & state machine"
+        case detection    = "Detection & tracking"
+        case ingestion    = "Event ingestion"
+        case translation  = "Action translation"
+        case validation   = "Validation & state machine"
+
+        /// The heading this stage has in Tabel 4.28.
+        public var indonesian: String {
+            switch self {
+            case .detection:   return "Deteksi & pelacakan"
+            case .ingestion:   return "Ingesti kejadian"
+            case .translation: return "Terjemahan aksi"
+            case .validation:  return "Validasi & state machine"
+            }
+        }
     }
 
     /// How an observed event ended up, for 4.4.3 and 4.4.4.
@@ -219,13 +232,19 @@ public final class PipelineMetrics: @unchecked Sendable {
     /// Decimal points, not commas, even though the prose uses commas:
     /// a comma inside an unquoted CSV field is a column break, and the
     /// thesis convention is already "titik di dalam kode dan tabel hasil".
+    ///
+    /// Indonesian throughout, unlike the app, because this file is pasted
+    /// into an Indonesian thesis. Translated here at the boundary rather
+    /// than recorded in Indonesian: the strings are read on screen far
+    /// more often than they are exported, and a label the developer cannot
+    /// read is worse than one the reader has to be given twice.
     public func csvReport(sessionLabel: String = "") -> String {
         var rows = ["bagian,kunci,n,nilai_1,nilai_2"]
 
         for latency in allLatencies {
             rows.append([
                 "4.4.2 latensi",
-                quoted(latency.stage.rawValue),
+                quoted(latency.stage.indonesian),
                 String(latency.count),
                 String(format: "%.2f", latency.meanMilliseconds),
                 String(format: "%.2f", latency.p95Milliseconds)
@@ -237,16 +256,16 @@ public final class PipelineMetrics: @unchecked Sendable {
             rows.append("4.4.3 kejadian,\(quoted(outcome.rawValue)),\(count(of: outcome)),,")
         }
         for entry in reasons(for: .unrecognized) {
-            rows.append("4.4.3 alasan,\(quoted(entry.reason)),\(entry.count),,")
+            rows.append("4.4.3 alasan,\(quoted(Self.indonesian(for: entry.reason))),\(entry.count),,")
         }
         // `nilai_1` is how many of those rejections the player marked wrong,
         // so each row carries both halves of what 4.4.4 asks for — the
         // violations caught, and the legal moves refused — side by side.
         for entry in reasons(for: .rejected) {
-            rows.append("4.4.4 penolakan,\(quoted(entry.reason)),\(entry.count),\(falseRejectionCount(reason: entry.reason)),")
+            rows.append("4.4.4 penolakan,\(quoted(Self.indonesian(for: entry.reason))),\(entry.count),\(falseRejectionCount(reason: entry.reason)),")
         }
         for entry in unknownZones {
-            rows.append("4.4.5 zona unknown,\(quoted(entry.cause)),\(entry.count),,")
+            rows.append("4.4.5 zona unknown,\(quoted(Self.indonesian(for: entry.cause))),\(entry.count),,")
         }
 
         if !sessionLabel.isEmpty {

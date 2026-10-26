@@ -73,17 +73,17 @@ struct PipelineMetricsTests {
     @Test("Reasons are grouped per outcome and ordered commonest first")
     func reasonsGroupedAndOrdered() {
         let metrics = PipelineMetrics()
-        metrics.record(.unrecognized, reason: "kartu tidak dikenali")
-        metrics.record(.unrecognized, reason: "kartu tidak dikenali")
-        metrics.record(.unrecognized, reason: "jenis kartu tidak ditangani")
-        metrics.record(.rejected, reason: "kartu tidak ada di Hand")
+        metrics.record(.unrecognized, reason: "card not recognized")
+        metrics.record(.unrecognized, reason: "card not recognized")
+        metrics.record(.unrecognized, reason: "card type not handled")
+        metrics.record(.rejected, reason: "Card not in hand")
 
         let unrecognized = metrics.reasons(for: .unrecognized)
-        #expect(unrecognized.first?.reason == "kartu tidak dikenali")
+        #expect(unrecognized.first?.reason == "card not recognized")
         #expect(unrecognized.first?.count == 2)
         #expect(unrecognized.count == 2)
         // A rejection reason must not leak into the unrecognized table.
-        #expect(metrics.reasons(for: .rejected).map(\.reason) == ["kartu tidak ada di Hand"])
+        #expect(metrics.reasons(for: .rejected).map(\.reason) == ["Card not in hand"])
     }
 
     /// 4.4.3's denominator is every observed event, not just those that
@@ -92,8 +92,8 @@ struct PipelineMetricsTests {
     func shareUsesObservedEvents() {
         let metrics = PipelineMetrics()
         for _ in 0..<10 { metrics.recordObservedEvent() }
-        metrics.record(.unrecognized, reason: "kartu tidak dikenali")
-        metrics.record(.unrecognized, reason: "kartu tidak dikenali")
+        metrics.record(.unrecognized, reason: "card not recognized")
+        metrics.record(.unrecognized, reason: "card not recognized")
 
         #expect(metrics.eventCount == 10)
         #expect(metrics.unrecognizedShare == 0.2)
@@ -108,11 +108,11 @@ struct PipelineMetricsTests {
     @Test("Unknown-zone causes are counted and ordered")
     func unknownZoneCauses() {
         let metrics = PipelineMetrics()
-        metrics.recordUnknownZone(cause: "kartu di tepi meja")
-        metrics.recordUnknownZone(cause: "kartu di tepi meja")
-        metrics.recordUnknownZone(cause: "kalibrasi meleset")
+        metrics.recordUnknownZone(cause: "card at the table edge")
+        metrics.recordUnknownZone(cause: "card at the table edge")
+        metrics.recordUnknownZone(cause: "calibration off")
 
-        #expect(metrics.unknownZones.first?.cause == "kartu di tepi meja")
+        #expect(metrics.unknownZones.first?.cause == "card at the table edge")
         #expect(metrics.unknownZones.first?.count == 2)
     }
 
@@ -122,37 +122,101 @@ struct PipelineMetricsTests {
     @Test("A false-rejection mark can be undone, and never goes negative")
     func falseRejectionsAreReversible() {
         let metrics = PipelineMetrics()
-        metrics.recordFalseRejection(reason: "Energy tidak cukup")
-        metrics.recordFalseRejection(reason: "Energy tidak cukup")
-        #expect(metrics.falseRejectionCount(reason: "Energy tidak cukup") == 2)
+        metrics.recordFalseRejection(reason: "Not enough Energy")
+        metrics.recordFalseRejection(reason: "Not enough Energy")
+        #expect(metrics.falseRejectionCount(reason: "Not enough Energy") == 2)
 
-        metrics.undoFalseRejection(reason: "Energy tidak cukup")
-        #expect(metrics.falseRejectionCount(reason: "Energy tidak cukup") == 1)
+        metrics.undoFalseRejection(reason: "Not enough Energy")
+        #expect(metrics.falseRejectionCount(reason: "Not enough Energy") == 1)
 
-        metrics.undoFalseRejection(reason: "Energy tidak cukup")
-        metrics.undoFalseRejection(reason: "Energy tidak cukup")
-        #expect(metrics.falseRejectionCount(reason: "Energy tidak cukup") == 0)
+        metrics.undoFalseRejection(reason: "Not enough Energy")
+        metrics.undoFalseRejection(reason: "Not enough Energy")
+        #expect(metrics.falseRejectionCount(reason: "Not enough Energy") == 0)
         // Dropped entirely rather than left as a zero row, so the export
         // doesn't carry reasons nobody ever marked.
         #expect(metrics.markedFalseRejections.isEmpty)
         // Undoing a reason that was never marked must not invent one.
-        metrics.undoFalseRejection(reason: "tidak pernah ditandai")
-        #expect(metrics.falseRejectionCount(reason: "tidak pernah ditandai") == 0)
+        metrics.undoFalseRejection(reason: "never marked")
+        #expect(metrics.falseRejectionCount(reason: "never marked") == 0)
     }
 
     /// Every rejection reason the CSV reports must carry its mark count in
     /// the same row — that pairing is the whole of 4.4.4.
+    ///
+    /// Also pins the translation boundary: the label goes in in English,
+    /// which is what the app records and shows, and comes out of the export
+    /// in Indonesian, which is what the thesis is written in.
     @Test("The CSV pairs each rejection reason with its false-rejection count")
     func csvPairsRejectionsWithMarks() {
         let metrics = PipelineMetrics()
-        metrics.record(.rejected, reason: "Energy tidak cukup")
-        metrics.record(.rejected, reason: "Energy tidak cukup")
-        metrics.recordFalseRejection(reason: "Energy tidak cukup")
+        metrics.record(.rejected, reason: "Not enough Energy")
+        metrics.record(.rejected, reason: "Not enough Energy")
+        metrics.recordFalseRejection(reason: "Not enough Energy")
 
         let row = metrics.csvReport()
             .split(separator: "\n")
             .first { $0.hasPrefix("4.4.4 penolakan") }
         #expect(row == "4.4.4 penolakan,\"Energy tidak cukup\",2,1,")
+    }
+
+    /// Every stage heading and every fixed label must have an Indonesian
+    /// form, or a row reaches the thesis in the wrong language.
+    ///
+    /// A free-text translator note has no fixed form and passes through —
+    /// that is the documented default, not a miss.
+    @Test("Every fixed label has an Indonesian form for the export")
+    func everyFixedLabelTranslates() {
+        for stage in PipelineMetrics.Stage.allCases {
+            #expect(stage.indonesian != stage.rawValue, "\(stage) has no Indonesian heading")
+        }
+
+        let fixed = [
+            PipelineMetrics.Reason.nlpStageOff,
+            PipelineMetrics.Reason.noMatchingAction,
+            PipelineMetrics.UnknownZoneCause.noZoneOnEvent,
+            PipelineMetrics.UnknownZoneCause.ownerNotCalibrated,
+            PipelineMetrics.UnknownZoneCause.battlefieldSlotNotCalibrated,
+            PipelineMetrics.UnknownZoneCause.outsideCalibratedZones
+        ]
+        for label in fixed {
+            #expect(PipelineMetrics.indonesian(for: label) != label, "\(label) is untranslated")
+        }
+
+        // Every validator failure too. Listed by hand because `Failure`
+        // carries associated values and so has no `allCases` — which is
+        // exactly why this is worth pinning: a new case added to the
+        // validator gets a `category` the compiler demands, and an
+        // Indonesian form nothing would otherwise ask for.
+        let failures: [LegalityValidator.Failure] = [
+            .notPlayersPriority,
+            .unitAlreadyExhausted(ObjectID()),
+            .unitNotFound(ObjectID()),
+            .destinationOccupiedByTwoOtherControllers(BattlefieldID()),
+            .moveOriginsMismatch,
+            .cardNotInHand(ObjectID()),
+            .invalidPlayDestination(.none),
+            .insufficientEnergy(required: 1, available: 0),
+            .insufficientPower(required: 1, available: 0),
+            .exhaustedRuneCountMismatch(required: 1, observed: 0),
+            .reactionRequired,
+            .actionOrReactionRequired,
+            .limitedActionNotAuthorized(.draw(count: 1)),
+            .notActionPhase(.startOfTurn(.awaken)),
+            .illegalMoveDestination(from: .base(PlayerID()), to: .base(PlayerID())),
+            .noRuneOfDomainAvailable(.fury),
+            .gameAlreadyWon(PlayerID()),
+            .notImplemented
+        ]
+        for failure in failures {
+            let category = failure.category
+            #expect(
+                PipelineMetrics.indonesian(for: category) != category,
+                "\(category) has no Indonesian form"
+            )
+        }
+
+        // Unknown text is returned unchanged, deliberately.
+        #expect(PipelineMetrics.indonesian(for: "some translator note") == "some translator note")
     }
 
     /// Two rules with the same shape must stay one row each, not merge.

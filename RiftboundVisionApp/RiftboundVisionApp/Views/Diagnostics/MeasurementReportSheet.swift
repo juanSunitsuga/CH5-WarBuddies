@@ -65,7 +65,7 @@ struct MeasurementReportSheet: View {
             Text("Measurement Report")
                 .riftFont(.heading)
                 .foregroundStyle(RiftboundPalette.regularText)
-            Text("Subbab 4.4 — \(metrics.eventCount) kejadian teramati pada sesi ini.")
+            Text("Section 4.4 — \(metrics.eventCount) table events observed this session.")
                 .riftFont(.body)
                 .foregroundStyle(RiftboundPalette.regularText)
         }
@@ -97,8 +97,8 @@ struct MeasurementReportSheet: View {
     // MARK: - 4.4.2 latency
 
     private var latencySection: some View {
-        section("Tabel 4.28 — Latensi per tahap") {
-            grid(columns: ["Tahap", "n", "Rata-rata (ms)", "P95 (ms)"]) {
+        section("Table 4.28 — Per-stage latency") {
+            grid(columns: ["Stage", "n", "Mean (ms)", "P95 (ms)"]) {
                 ForEach(metrics.allLatencies, id: \.stage) { latency in
                     GridRow {
                         cell(latency.stage.rawValue, leading: true)
@@ -114,7 +114,7 @@ struct MeasurementReportSheet: View {
     // MARK: - 4.4.3 untranslated
 
     private var translationSection: some View {
-        section("4.4.3 — Kejadian yang tidak berhasil diterjemahkan") {
+        section("4.4.3 — Events that failed to translate") {
             VStack(alignment: .leading, spacing: 8) {
                 Text(shareLine)
                     .riftFont(.body)
@@ -122,9 +122,9 @@ struct MeasurementReportSheet: View {
 
                 let rows = metrics.reasons(for: .unrecognized)
                 if rows.isEmpty {
-                    emptyLine("Belum ada kejadian yang gagal diterjemahkan.")
+                    emptyLine("No event has failed to translate yet.")
                 } else {
-                    grid(columns: ["Alasan", "Jumlah"]) {
+                    grid(columns: ["Reason", "Count"]) {
                         ForEach(rows, id: \.reason) { row in
                             GridRow {
                                 cell(row.reason, leading: true)
@@ -139,11 +139,11 @@ struct MeasurementReportSheet: View {
 
     private var shareLine: String {
         guard let share = metrics.unrecognizedShare else {
-            return "Belum ada kejadian teramati."
+            return "No events observed yet."
         }
         let unrecognized = metrics.count(of: .unrecognized)
         return String(
-            format: "%d dari %d kejadian (%.1f%%) tidak menghasilkan aksi. Diterima: %d. Ditolak: %d.",
+            format: "%d of %d events (%.1f%%) produced no action. Accepted: %d. Rejected: %d.",
             unrecognized,
             metrics.eventCount,
             share * 100,
@@ -155,21 +155,21 @@ struct MeasurementReportSheet: View {
     // MARK: - 4.4.4 rejections
 
     private var rejectionSection: some View {
-        section("4.4.4 — Pelanggaran aturan yang tertangkap") {
+        section("4.4.4 — Rule violations caught") {
             let rows = metrics.reasons(for: .rejected)
             if rows.isEmpty {
-                emptyLine("Belum ada aksi yang ditolak validator.")
+                emptyLine("The validator has rejected nothing yet.")
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     // The second column is the half of 4.4.4 no code can
                     // fill in: the validator already believes every
                     // rejection was right. Only the player who made the
                     // move knows it was legal.
-                    Text("Tandai penolakan yang sebenarnya sah — hanya pemain yang tahu.")
+                    Text("Mark a rejection that was actually legal — only the player knows.")
                         .riftFont(.body)
                         .foregroundStyle(RiftboundPalette.regularText)
 
-                    grid(columns: ["Alasan penolakan", "Ditolak", "Salah tolak", ""]) {
+                    grid(columns: ["Rejection reason", "Rejected", "Wrongly", ""]) {
                         ForEach(rows, id: \.reason) { row in
                             GridRow {
                                 cell(row.reason, leading: true)
@@ -203,12 +203,12 @@ struct MeasurementReportSheet: View {
     // MARK: - 4.4.5 unknown zones
 
     private var unknownZoneSection: some View {
-        section("4.4.5 — Kejadian berzona tidak dikenal") {
+        section("4.4.5 — Events with an unknown zone") {
             let rows = metrics.unknownZones
             if rows.isEmpty {
-                emptyLine("Belum ada kartu yang jatuh di luar zona terkalibrasi.")
+                emptyLine("No card has landed outside the calibrated zones yet.")
             } else {
-                grid(columns: ["Penyebab", "Jumlah"]) {
+                grid(columns: ["Cause", "Count"]) {
                     ForEach(rows, id: \.cause) { row in
                         GridRow {
                             cell(row.cause, leading: true)
@@ -223,7 +223,7 @@ struct MeasurementReportSheet: View {
     // MARK: - Export
 
     private var csv: String {
-        metrics.csvReport(sessionLabel: pipeline.videoSourceURL?.lastPathComponent ?? "Kamera langsung")
+        metrics.csvReport(sessionLabel: pipeline.videoSourceURL?.lastPathComponent ?? "Live camera")
     }
 
     /// Writes the report where the user picks.
@@ -245,7 +245,7 @@ struct MeasurementReportSheet: View {
         } catch {
             // Shown rather than swallowed: a silent failure here means
             // sitting down to write the chapter and finding no file.
-            exportError = "Gagal menyimpan: \(error.localizedDescription)"
+            exportError = "Couldn't save: \(error.localizedDescription)"
         }
     }
 

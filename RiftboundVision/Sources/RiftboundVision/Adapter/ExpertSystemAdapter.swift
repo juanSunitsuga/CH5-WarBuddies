@@ -310,14 +310,14 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
     /// region.
     private func region(for zone: Zone?, battlefieldSlot: Int?, player: Player?) -> TableRegion? {
         guard let zone else {
-            metrics.recordUnknownZone(cause: "Tidak ada zona pada kejadian")
+            metrics.recordUnknownZone(cause: PipelineMetrics.UnknownZoneCause.noZoneOnEvent)
             return nil
         }
         // `defaultSeat` covers zones that imply no seat of their own —
         // most importantly the Battlefield, where a played card's brand
         // new track would otherwise carry no seat and be dropped.
         guard let seat = player ?? defaultSeat, let ownerID = playerCalibration[seat] else {
-            metrics.recordUnknownZone(cause: "Pemilik kartu tidak terkalibrasi")
+            metrics.recordUnknownZone(cause: PipelineMetrics.UnknownZoneCause.ownerNotCalibrated)
             return nil
         }
 
@@ -331,7 +331,7 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
             return TableRegion(owner: ownerID, zone: .base)
         case .battlefield:
             guard let slot = battlefieldSlot, let battlefieldID = battlefieldCalibration[slot] else {
-                metrics.recordUnknownZone(cause: "Battlefield tanpa slot terkalibrasi")
+                metrics.recordUnknownZone(cause: PipelineMetrics.UnknownZoneCause.battlefieldSlotNotCalibrated)
                 return nil
             }
             return TableRegion(owner: ownerID, zone: .battlefield(battlefieldID))
@@ -351,7 +351,7 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
             // The 4.4.5 case proper: the card is on the table but not in
             // any calibrated zone — at the mat's edge, in a hand held above
             // it, or outside a calibration aimed slightly wrong.
-            metrics.recordUnknownZone(cause: "Kartu di luar zona terkalibrasi")
+            metrics.recordUnknownZone(cause: PipelineMetrics.UnknownZoneCause.outsideCalibratedZones)
             return nil
         }
     }
