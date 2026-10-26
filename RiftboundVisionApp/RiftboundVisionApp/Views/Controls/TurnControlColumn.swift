@@ -16,6 +16,10 @@ import RiftboundVision
 /// This type owns arrangement and the state the sections share; the
 /// sections themselves are `PhaseIndicatorSection` and `ScoreSection`.
 struct TurnControlColumn: View {
+    /// Needed whole, not as further bindings, because `DebuggerPanel`
+    /// reports on the pipeline rather than on any one value of it — the
+    /// stage toggles, the telemetry and both logs are all its state.
+    @ObservedObject var pipeline: CameraPipelineController
     @Binding var gameState: ManualGameState
     @Binding var isAutoAdvancing: Bool
     @Binding var playerScore: Int
@@ -44,6 +48,23 @@ struct TurnControlColumn: View {
 
                     ScoreSection(playerScore: $playerScore, opponentScore: $opponentScore, isGameRunning: isPipelineRunning)
                         .tourRegion(.score)
+
+                    Divider().overlay(RiftboundPalette.elementStroke.opacity(0.35))
+
+                    // Below the score rather than above the phase pips: it
+                    // is the one control here that is not part of playing a
+                    // game, and a player who never needs it should not have
+                    // to read past it to reach the ones they do.
+                    Toggle(isOn: $pipeline.isDebuggerMode) {
+                        Text("Debugger Mode")
+                            .riftFont(.body)
+                            .foregroundStyle(RiftboundPalette.regularText)
+                    }
+                    .toggleStyle(RiftSwitchToggleStyle())
+
+                    if pipeline.isDebuggerMode {
+                        DebuggerPanel(pipeline: pipeline)
+                    }
                 }
                 .padding(RiftboundLayout.controlColumnInset)
                 .frame(maxWidth: .infinity, alignment: .leading)

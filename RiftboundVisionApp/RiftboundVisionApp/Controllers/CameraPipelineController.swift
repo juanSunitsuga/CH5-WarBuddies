@@ -468,6 +468,53 @@ final class CameraPipelineController: ObservableObject {
     /// a fresh sample.
     let metrics = PipelineMetrics()
 
+    /// Shows the developer surface in the right column: the stage toggles,
+    /// the live telemetry, and the two logs.
+    ///
+    /// Persisted, because whoever turns this on is in the middle of
+    /// debugging something and will relaunch the app several times before
+    /// they are done. A player who never touches it never sees it.
+    // Named in full rather than as `Self`, which a stored property's own
+    // initializer cannot refer to.
+    @Published var isDebuggerMode: Bool = UserDefaults.standard.bool(forKey: CameraPipelineController.debuggerModeKey) {
+        didSet {
+            UserDefaults.standard.set(isDebuggerMode, forKey: Self.debuggerModeKey)
+            // Nothing from before the switch was thrown: the buffer was not
+            // being filled then, so what is left is a stale fragment rather
+            // than history.
+            if !isDebuggerMode { visionTrace = [] }
+        }
+    }
+
+    private static let debuggerModeKey = "riftbound.debuggerMode"
+
+    /// What tracking saw, newest first, and whether each event reached the
+    /// engine.
+    ///
+    /// The `wasForwarded` flag is the point. An event the adapter formed and
+    /// then dropped is invisible everywhere else in the app — it looks
+    /// exactly like the camera seeing nothing — and it is the commonest
+    /// thing to be debugging: a mis-set calibration drops events silently.
+    ///
+    /// Only filled while `isDebuggerMode` is on. This is a per-poll path,
+    /// so an always-on buffer here is the shape of a leak.
+    @Published private(set) var visionTrace: [DebugTraceLine] = []
+
+    /// Deliberately small. This is a window onto what is happening now,
+    /// not a session record — `GameEventLog` is the session record, and
+    /// `PipelineMetrics` is the session's measurements.
+    private static let visionTraceLimit = 80
+
+    private func appendTrace(_ traces: [VisionEventTrace]) {
+        guard !traces.isEmpty else { return }
+        // Newest first, to match `instructions`, so both logs in the panel
+        // read the same direction.
+        visionTrace.insert(contentsOf: traces.reversed().map(DebugTraceLine.init), at: 0)
+        if visionTrace.count > Self.visionTraceLimit {
+            visionTrace.removeLast(visionTrace.count - Self.visionTraceLimit)
+        }
+    }
+
     /// The translator's explanation for the event currently being
     /// processed, if it declined to produce an action. Written from
     /// whatever context `GameEngine.process` runs the translator on and
@@ -1343,12 +1390,13 @@ final class CameraPipelineController: ObservableObject {
             expertSystemAdapter.ingest(detections: detections, frameIndex: expertSystemFrameIndex, timestamp: frame.timestamp)
             metrics.record(.ingestion, seconds: CFAbsoluteTimeGetCurrent() - ingestStarted)
 
-            // The vision-layer trace is still produced by the adapter and
-            // still drainable — it's the tap to reach for when tracking
-            // next needs debugging — but nothing renders it now that the
-            // tracking log is gone, so it's drained and dropped rather than
-            // accumulating behind a view that no longer exists.
-            _ = expertSystemAdapter.drainVisionTrace()
+            // Drained every poll whether or not anyone is looking, because
+            // the adapter's own buffer is what the drain empties — skipping
+            // it while the debugger is off would leave the trace sitting at
+            // its cap, so switching the debugger on mid-game would open
+            // with a screenful of events from minutes ago.
+            let trace = expertSystemAdapter.drainVisionTrace()
+            if isDebuggerMode { appendTrace(trace) }
             // Stacking is resolved here, once, before anything consumes
             // the objects. The detector reports the top card of a stack;
             // working out what's underneath is tracking's job, so the

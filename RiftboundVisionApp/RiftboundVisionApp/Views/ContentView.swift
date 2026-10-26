@@ -357,6 +357,7 @@ struct ContentView: View {
             .onPreferenceChange(CameraStageWidthKey.self) { cameraStageWidth = $0 }
 
             TurnControlColumn(
+                pipeline: pipeline,
                 gameState: $pipeline.gameState,
                 isAutoAdvancing: $pipeline.isAutoDetectingPhase,
                 playerScore: $pipeline.playerScore,
