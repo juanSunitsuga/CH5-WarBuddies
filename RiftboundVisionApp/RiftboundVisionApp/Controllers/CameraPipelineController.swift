@@ -862,6 +862,14 @@ final class CameraPipelineController: ObservableObject {
         runLoop = nil
         isCameraRunning = false
         backgroundImage = nil
+        // Both gates compare against the *previous* source's clock, and the
+        // two clocks are unrelated: the camera stamps frames with host time
+        // (tens of thousands of seconds since boot) while a file stamps them
+        // with presentation time from 0. Left in place, every frame of a
+        // recording fails `frame.timestamp - last >= interval` and the
+        // picture never updates — a file that plays to a blank window.
+        lastPreviewTimestamp = nil
+        lastDetectionTimestamp = nil
     }
 
     /// The camera went away mid-session. The pipeline can't run without
