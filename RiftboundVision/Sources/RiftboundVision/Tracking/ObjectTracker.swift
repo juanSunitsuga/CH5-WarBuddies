@@ -63,7 +63,12 @@ public final class ObjectTracker: @unchecked Sendable {
     /// How many consecutive frames an object may go unseen before it's
     /// dropped and reported as disappeared, rather than treated as
     /// occluded.
-    public let occlusionToleranceFrames: Int
+    ///
+    /// `var` so a measurement run can vary it without rebuilding the
+    /// tracker, which would throw away every track it is holding — the
+    /// comparison would then be between two different sessions rather than
+    /// two settings.
+    public var occlusionToleranceFrames: Int
     /// Same idea, but for objects whose current zone is
     /// `Zone.isPositionallyStable` (Battlefield/Rune Area/Rune Deck) — a
     /// much longer grace period, since a card there genuinely doesn't move
@@ -298,7 +303,9 @@ public final class ObjectTracker: @unchecked Sendable {
     /// next one. The leader must *also* be clear of the runner-up by
     /// `labelSwitchMargin`, so nothing commits while two similar cards are
     /// still neck and neck.
-    private let labelCommitThreshold: Float = 6.0
+    ///
+    /// Public and settable — one of the six measurement parameters.
+    public var labelCommitThreshold: Float = 6.0
 
     /// Records this poll's reading and returns the label currently being
     /// reported for this track.
@@ -406,7 +413,11 @@ public final class ObjectTracker: @unchecked Sendable {
     /// How many card-lengths of travel to tolerate between polls. Slightly
     /// over one, so a card nudged a little further than its own length
     /// still matches, while two cards a clear gap apart never do.
-    private let matchRadiusInCardLengths: CGFloat = 1.2
+    ///
+    /// Public and settable for the same reason as
+    /// `occlusionToleranceFrames`: it is one of the six numbers a
+    /// measurement run varies.
+    public var matchRadiusInCardLengths: CGFloat = 1.2
 
     /// Folds a matched detection into an existing track, whichever pass
     /// matched it. Shared so identity re-association can't drift out of

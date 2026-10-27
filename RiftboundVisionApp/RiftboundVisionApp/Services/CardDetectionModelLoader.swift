@@ -30,7 +30,10 @@ enum CardDetectionModelLoader {
 
     /// A loaded detector, plus why it isn't the real one if it isn't.
     struct Result {
-        let detector: any ObjectDetecting
+        /// `var` so the app can push the measurement tuning into it —
+        /// `ObjectDetecting.applyTuning` is `mutating`, and both detectors
+        /// are structs.
+        var detector: any ObjectDetecting
         /// `nil` on the happy path. Non-`nil` means the trained model
         /// couldn't be loaded and the geometric fallback is in use, which
         /// the app surfaces on screen — see

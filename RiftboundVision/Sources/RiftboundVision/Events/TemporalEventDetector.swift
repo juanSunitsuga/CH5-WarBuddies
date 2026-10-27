@@ -43,7 +43,13 @@ public final class TemporalEventDetector: @unchecked Sendable {
     /// Consecutive frames a candidate zone/rotation must hold before it's
     /// confirmed and reported. Matches the brief's worked example (2
     /// stable frames after the transitional `.unknown` frames).
-    public let confirmationFrames: Int
+    ///
+    /// `var` so a measurement run can vary it in place. Rebuilding this
+    /// detector instead would discard the per-object history every
+    /// confirmation streak is counted in, so the first events after a
+    /// change would be wrong for reasons that have nothing to do with the
+    /// new value.
+    public var confirmationFrames: Int
     /// Rotation is bucketed to the nearest multiple of this many degrees
     /// before comparison — raw per-frame rotation jitter shouldn't cause
     /// spurious `.objectRotated` events. 90° matches Exhaust/Ready, which

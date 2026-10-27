@@ -329,7 +329,7 @@ final class CameraPipelineController: ObservableObject {
     /// "playing a file" state, and tells `openCamera` not to ask for camera
     /// permission — a file is not a camera and needs none.
     @Published private(set) var videoSourceURL: URL?
-    private let loadedDetector = CardDetectionModelLoader.loadDetector()
+    private var loadedDetector = CardDetectionModelLoader.loadDetector()
     private var detector: any ObjectDetecting { loadedDetector.detector }
 
     /// Set when the trained Core ML model couldn't be loaded and the app
@@ -488,6 +488,54 @@ final class CameraPipelineController: ObservableObject {
 
     private static let debuggerModeKey = "riftbound.debuggerMode"
 
+    /// The six detection and tracking numbers a measurement run varies.
+    ///
+    /// Applied on every change rather than on a Start Game boundary, so a
+    /// value can be moved while a recording plays and its effect watched
+    /// in the vision log. The two stages that keep history — the tracker
+    /// and the temporal detector — are tuned in place for that reason; see
+    /// `ExpertSystemAdapter.applyTuning`.
+    @Published var tuning: DetectionTuning = CameraPipelineController.loadTuning() {
+        didSet {
+            guard tuning != oldValue else { return }
+            applyTuning()
+            saveTuning()
+        }
+    }
+
+    private static let tuningKey = "riftbound.detectionTuning"
+
+    /// Persisted as JSON rather than as seven separate defaults keys.
+    ///
+    /// A half-restored set is worse than none: five of the six values from
+    /// the last run plus one default is a seventh setting nobody chose,
+    /// and the numbers only mean anything together.
+    private static func loadTuning() -> DetectionTuning {
+        guard let data = UserDefaults.standard.data(forKey: tuningKey),
+              let stored = try? JSONDecoder().decode(DetectionTuning.self, from: data) else {
+            return .default
+        }
+        return stored
+    }
+
+    private func saveTuning() {
+        guard let data = try? JSONEncoder().encode(tuning) else { return }
+        UserDefaults.standard.set(data, forKey: Self.tuningKey)
+    }
+
+    /// Pushes the current values into the detector and, when one exists,
+    /// the adapter. Called on every edit and once more when the adapter is
+    /// built, since that one is created after this object.
+    private func applyTuning() {
+        loadedDetector.detector.applyTuning(tuning)
+        expertSystemAdapter?.applyTuning(tuning)
+    }
+
+    /// Back to the values the app ships with.
+    func resetTuning() {
+        tuning = .default
+    }
+
     /// What tracking saw, newest first, and whether each event reached the
     /// engine.
     ///
@@ -559,6 +607,10 @@ final class CameraPipelineController: ObservableObject {
             }
         }
         refreshAvailableCameras()
+        // A stored value arrives through the property initializer, which
+        // does not run `didSet`, so the restored tuning would otherwise sit
+        // in the UI without ever reaching the detector.
+        applyTuning()
     }
 
     /// Re-scans for available cameras. Called automatically on
@@ -861,6 +913,9 @@ final class CameraPipelineController: ObservableObject {
             metrics: metrics
         )
         expertSystemAdapter = adapter
+        // The adapter is built here, long after `init`, so the tuning has
+        // to be pushed again — a fresh tracker starts on its own defaults.
+        adapter.applyTuning(tuning)
         expertSystemFrameIndex = 0
         trackedObjects = []
         misplacedCards = []

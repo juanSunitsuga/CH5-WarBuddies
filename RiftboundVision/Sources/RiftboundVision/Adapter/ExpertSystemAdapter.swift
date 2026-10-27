@@ -140,6 +140,25 @@ public final class ExpertSystemAdapter: BoardObserving, @unchecked Sendable {
         self.zoneMapper = zoneMapper
     }
 
+    /// Pushes the four tracking and event-formation parameters into the
+    /// tracker and the temporal detector.
+    ///
+    /// In place, not by rebuilding either of them: the tracker holds every
+    /// live track and the temporal detector holds every confirmation
+    /// streak. Replacing them mid-session would make the next few events
+    /// wrong for reasons unrelated to the new values, which is the one
+    /// thing a measurement run cannot afford.
+    ///
+    /// The other two parameters belong to the detector, which this adapter
+    /// never sees — it is handed detections, not a detector. The app
+    /// applies those itself.
+    public func applyTuning(_ tuning: DetectionTuning) {
+        tracker.matchRadiusInCardLengths = tuning.matchRadiusInCardLengths
+        tracker.occlusionToleranceFrames = tuning.occlusionToleranceFrames
+        tracker.labelCommitThreshold = tuning.labelCommitThreshold
+        temporalDetector.confirmationFrames = tuning.confirmationFrames
+    }
+
     /// Record a card-recognition result for a tracked object. Safe to call
     /// at any point after the object first appears — future events for
     /// this `objectID` will carry the identification; past ones already

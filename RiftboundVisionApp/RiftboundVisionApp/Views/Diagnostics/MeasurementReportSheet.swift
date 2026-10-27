@@ -222,8 +222,13 @@ struct MeasurementReportSheet: View {
 
     // MARK: - Export
 
+    /// The session label carries the six tuning values as well as the
+    /// source. A latency figure without the settings that produced it
+    /// cannot be compared with the next run's, which is the whole reason
+    /// those settings are adjustable.
     private var csv: String {
-        metrics.csvReport(sessionLabel: pipeline.videoSourceURL?.lastPathComponent ?? "Live camera")
+        let source = pipeline.videoSourceURL?.lastPathComponent ?? "Live camera"
+        return metrics.csvReport(sessionLabel: "\(source) — \(pipeline.tuning.summary)")
     }
 
     /// Writes the report where the user picks.

@@ -66,12 +66,20 @@ public protocol ObjectDetecting: Sendable {
     /// focus on the segmented area" means in practice: nothing outside it
     /// is even handed to the underlying detector, let alone tracked.
     func detect(in pixelBuffer: CVPixelBuffer, regionOfInterest: CGRect?) throws -> [Detection]
+
+    /// Applies whichever of the six measurement parameters this detector
+    /// has. Defaulted to doing nothing, so a detector with no thresholds
+    /// of its own — a test double, a recorded-detections stand-in — does
+    /// not have to pretend to have them.
+    mutating func applyTuning(_ tuning: DetectionTuning)
 }
 
 extension ObjectDetecting {
     public func detect(in pixelBuffer: CVPixelBuffer) throws -> [Detection] {
         try detect(in: pixelBuffer, regionOfInterest: nil)
     }
+
+    public mutating func applyTuning(_ tuning: DetectionTuning) {}
 }
 
 /// A deliberately simple, non-ML starting point: Vision's built-in
@@ -93,6 +101,15 @@ public struct VisionRectangleDetector: ObjectDetecting {
     public init(cardAspectRatioRange: ClosedRange<CGFloat> = 1.3...1.6, minimumConfidence: VNConfidence = 0.7) {
         self.cardAspectRatioRange = cardAspectRatioRange
         self.minimumConfidence = minimumConfidence
+    }
+
+    /// Tuned as well as the model detector, even though this is only the
+    /// fallback: a run made while the model failed to load would otherwise
+    /// silently ignore two of the six settings, and look like the settings
+    /// had no effect.
+    public mutating func applyTuning(_ tuning: DetectionTuning) {
+        minimumConfidence = tuning.visionConfidence
+        cardAspectRatioRange = tuning.aspectRatioRange
     }
 
     public func detect(in pixelBuffer: CVPixelBuffer, regionOfInterest: CGRect? = nil) throws -> [Detection] {

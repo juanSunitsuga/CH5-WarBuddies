@@ -75,6 +75,16 @@ public struct CoreMLCardDetector: ObjectDetecting, @unchecked Sendable {
         self.cardAspectRatioRange = cardAspectRatioRange
     }
 
+    /// The two of the six measurement parameters this stage owns.
+    ///
+    /// `nonCardLabels` is left alone: it names classes the model emits
+    /// that are not cards, which is a fact about the model rather than a
+    /// number to sweep.
+    public mutating func applyTuning(_ tuning: DetectionTuning) {
+        minimumConfidence = tuning.visionConfidence
+        cardAspectRatioRange = tuning.aspectRatioRange
+    }
+
     public func detect(in pixelBuffer: CVPixelBuffer, regionOfInterest: CGRect? = nil) throws -> [Detection] {
         let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
         let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))

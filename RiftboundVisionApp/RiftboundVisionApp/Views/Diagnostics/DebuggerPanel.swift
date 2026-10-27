@@ -21,11 +21,105 @@ struct DebuggerPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             stages
+            tuning
             telemetry
             visionLog
             engineLog
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Detection tuning
+
+    /// The six parameters a measurement run varies.
+    ///
+    /// Steppers, not sliders. A slider cannot be set to a stated value, and
+    /// these numbers go into a thesis as "measured at confidence 0.75" —
+    /// a figure nobody can reproduce from a dragged handle. Each step is
+    /// the smallest change worth making for that parameter.
+    private var tuning: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                heading("Detection Tuning")
+                Spacer()
+                Button("Reset") { pipeline.resetTuning() }
+                    .buttonStyle(RiftSecondaryButtonStyle())
+                    .disabled(pipeline.tuning == .default)
+            }
+            Text("Takes effect immediately, mid-run. Persists across launches.")
+                .riftFont(.body)
+                .foregroundStyle(RiftboundPalette.regularText.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+
+            stepper(
+                "Min. confidence",
+                value: Binding(
+                    get: { Double(pipeline.tuning.minimumConfidence) },
+                    set: { pipeline.tuning.minimumConfidence = Float($0) }
+                ),
+                range: 0.05...0.95,
+                step: 0.05,
+                format: "%.2f"
+            )
+            stepper(
+                "Aspect ratio, min",
+                value: Binding(
+                    get: { Double(pipeline.tuning.aspectRatioLowerBound) },
+                    set: { pipeline.tuning.aspectRatioLowerBound = CGFloat($0) }
+                ),
+                range: 1.0...2.5,
+                step: 0.05,
+                format: "%.2f"
+            )
+            stepper(
+                "Aspect ratio, max",
+                value: Binding(
+                    get: { Double(pipeline.tuning.aspectRatioUpperBound) },
+                    set: { pipeline.tuning.aspectRatioUpperBound = CGFloat($0) }
+                ),
+                range: 1.0...3.0,
+                step: 0.05,
+                format: "%.2f"
+            )
+            stepper(
+                "Match radius (card lengths)",
+                value: Binding(
+                    get: { Double(pipeline.tuning.matchRadiusInCardLengths) },
+                    set: { pipeline.tuning.matchRadiusInCardLengths = CGFloat($0) }
+                ),
+                range: 0.2...4.0,
+                step: 0.1,
+                format: "%.1f"
+            )
+            intStepper(
+                "Occlusion tolerance (polls)",
+                value: Binding(
+                    get: { pipeline.tuning.occlusionToleranceFrames },
+                    set: { pipeline.tuning.occlusionToleranceFrames = $0 }
+                ),
+                range: 1...120
+            )
+            stepper(
+                "Label commit threshold",
+                value: Binding(
+                    get: { Double(pipeline.tuning.labelCommitThreshold) },
+                    set: { pipeline.tuning.labelCommitThreshold = Float($0) }
+                ),
+                // Below the fixed 3.0 `labelSwitchMargin` nothing can ever
+                // commit, so the range starts there rather than at zero.
+                range: 3.0...30.0,
+                step: 0.5,
+                format: "%.1f"
+            )
+            intStepper(
+                "Confirmation frames",
+                value: Binding(
+                    get: { pipeline.tuning.confirmationFrames },
+                    set: { pipeline.tuning.confirmationFrames = $0 }
+                ),
+                range: 1...20
+            )
+        }
     }
 
     // MARK: - Stage toggles
@@ -184,6 +278,54 @@ struct DebuggerPanel: View {
                 .monospacedDigit()
                 .foregroundStyle(RiftboundPalette.regularText)
         }
+    }
+
+    /// A labelled stepper with the value shown, clamped to `range`.
+    ///
+    /// Clamped here rather than relying on `Stepper`'s own bounds, because
+    /// a restored value from an older build could already be outside them,
+    /// and a stepper whose value sits outside its range disables both
+    /// arrows — leaving the parameter stuck with no way back.
+    private func stepper(
+        _ label: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double,
+        format: String
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .riftFont(.body)
+                .foregroundStyle(RiftboundPalette.regularText.opacity(0.8))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Text(String(format: format, value.wrappedValue))
+                .riftFont(.body)
+                .monospacedDigit()
+                .foregroundStyle(RiftboundPalette.regularText)
+            Stepper("") {
+                value.wrappedValue = min(range.upperBound, value.wrappedValue + step)
+            } onDecrement: {
+                value.wrappedValue = max(range.lowerBound, value.wrappedValue - step)
+            }
+            .labelsHidden()
+        }
+    }
+
+    private func intStepper(_ label: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
+        stepper(
+            label,
+            value: Binding(
+                get: { Double(value.wrappedValue) },
+                // Rounded, not truncated: the double round-trip can leave
+                // 14.999999 where 15 was meant, and truncation would walk
+                // the value downward one press at a time.
+                set: { value.wrappedValue = Int($0.rounded()) }
+            ),
+            range: Double(range.lowerBound)...Double(range.upperBound),
+            step: 1,
+            format: "%.0f"
+        )
     }
 
     private func empty(_ text: String) -> some View {
