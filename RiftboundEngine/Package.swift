@@ -16,6 +16,12 @@ let package = Package(
     targets: [
         .target(
             name: "RiftboundExpertSystem",
+            resources: [
+                // The knowledge base. Rules as data is the whole point of
+                // `RuleBase`/`RuleEngine`: shipped as a resource so a rule
+                // can be corrected without recompiling the engine.
+                .process("Resources/RuleBase.json")
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]

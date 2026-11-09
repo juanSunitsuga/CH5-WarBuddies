@@ -1,0 +1,242 @@
+{
+  "version": "1.0",
+
+  "_readme": [
+    "The knowledge base. Riftbound's legality rules as data, read by RuleEngine.",
+    "Editing a rule here needs no Swift change and no recompilation of the engine.",
+    "",
+    "Order is precedence: the first rule that applies and is not satisfied decides",
+    "the verdict. 633 is first because a finished game ends every other question,",
+    "and a cost check only makes sense after the card is known to be in hand.",
+    "",
+    "A rule names facts, never the board. The facts available are derived in",
+    "RuleFacts.swift: gameWon, phase, phaseStep, turnState, hasPriority,",
+    "isTurnPlayer, cardInHand, cardType, keywords, destinationKind, energyCost,",
+    "availableEnergy, powerCost, availablePower, observedRuneCount,",
+    "otherControllersAtDestination, moveViolation, runeOfDomainAvailable,",
+    "isOwnRuneExhaust, limitedActionAuthorized.",
+    "",
+    "Operators: always, isTrue, present, equals, contains, atLeast, lessThan,",
+    "equalsNumber, all, any, not. A number on the right of a comparison is a",
+    "constant; a string is another fact."
+  ],
+
+  "rules": [
+    {
+      "id": "633",
+      "note": "A player already won — the game ended immediately, so nothing after it is legal however plausible it looks.",
+      "appliesTo": ["any"],
+      "require": { "not": { "isTrue": "gameWon" } },
+      "failure": { "kind": "gameAlreadyWon" }
+    },
+    {
+      "id": "516.1/140.1.a",
+      "note": "Cards are played and units moved during the Action Phase. Awaken, Beginning, Channel and Draw are fixed and automatic (515) and grant no window to act in, so acting during them is out of structure, not merely early. A Showdown is inside the Action Phase, so this does not block Reactions during one.",
+      "appliesTo": ["play", "standardMove", "endTurn"],
+      "require": { "equals": ["phase", "action"] },
+      "failure": { "kind": "notActionPhase" }
+    },
+    {
+      "id": "140.1.b",
+      "note": "No Standard Move during a Closed State or a Showdown — both of which neutralOpen excludes in one check. This is why a Showdown is a real pause: units cannot keep moving into it.",
+      "appliesTo": ["standardMove"],
+      "require": { "equals": ["turnState", "neutralOpen"] },
+      "failure": { "kind": "notPlayersPriority" }
+    },
+    {
+      "id": "516.2.b/512.1.a",
+      "note": "Playing, Moving, Passing and activating a Rune's ability are Discretionary Actions — legal only with Priority.",
+      "appliesTo": ["play", "standardMove", "pass", "recycleRune"],
+      "require": { "isTrue": "hasPriority" },
+      "failure": { "kind": "notPlayersPriority" }
+    },
+    {
+      "id": "516.6",
+      "note": "Ending the Action Phase is the Turn Player's to declare.",
+      "appliesTo": ["endTurn"],
+      "require": { "isTrue": "isTurnPlayer" },
+      "failure": { "kind": "notPlayersPriority" }
+    },
+    {
+      "id": "157.2/577/589.1",
+      "note": "A Rune's [T]: Add [1] is its own Activated Ability, so exhausting your own Runes is discretionary and needs Priority rather than authorization. Priority is deliberately the only gate, wider than 589.1.a's Neutral Open State: costs are paid during the process of playing a card (560-561), including a Reaction into a Chain, so restricting rune payment to Neutral Open would make those unplayable.",
+      "appliesTo": ["exhaust"],
+      "when": { "isTrue": "isOwnRuneExhaust" },
+      "require": { "isTrue": "hasPriority" },
+      "failure": { "kind": "notPlayersPriority" }
+    },
+    {
+      "id": "555.1/558",
+      "note": "The card must actually be in the proposing player's Hand — otherwise it has already been played, or the observed event misidentified which card moved.",
+      "appliesTo": ["play"],
+      "require": { "isTrue": "cardInHand" },
+      "failure": { "kind": "cardNotInHand" }
+    },
+    {
+      "id": "509.1.a",
+      "note": "The turn is Closed — a Chain exists — so only a Reaction-tagged card (725) may respond to the window.",
+      "appliesTo": ["play"],
+      "when": {
+        "any": [
+          { "equals": ["turnState", "neutralClosed"] },
+          { "equals": ["turnState", "showdownClosed"] }
+        ]
+      },
+      "require": { "contains": ["keywords", "reaction"] },
+      "failure": { "kind": "reactionRequired" }
+    },
+    {
+      "id": "508.1.a",
+      "note": "A Showdown is in progress with no Chain yet, so only an Action (718) or Reaction (725) may open its Chain.",
+      "appliesTo": ["play"],
+      "when": { "equals": ["turnState", "showdownOpen"] },
+      "require": {
+        "any": [
+          { "contains": ["keywords", "action"] },
+          { "contains": ["keywords", "reaction"] }
+        ]
+      },
+      "failure": { "kind": "actionOrReactionRequired" }
+    },
+    {
+      "id": "559.2",
+      "note": "A Unit must be given a real board Location to enter. 'none' is only valid for Spells and abilities, which have no board form.",
+      "appliesTo": ["play"],
+      "require": {
+        "not": {
+          "all": [
+            { "equals": ["cardType", "unit"] },
+            { "equals": ["destinationKind", "none"] }
+          ]
+        }
+      },
+      "failure": { "kind": "invalidPlayDestination" }
+    },
+    {
+      "id": "144.2",
+      "note": "Gear always enters at the player's Base, never a Battlefield. The applier corrects the Location regardless, but a Battlefield destination for Gear signals the proposer misread the observed event, so reject rather than silently reinterpret it.",
+      "appliesTo": ["play"],
+      "require": {
+        "not": {
+          "all": [
+            { "equals": ["cardType", "gear"] },
+            { "equals": ["destinationKind", "battlefield"] }
+          ]
+        }
+      },
+      "failure": { "kind": "invalidPlayDestination" }
+    },
+    {
+      "id": "140.1.c",
+      "note": "A named unit has to exist on the board. Checked in the order the units were proposed, so a mixed list reports the first thing wrong.",
+      "appliesTo": ["standardMove"],
+      "require": { "not": { "equals": ["moveViolation", "missingUnit"] } },
+      "failure": { "kind": "unitNotFound" }
+    },
+    {
+      "id": "140.2",
+      "note": "Exhausting the unit is the Move's cost, so an already-Exhausted unit cannot pay it.",
+      "appliesTo": ["standardMove"],
+      "require": { "not": { "equals": ["moveViolation", "exhaustedUnit"] } },
+      "failure": { "kind": "unitAlreadyExhausted" }
+    },
+    {
+      "id": "140.4",
+      "note": "The Origin to Destination pair must appear in moveDestinations below.",
+      "appliesTo": ["standardMove"],
+      "require": { "not": { "equals": ["moveViolation", "illegalDestination"] } },
+      "failure": { "kind": "illegalMoveDestination" }
+    },
+    {
+      "id": "140.4.a.1/610.2.a/623.2",
+      "note": "A Battlefield already occupied by units from two other players is an invalid destination, for a Move and for a Play alike.",
+      "appliesTo": ["play", "standardMove"],
+      "when": { "equals": ["destinationKind", "battlefield"] },
+      "require": { "lessThan": ["otherControllersAtDestination", 2] },
+      "failure": { "kind": "destinationOccupiedByTwoOtherControllers" }
+    },
+    {
+      "id": "560-561",
+      "note": "The card's Energy cost must be payable from the player's Rune Pool.",
+      "appliesTo": ["play"],
+      "require": { "atLeast": ["availableEnergy", "energyCost"] },
+      "failure": {
+        "kind": "insufficientEnergy",
+        "required": "energyCost",
+        "available": "availableEnergy"
+      }
+    },
+    {
+      "id": "560-561/130.3",
+      "note": "The Power cost must be payable by pool entries matching the card's eligible Domains. Non-matching entries are real, spendable Power for some other card, so they do not count toward this.",
+      "appliesTo": ["play"],
+      "require": { "atLeast": ["availablePower", "powerCost"] },
+      "failure": {
+        "kind": "insufficientPower",
+        "required": "powerCost",
+        "available": "availablePower"
+      }
+    },
+    {
+      "id": "130.2",
+      "note": "Energy is paid by Exhausting Runes, so a card costing N should correspond to exactly N Runes going from Ready to Exhausted. Only checked when the proposer supplied an observation — there is nothing to corroborate otherwise.",
+      "appliesTo": ["play"],
+      "when": { "present": "observedRuneCount" },
+      "require": { "equalsNumber": ["observedRuneCount", "energyCost"] },
+      "failure": {
+        "kind": "exhaustedRuneCountMismatch",
+        "required": "energyCost",
+        "observed": "observedRuneCount"
+      }
+    },
+    {
+      "id": "594.3",
+      "note": "A Recycle used as a cost has to be completable: with no Rune of this Domain in the Rune Area to send back to the Rune Deck, the Power it would produce cannot be paid for.",
+      "appliesTo": ["recycleRune"],
+      "require": { "isTrue": "runeOfDomainAvailable" },
+      "failure": { "kind": "noRuneOfDomainAvailable" }
+    },
+    {
+      "id": "589.2",
+      "note": "Limited Actions are never player-initiated at will — each is legal only if a rule or effect already authorized it. The classic case: the camera observed a player draw a card whose 'when I enter play, draw a card' trigger has not resolved yet.",
+      "appliesTo": ["limitedAction"],
+      "require": { "isTrue": "limitedActionAuthorized" },
+      "failure": { "kind": "limitedActionNotAuthorized" }
+    },
+    {
+      "id": "592",
+      "note": "Exhausting anything that is not your own Rune stays a Limited Action — an opponent's Unit does not exhaust because you decided so.",
+      "appliesTo": ["exhaust"],
+      "when": { "not": { "isTrue": "isOwnRuneExhaust" } },
+      "require": { "isTrue": "limitedActionAuthorized" },
+      "failure": { "kind": "limitedActionNotAuthorized" }
+    },
+    {
+      "id": "not-modeled",
+      "note": "Activating a card ability, Hiding and Inviting are not modeled yet. Stated as a rule that can never be satisfied, so an unsupported action is rejected by the knowledge base rather than by a gap in the engine.",
+      "appliesTo": ["unsupported"],
+      "require": { "always": false },
+      "failure": { "kind": "notImplemented" }
+    }
+  ],
+
+  "moveDestinations": [
+    {
+      "id": "140.4.a",
+      "from": "base",
+      "to": "battlefield"
+    },
+    {
+      "id": "140.4.b",
+      "from": "battlefield",
+      "to": "base"
+    },
+    {
+      "id": "140.4.c.1",
+      "from": "battlefield",
+      "to": "battlefield",
+      "requiresKeyword": "ganking",
+      "distinct": true
+    }
+  ]
+}
