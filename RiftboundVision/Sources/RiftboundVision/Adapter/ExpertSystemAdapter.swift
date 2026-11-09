@@ -1,6 +1,7 @@
 import RiftboundExpertSystem
 import CoreGraphics
 import Foundation
+import RiftboundDetection
 
 /// The single seam this layer talks to the Expert System through. Feed it
 /// raw per-frame `Detection`s via `ingest(detections:frameIndex:timestamp:)`;

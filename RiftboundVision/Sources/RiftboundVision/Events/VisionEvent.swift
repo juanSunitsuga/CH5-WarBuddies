@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import RiftboundDetection
 
 /// The closed set of *physical* events this layer detects. Deliberately
 /// does NOT include semantic game actions (PlayCard, DrawCard,

@@ -1,5 +1,6 @@
 import SwiftUI
 import RiftboundVision
+import RiftboundDetection
 import RiftboundExpertSystem
 
 /// What the pipeline is actually doing, in the right column, behind the

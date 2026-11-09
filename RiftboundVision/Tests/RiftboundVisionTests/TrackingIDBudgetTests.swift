@@ -1,6 +1,7 @@
 import Testing
 import CoreGraphics
 @testable import RiftboundVision
+import RiftboundDetection
 
 /// Observed on a real table: tracking IDs reached roughly 1,400 while only
 /// a handful of cards were in play. Two causes, both pinned here.

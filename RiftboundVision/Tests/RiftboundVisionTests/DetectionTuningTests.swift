@@ -2,6 +2,7 @@ import Testing
 import CoreGraphics
 import Foundation
 @testable import RiftboundVision
+import RiftboundDetection
 
 /// The tuning's one piece of real logic is the aspect range, and getting it
 /// wrong traps at runtime rather than returning something wrong — the two

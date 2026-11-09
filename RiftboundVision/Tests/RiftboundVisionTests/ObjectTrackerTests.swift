@@ -1,6 +1,7 @@
 import Testing
 import CoreGraphics
 @testable import RiftboundVision
+import RiftboundDetection
 
 private func card(at point: CGPoint, rotation: CGFloat = 0) -> Detection {
     Detection(type: .card, center: point, boundingBox: CGRect(x: point.x - 10, y: point.y - 15, width: 20, height: 30), rotation: rotation, confidence: 0.95)

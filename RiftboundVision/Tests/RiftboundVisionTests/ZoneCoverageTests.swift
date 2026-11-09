@@ -2,6 +2,7 @@ import Testing
 import CoreGraphics
 import RiftboundExpertSystem
 @testable import RiftboundVision
+import RiftboundDetection
 
 /// Six of the mat's regions — Main Deck, Rune Deck, Rune Area, Trash,
 /// Legend and Champion — had no `TableRegion` representation, so a card

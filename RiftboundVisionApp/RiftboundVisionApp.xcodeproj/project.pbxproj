@@ -11,6 +11,7 @@
 		17EEFEABA0B94E61BA799EE9 /* master_yi.json in Resources */ = {isa = PBXBuildFile; fileRef = 4BAA057A479749368EAEF496 /* master_yi.json */; };
 		1DE850A028A146EF8CD2965A /* garen.json in Resources */ = {isa = PBXBuildFile; fileRef = 9840E86F98974947AB667FE5 /* garen.json */; };
 		28BBE6A41DF542389F12D127 /* RiftboundVision in Frameworks */ = {isa = PBXBuildFile; productRef = BAF983D8D87248D98042BA4D /* RiftboundVision */; };
+		A1D7C3E90B5F41D2A6E80C14 /* RiftboundDetection in Frameworks */ = {isa = PBXBuildFile; productRef = B2E8D4FA1C6052E3B7F91D25 /* RiftboundDetection */; };
 		40EB822647F14E35A612999A /* annie.json in Resources */ = {isa = PBXBuildFile; fileRef = 40BF4C5F514846A583323984 /* annie.json */; };
 		71EB87BDA66944C493D04B22 /* best-2.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = C80542A83A3C4765A9F7868D /* best-2.mlpackage */; };
 		AEAAA284B54A4B9493BD0940 /* lux.json in Resources */ = {isa = PBXBuildFile; fileRef = 27536C6BCCE545FA95F26D33 /* lux.json */; };
@@ -48,6 +49,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				28BBE6A41DF542389F12D127 /* RiftboundVision in Frameworks */,
+				A1D7C3E90B5F41D2A6E80C14 /* RiftboundDetection in Frameworks */,
 				E16FF14ECC8F4448823BFD1F /* RiftboundExpertSystem in Frameworks */,
 				E9DDFFDCB8224BC3BC9ED19C /* RiftboundTextProcessing in Frameworks */,
 			);
@@ -148,6 +150,7 @@
 			name = RiftboundVisionApp;
 			packageProductDependencies = (
 				BAF983D8D87248D98042BA4D /* RiftboundVision */,
+				B2E8D4FA1C6052E3B7F91D25 /* RiftboundDetection */,
 				1A78B4275C9F40C0A74AFCE8 /* RiftboundExpertSystem */,
 				C060F6247F344B33BA6FE317 /* RiftboundTextProcessing */,
 			);
@@ -468,6 +471,10 @@
 		BAF983D8D87248D98042BA4D /* RiftboundVision */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = RiftboundVision;
+		};
+		B2E8D4FA1C6052E3B7F91D25 /* RiftboundDetection */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RiftboundDetection;
 		};
 		C060F6247F344B33BA6FE317 /* RiftboundTextProcessing */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -1,6 +1,7 @@
 import Testing
 import CoreGraphics
 @testable import RiftboundVision
+import RiftboundDetection
 
 /// A card in the Trash is out of play. Following it costs a tracking slot
 /// for the rest of the game, and — worse — a pile the detector re-detects

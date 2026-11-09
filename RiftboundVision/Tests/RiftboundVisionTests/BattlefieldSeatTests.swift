@@ -2,6 +2,7 @@ import Testing
 import CoreGraphics
 import RiftboundExpertSystem
 @testable import RiftboundVision
+import RiftboundDetection
 
 /// A Battlefield is deliberately unowned (rule 181 — Control is contested,
 /// not a property of the printed region), so both `BoardZone.owner` and

@@ -19,9 +19,15 @@ saw and whether it was legal.
                                 │ CapturedFrame (CVPixelBuffer + timestamp)
                                 ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│                          RiftboundVision                             │
+│                         RiftboundDetection                           │
 ├──────────────────────────────────────────────────────────────────────┤
 │  ① CoreMLCardDetector    YOLO11n, 38 classes → [Detection]           │
+└───────────────────────────────┬──────────────────────────────────────┘
+                                │ [Detection] (no identity, no zones)
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                          RiftboundVision                             │
+├──────────────────────────────────────────────────────────────────────┤
 │  ② ObjectTracker         stable IDs across frames                    │
 │     ZoneMapper           centroid → calibrated playmat zone          │
 │     TemporalEventDetector  debounce → [VisionEvent]                  │
@@ -55,12 +61,13 @@ saw and whether it was legal.
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-Four Swift packages, each independently buildable and tested:
+Four Swift packages, each independently buildable and tested. `RiftboundVision` ships two modules, one per pipeline layer:
 
 | Package | What it is |
 |---|---|
 | **RiftboundEngine** (`RiftboundExpertSystem`) | Pure rules engine — legality, the Chain, Showdowns, Cleanup, turn structure. No UI, no camera, no ML. The source of truth for "is this move legal." |
-| **RiftboundVision** | Camera capture, YOLO detection, object tracking, playmat calibration, card database. A library with no app bundle of its own. |
+| **RiftboundVision** (`RiftboundDetection`) | Layer ①: camera capture and YOLO detection. Its own module, depending on nothing, so the boundary with layer ② is a build error rather than a convention — it holds no zone, no card identity and no game state. |
+| **RiftboundVision** (`RiftboundVision`) | Layers ② and up: object tracking, zone mapping, event debouncing, playmat calibration, card database. A library with no app bundle of its own. |
 | **RiftboundTextProcessing** | Card text → game action. SwiftData cache over a SQLite card index, with on-device Foundation Models for cards the index doesn't know. |
 | **RiftboundVisionApp** | The runnable macOS app — camera picker, calibration, live overlays, card details, score tracking, and the instruction bar. Its design notes live in `RiftboundVisionApp/design.md` — a local, gitignored doc like `CLAUDE.md`. |
 
@@ -68,7 +75,10 @@ Dependencies point inward; the engine depends on nothing:
 
 ```text
 RiftboundVisionApp ──▶ RiftboundVision ──────▶ RiftboundEngine
-        │                                             ▲
+        │                      │                      ▲
+        │                      ▼                      │
+        │              RiftboundDetection             │
+        │              (depends on nothing)           │
         └──────▶ RiftboundTextProcessing ─────────────┘
 ```
 
@@ -415,8 +425,13 @@ Challenge 5/
 │       ├── architecture.md
 │       └── rules/          core-rules.md, how-to-play.md
 ├── RiftboundVision/
+│   ├── Sources/RiftboundDetection/
+│   │   ├── Camera/         CameraCapturing, AVFoundationCameraCapture,
+│   │   │                   VideoFileCapture
+│   │   ├── Detection/      CoreMLCardDetector, ObjectDetector,
+│   │   │                   Detection, ObjectType
+│   │   └── Tuning/         DetectionTuning
 │   └── Sources/RiftboundVision/
-│       ├── Detection/      CoreMLCardDetector, ObjectDetector
 │       ├── Tracking/       ObjectTracker, TrackedObject
 │       ├── Geometry/       BoardZone, ZoneMapper
 │       ├── Events/         VisionEvent, TemporalEventDetector

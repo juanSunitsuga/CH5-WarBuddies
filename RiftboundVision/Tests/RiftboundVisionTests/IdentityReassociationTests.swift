@@ -1,6 +1,7 @@
 import Testing
 import CoreGraphics
 @testable import RiftboundVision
+import RiftboundDetection
 
 /// Playing a card physically means picking it up, carrying it (hidden by
 /// your hand), and setting it down somewhere else — which moves it far

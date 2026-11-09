@@ -2,6 +2,7 @@ import Testing
 import CoreGraphics
 import Foundation
 @testable import RiftboundVision
+import RiftboundDetection
 
 private func square(_ minX: CGFloat, _ minY: CGFloat, _ size: CGFloat = 50) -> [CGPoint] {
     [CGPoint(x: minX, y: minY), CGPoint(x: minX + size, y: minY), CGPoint(x: minX + size, y: minY + size), CGPoint(x: minX, y: minY + size)]

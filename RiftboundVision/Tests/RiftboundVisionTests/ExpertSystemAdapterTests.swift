@@ -2,6 +2,7 @@ import Testing
 import CoreGraphics
 @testable import RiftboundVision
 import RiftboundExpertSystem
+import RiftboundDetection
 
 struct ExpertSystemAdapterTests {
 

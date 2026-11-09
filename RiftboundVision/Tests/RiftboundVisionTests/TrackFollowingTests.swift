@@ -1,6 +1,7 @@
 import Testing
 import CoreGraphics
 @testable import RiftboundVision
+import RiftboundDetection
 
 /// Following a card once it has been identified — the half of tracking that
 /// only becomes possible after `ObjectTracker` commits an identity.

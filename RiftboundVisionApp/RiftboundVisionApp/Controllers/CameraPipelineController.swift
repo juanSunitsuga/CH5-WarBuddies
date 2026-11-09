@@ -3,6 +3,7 @@ import SwiftData
 import CoreImage
 import AVFoundation
 import RiftboundVision
+import RiftboundDetection
 import RiftboundExpertSystem
 import RiftboundTextProcessing
 

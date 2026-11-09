@@ -1,5 +1,6 @@
 import CoreML
 import RiftboundVision
+import RiftboundDetection
 
 /// Loads the bundled trained card-detection model
 /// (`Resources/CardDetectionModel/best-4.mlpackage` — Ultralytics YOLO11n,

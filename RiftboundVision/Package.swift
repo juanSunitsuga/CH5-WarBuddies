@@ -7,12 +7,18 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        // A library, not an app — the runnable macOS app shell (camera
-        // permission, Info.plist, app icon) lives in the sibling
-        // RiftboundVisionApp.xcodeproj, which depends on this package.
-        // This target stays a pure library of tracking/event/adapter
-        // logic so it's usable from a real Xcode app target, testable on
-        // its own, and never needs its own bundle identity.
+        // Layer ①: frame capture and per-card detection.
+        //
+        // A separate product because it is a separate *layer*, and the app
+        // links both — see the target below for why the split exists at
+        // all.
+        .library(name: "RiftboundDetection", targets: ["RiftboundDetection"]),
+        // Layers ② and up. A library, not an app — the runnable macOS app
+        // shell (camera permission, Info.plist, app icon) lives in the
+        // sibling RiftboundVisionApp.xcodeproj, which depends on this
+        // package. This target stays a pure library of tracking/event/
+        // adapter logic so it's usable from a real Xcode app target,
+        // testable on its own, and never needs its own bundle identity.
         .library(name: "RiftboundVision", targets: ["RiftboundVision"])
     ],
     dependencies: [
@@ -29,9 +35,33 @@ let package = Package(
         .package(path: "../RiftboundTextProcessing")
     ],
     targets: [
+        // MARK: - Layer ①: Detection
+        //
+        // Its own target so the boundary between layer ① and layer ② is
+        // enforced by the compiler rather than by discipline. This target
+        // lists no dependencies, so `import RiftboundVision` inside it
+        // fails to build — the same thing that keeps `RiftboundEngine`
+        // from reaching into Vision. Before the split both layers shared
+        // one module, so nothing stopped the detector from reading tracking
+        // state, and the claim that the layers were separate rested on
+        // nobody having tried.
+        //
+        // Deliberately holds no Riftbound concept at all: no zones, no
+        // card identity, no game state. It answers "where are the
+        // card-shaped things in this frame," and `RiftboundVision` decides
+        // what they mean.
+        .target(
+            name: "RiftboundDetection",
+            swiftSettings: [
+                .swiftLanguageMode(.v6)
+            ]
+        ),
+
+        // MARK: - Layers ② and up
         .target(
             name: "RiftboundVision",
             dependencies: [
+                "RiftboundDetection",
                 .product(name: "RiftboundExpertSystem", package: "RiftboundEngine")
             ],
             resources: [
@@ -69,6 +99,7 @@ let package = Package(
             name: "RiftboundVisionTests",
             dependencies: [
                 "RiftboundVision",
+                "RiftboundDetection",
                 .product(name: "RiftboundExpertSystem", package: "RiftboundEngine"),
                 .product(name: "RiftboundTextProcessing", package: "RiftboundTextProcessing")
             ],

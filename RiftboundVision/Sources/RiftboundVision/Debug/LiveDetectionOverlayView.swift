@@ -1,4 +1,5 @@
 import SwiftUI
+import RiftboundDetection
 
 /// Draws a colored bracket + label for every current detection — the
 /// live "what does the detector see right now" overlay. Deliberately

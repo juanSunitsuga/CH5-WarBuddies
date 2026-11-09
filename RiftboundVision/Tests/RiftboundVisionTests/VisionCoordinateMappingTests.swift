@@ -1,6 +1,7 @@
 import Testing
 import CoreGraphics
 @testable import RiftboundVision
+@testable import RiftboundDetection
 
 /// Vision reports observations normalized to the request's
 /// `regionOfInterest`, not to the whole image. Multiplying such a box by

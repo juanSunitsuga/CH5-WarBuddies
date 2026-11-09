@@ -3,6 +3,7 @@ import CoreGraphics
 import Foundation
 @testable import RiftboundVision
 import RiftboundExpertSystem
+import RiftboundDetection
 
 /// The app got slower the longer a game ran. These pin the collections that
 /// caused it — ones that only ever grew, so nothing was wrong on the first

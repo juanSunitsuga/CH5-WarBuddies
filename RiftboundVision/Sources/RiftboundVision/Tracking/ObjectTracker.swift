@@ -1,28 +1,6 @@
 import CoreGraphics
 import Foundation
-
-/// One frame's raw output from the detection layer — no identity yet,
-/// that's what `ObjectTracker` assigns. Deliberately excludes exact card
-/// identity (see `TrackedObject`'s doc comment).
-public struct Detection: Sendable {
-    public let type: ObjectType
-    public let center: CGPoint
-    public let boundingBox: CGRect
-    public let rotation: CGFloat
-    public let confidence: Float
-    /// See `TrackedObject.recognizedLabel` — carried through unchanged by
-    /// the tracker onto whichever track this detection matches.
-    public let recognizedLabel: String?
-
-    public init(type: ObjectType, center: CGPoint, boundingBox: CGRect, rotation: CGFloat, confidence: Float, recognizedLabel: String? = nil) {
-        self.type = type
-        self.center = center
-        self.boundingBox = boundingBox
-        self.rotation = rotation
-        self.confidence = confidence
-        self.recognizedLabel = recognizedLabel
-    }
-}
+import RiftboundDetection
 
 /// One frame's tracking result: the live objects, plus which IDs are new
 /// or were just dropped this frame. Callers (`TemporalEventDetector`) use

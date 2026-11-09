@@ -1,6 +1,7 @@
 import Testing
 import CoreGraphics
 @testable import RiftboundVision
+import RiftboundDetection
 
 /// Observed on a real table: nine cards produced tracking IDs in the
 /// forties, and the log showed the same physical card arriving twice under

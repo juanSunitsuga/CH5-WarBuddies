@@ -1,6 +1,7 @@
 import Testing
 import CoreGraphics
 @testable import RiftboundVision
+import RiftboundDetection
 
 /// The detector re-runs on every poll and its top label can wobble between
 /// similar cards, so the on-screen name changed several times a second even

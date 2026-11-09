@@ -1,6 +1,7 @@
 import Testing
 import CoreGraphics
 @testable import RiftboundVision
+import RiftboundDetection
 
 /// A card in the Trash has left play. Its arrival there, any shuffling
 /// within the pile, and its eventual disappearance say nothing about what

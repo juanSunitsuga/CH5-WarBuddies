@@ -1,15 +1,5 @@
 import CoreGraphics
-
-/// What kind of physical object this is — deliberately coarse. The tracker
-/// answers "which physical object is this," not "what card is this"; exact
-/// card identity is a separate concern (see `Recognition/RecognizedCard.swift`)
-/// that maps onto a `TrackedObject.id` after the fact, once a
-/// card-recognition system exists.
-public enum ObjectType: String, Sendable, Equatable, Codable {
-    case card
-    case rune
-    case unknown
-}
+import RiftboundDetection
 
 /// A stable identifier for one physical object as tracked across frames.
 /// NOT the same as a Riftbound card identity — `ExpertSystemAdapter` is

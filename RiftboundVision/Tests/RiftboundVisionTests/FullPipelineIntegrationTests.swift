@@ -4,6 +4,7 @@ import CoreGraphics
 @testable import RiftboundVision
 import RiftboundExpertSystem
 import RiftboundTextProcessing
+import RiftboundDetection
 
 /// The whole pipeline, stage ① output through stage ④ output, with no
 /// stubs between stages: raw `Detection`s (what `CoreMLCardDetector`
