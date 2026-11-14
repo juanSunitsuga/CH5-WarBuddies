@@ -423,7 +423,17 @@ final class CameraPipelineController: ObservableObject {
     /// poll stale relative to a corner the user just dragged.
     private var zoneMapper: ZoneMapper { ZoneMapper(zones: calibration.boardZones()) }
 
-    private var hasSizedCalibrationToFrame = false
+    /// The frame size `calibration` was built for, or nil before the first
+    /// frame.
+    ///
+    /// A bool here was wrong: it sized the mat to whichever source arrived
+    /// first and never looked again, so a recording at a different
+    /// resolution kept the camera's geometry and every zone boundary landed
+    /// in the wrong place — cards read as being outside the mat, which looks
+    /// exactly like a detector that found nothing. Keeping the size instead
+    /// re-derives only when it actually changes, so a corner the user
+    /// dragged survives a reconnect at the same resolution.
+    private var calibratedFrameSize: CGSize?
     private var runLoop: Task<Void, Never>?
     private var statusLoop: Task<Void, Never>?
 
@@ -1363,9 +1373,9 @@ final class CameraPipelineController: ObservableObject {
         let ciImage = CIImage(cvPixelBuffer: frame.pixelBuffer)
         let size = CGSize(width: ciImage.extent.width, height: ciImage.extent.height)
 
-        if !hasSizedCalibrationToFrame {
+        if calibratedFrameSize != size {
             calibration = Self.defaultCalibration(for: size)
-            hasSizedCalibrationToFrame = true
+            calibratedFrameSize = size
         }
 
         // The preview conversion, off the main actor and rate-limited.
